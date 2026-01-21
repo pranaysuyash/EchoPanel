@@ -38,6 +38,9 @@ Checks:
 - Verify sample rate and format match the contract.
 - If running locally, ensure ASR extras are installed and enabled:
   - `scripts/run-dev-all.sh --asr`
+ - Enable debug logs to confirm PCM and ASR activity:
+   - `export ECHOPANEL_DEBUG=1`
+   - `scripts/run-dev-all.sh`
 
 ## Diarization not showing in outputs
 Symptoms:

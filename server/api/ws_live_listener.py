@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -11,6 +12,7 @@ from server.services.asr_stream import stream_asr
 from server.services.diarization import diarize_pcm
 
 router = APIRouter()
+DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 
 
 @dataclass
@@ -22,6 +24,8 @@ class SessionState:
     pcm_buffer: bytearray = field(default_factory=bytearray)
     diarization_enabled: bool = False
     diarization_max_bytes: int = 0
+    last_log: float = 0.0
+    bytes_received: int = 0
 
 
 async def _pcm_stream(queue: asyncio.Queue[Optional[bytes]]):
@@ -71,6 +75,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
     state.diarization_max_bytes = diarization_max_seconds * 16000 * 2
 
     await websocket.send_text(json.dumps({"type": "status", "state": "streaming", "message": "Connected"}))
+    if DEBUG:
+        print("ws_live_listener: connected")
 
     try:
         while True:
@@ -86,12 +92,16 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     state.session_id = payload.get("session_id")
                     state.started = True
                     await websocket.send_text(json.dumps({"type": "status", "state": "streaming", "message": "Streaming"}))
+                    if DEBUG:
+                        print(f"ws_live_listener: start session_id={state.session_id}")
 
                     state.tasks.append(asyncio.create_task(_asr_loop(websocket, state, pcm_queue)))
                     state.tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
 
                 elif msg_type == "stop":
                     await pcm_queue.put(None)
+                    if DEBUG:
+                        print("ws_live_listener: stop")
                     diarization_segments = []
                     if state.diarization_enabled and state.pcm_buffer:
                         diarization_segments = await asyncio.to_thread(
@@ -125,8 +135,16 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         overflow = len(state.pcm_buffer) - state.diarization_max_bytes
                         if overflow > 0:
                             del state.pcm_buffer[:overflow]
+                if DEBUG:
+                    state.bytes_received += len(chunk)
+                    now = time.time()
+                    if now - state.last_log > 2:
+                        state.last_log = now
+                        print(f"ws_live_listener: received {state.bytes_received} bytes")
 
     except WebSocketDisconnect:
+        if DEBUG:
+            print("ws_live_listener: disconnect")
         return
     finally:
         await pcm_queue.put(None)

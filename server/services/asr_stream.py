@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+from typing import Optional
 from collections.abc import AsyncIterator
 from typing import Optional
 
@@ -17,6 +18,7 @@ except Exception:  # pragma: no cover - optional dependency
     WhisperModel = None
 
 _MODEL: Optional["WhisperModel"] = None
+DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 
 
 def _get_model() -> Optional["WhisperModel"]:
@@ -31,6 +33,8 @@ def _get_model() -> Optional["WhisperModel"]:
         compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE")
         if compute_type is None:
             compute_type = "int8_float16" if device == "metal" else "int8"
+        if DEBUG:
+            print(f"asr_stream: loading model={model_size} device={device} compute={compute_type}")
         _MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
     return _MODEL
 
@@ -63,6 +67,8 @@ async def stream_asr(pcm_stream: AsyncIterator[bytes], sample_rate: int = 16000)
 
         model = _get_model()
         if model is None or np is None:
+            if DEBUG:
+                print("asr_stream: missing model or numpy, emitting placeholder")
             yield {
                 "type": "asr_partial",
                 "t0": t0,
@@ -83,6 +89,8 @@ async def stream_asr(pcm_stream: AsyncIterator[bytes], sample_rate: int = 16000)
             continue
 
         audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        if DEBUG:
+            print(f"asr_stream: transcribing {len(audio)} samples")
 
         def _transcribe():
             segments, _info = model.transcribe(audio, language="en", vad_filter=True)
