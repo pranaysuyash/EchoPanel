@@ -1,26 +1,17 @@
-import pytest
-
-from server.services.analysis_stream import stream_analysis
-from server.services.asr_stream import stream_asr
+from server.services.analysis_stream import extract_cards, extract_entities
 
 
-async def _empty_async_iter():
-    if False:
-        yield None
+def test_extract_cards_empty() -> None:
+    cards = extract_cards([])
+    assert cards["actions"] == []
+    assert cards["decisions"] == []
+    assert cards["risks"] == []
 
 
-@pytest.mark.asyncio
-async def test_stream_asr_is_async_generator() -> None:
-    results = []
-    async for item in stream_asr(_empty_async_iter()):
-        results.append(item)
-    assert results == []
-
-
-@pytest.mark.asyncio
-async def test_stream_analysis_is_async_generator() -> None:
-    results = []
-    async for item in stream_analysis(_empty_async_iter()):
-        results.append(item)
-    assert results == []
-
+def test_extract_entities_empty() -> None:
+    entities = extract_entities([])
+    assert entities["people"] == []
+    assert entities["orgs"] == []
+    assert entities["dates"] == []
+    assert entities["projects"] == []
+    assert entities["topics"] == []

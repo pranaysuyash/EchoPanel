@@ -9,6 +9,12 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
+### Optional: local ASR with faster-whisper
+```sh
+uv pip install -e ".[asr]"
+export ECHOPANEL_WHISPER_MODEL=base
+```
+
 ## Run
 ```sh
 python -m server.main

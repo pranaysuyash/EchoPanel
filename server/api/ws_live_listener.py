@@ -5,6 +5,9 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from server.services.analysis_stream import extract_cards, extract_entities
+from server.services.asr_stream import stream_asr
+
 router = APIRouter()
 
 
@@ -13,88 +16,40 @@ class SessionState:
     session_id: Optional[str] = None
     started: bool = False
     tasks: list[asyncio.Task] = field(default_factory=list)
+    transcript: list[dict] = field(default_factory=list)
 
 
-async def _send_periodic_entities(websocket: WebSocket) -> None:
+async def _pcm_stream(queue: asyncio.Queue[Optional[bytes]]):
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        yield chunk
+
+
+async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Queue[Optional[bytes]]) -> None:
+    async for event in stream_asr(_pcm_stream(queue)):
+        await websocket.send_text(json.dumps(event))
+        if event.get("type") == "asr_final":
+            state.transcript.append(event)
+
+
+async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
     while True:
         await asyncio.sleep(12)
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "entities_update",
-                    "people": [{"name": "Alex", "last_seen": 12.0, "confidence": 0.77}],
-                    "orgs": [{"name": "EchoPanel", "last_seen": 12.0, "confidence": 0.88}],
-                    "dates": [{"name": "Friday", "last_seen": 12.0, "confidence": 0.71}],
-                    "projects": [{"name": "v0.1", "last_seen": 12.0, "confidence": 0.69}],
-                    "topics": [{"name": "ScreenCaptureKit", "last_seen": 12.0, "confidence": 0.74}],
-                }
-            )
-        )
+        entities = extract_entities(state.transcript)
+        await websocket.send_text(json.dumps({"type": "entities_update", **entities}))
 
-
-async def _send_periodic_cards(websocket: WebSocket) -> None:
-    while True:
-        await asyncio.sleep(40)
+        await asyncio.sleep(28)
+        cards = extract_cards(state.transcript)
         await websocket.send_text(
             json.dumps(
                 {
                     "type": "cards_update",
-                    "actions": [
-                        {
-                            "text": "Send revised proposal",
-                            "owner": "Pranay",
-                            "due": "2026-01-23",
-                            "confidence": 0.82,
-                            "evidence": [{"t0": 0.0, "t1": 1.2, "quote": "I'll send the revised proposal by Tuesday."}],
-                        }
-                    ],
-                    "decisions": [
-                        {
-                            "text": "Ship v0.1 on Friday",
-                            "confidence": 0.74,
-                            "evidence": [{"t0": 0.0, "t1": 1.2, "quote": "We should ship by Friday."}],
-                        }
-                    ],
-                    "risks": [
-                        {
-                            "text": "Backend unavailable during peak hours",
-                            "confidence": 0.61,
-                            "evidence": [{"t0": 0.0, "t1": 1.2, "quote": "We might have outages."}],
-                        }
-                    ],
+                    "actions": cards["actions"],
+                    "decisions": cards["decisions"],
+                    "risks": cards["risks"],
                     "window": {"t0": 0.0, "t1": 600.0},
-                }
-            )
-        )
-
-
-async def _send_demo_asr(websocket: WebSocket) -> None:
-    i = 0
-    while True:
-        await asyncio.sleep(5)
-        i += 1
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "asr_partial",
-                    "t0": float(i * 5),
-                    "t1": float(i * 5 + 2),
-                    "text": "placeholder transcript",
-                    "stable": False,
-                    "confidence": 0.6,
-                }
-            )
-        )
-        await asyncio.sleep(2)
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "asr_final",
-                    "t0": float(i * 5),
-                    "t1": float(i * 5 + 2),
-                    "text": "Placeholder transcript.",
-                    "stable": True,
-                    "confidence": 0.9,
                 }
             )
         )
@@ -104,6 +59,7 @@ async def _send_demo_asr(websocket: WebSocket) -> None:
 async def ws_live_listener(websocket: WebSocket) -> None:
     await websocket.accept()
     state = SessionState()
+    pcm_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
 
     await websocket.send_text(json.dumps({"type": "status", "state": "streaming", "message": "Connected"}))
 
@@ -119,22 +75,22 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     state.started = True
                     await websocket.send_text(json.dumps({"type": "status", "state": "streaming", "message": "Streaming"}))
 
-                    state.tasks.append(asyncio.create_task(_send_periodic_entities(websocket)))
-                    state.tasks.append(asyncio.create_task(_send_periodic_cards(websocket)))
-                    state.tasks.append(asyncio.create_task(_send_demo_asr(websocket)))
+                    state.tasks.append(asyncio.create_task(_asr_loop(websocket, state, pcm_queue)))
+                    state.tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
 
                 elif msg_type == "stop":
+                    await pcm_queue.put(None)
                     await websocket.send_text(
                         json.dumps(
                             {
                                 "type": "final_summary",
-                                "markdown": "# Summary\n- Placeholder summary",
+                                "markdown": "# Summary\n- Session ended",
                                 "json": {
                                     "session_id": state.session_id or payload.get("session_id"),
-                                    "actions": [],
-                                    "decisions": [],
-                                    "risks": [],
-                                    "entities": {},
+                                    "actions": extract_cards(state.transcript)["actions"],
+                                    "decisions": extract_cards(state.transcript)["decisions"],
+                                    "risks": extract_cards(state.transcript)["risks"],
+                                    "entities": extract_entities(state.transcript),
                                 },
                             }
                         )
@@ -142,14 +98,13 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     await websocket.close()
                     return
 
-            if "bytes" in message and message["bytes"] is not None:
-                # Binary PCM frames (v0.1): accepted, but the stub does not decode audio.
-                continue
+            if "bytes" in message and message["bytes"] is not None and state.started:
+                await pcm_queue.put(message["bytes"])
 
     except WebSocketDisconnect:
         return
     finally:
+        await pcm_queue.put(None)
         for task in state.tasks:
             task.cancel()
         await asyncio.gather(*state.tasks, return_exceptions=True)
-

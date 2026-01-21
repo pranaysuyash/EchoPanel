@@ -18,6 +18,10 @@ This repo starts with manual verification. Add automated tests once the core pip
 - `uv pip install -e ".[dev]"`
 - `python -m server.main`
 
+Optional local ASR:
+- `uv pip install -e ".[asr]"`
+- `export ECHOPANEL_WHISPER_MODEL=base`
+
 ### macOS app build (if present)
 - `cd macapp/MeetingListenerApp && swift build`
 
