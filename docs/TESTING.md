@@ -49,6 +49,10 @@ scripts/run-dev-app.sh
 scripts/run-dev-all.sh
 ```
 This builds the app bundle, starts the backend, and launches the app.
+Use `--no-build` if you want to avoid re-signing the app and re-prompting permissions:
+```sh
+scripts/run-dev-all.sh --no-build
+```
 
 Local ASR output is enabled by default for live transcripts.
 Disable with:

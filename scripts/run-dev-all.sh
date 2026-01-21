@@ -6,10 +6,13 @@ VENV_DIR="$ROOT_DIR/.venv"
 APP_BUNDLE="$HOME/Applications/MeetingListenerApp.app"
 ENABLE_ASR=1
 ENABLE_DIARIZATION=0
+SKIP_BUILD=0
 
 for arg in "$@"; do
   if [[ "$arg" == "--no-asr" ]]; then
     ENABLE_ASR=0
+  elif [[ "$arg" == "--no-build" ]]; then
+    SKIP_BUILD=1
   elif [[ "$arg" == "--diarization" ]]; then
     ENABLE_DIARIZATION=1
   fi
@@ -47,8 +50,12 @@ if [[ "$ENABLE_DIARIZATION" -eq 1 ]]; then
   fi
 fi
 
-echo "Building app bundle..."
-"$ROOT_DIR/scripts/build-app-bundle.sh"
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  echo "Building app bundle..."
+  "$ROOT_DIR/scripts/build-app-bundle.sh"
+else
+  echo "Skipping app bundle build (--no-build)"
+fi
 
 echo "Starting backend..."
 python -m server.main &

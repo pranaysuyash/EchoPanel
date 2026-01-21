@@ -7,6 +7,10 @@ Symptoms:
 Checks:
 - System Settings -> Privacy & Security -> Screen Recording
 - Ensure EchoPanel is enabled.
+ - If prompts keep reappearing, avoid rebuilding the app bundle between runs.
+   - Build once: `scripts/build-app-bundle.sh`
+   - Relaunch without rebuilding: `open ~/Applications/MeetingListenerApp.app`
+   - Or use: `scripts/run-dev-all.sh --no-build`
 
 Notes:
 - ScreenCaptureKit system audio capture requires Screen Recording permission.
