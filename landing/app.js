@@ -94,16 +94,6 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
-      targets: '.menu-dot.listening',
-      scale: [1, 1.25],
-      opacity: [0.7, 1],
-      direction: 'alternate',
-      easing: 'easeInOutSine',
-      duration: 1200,
-      loop: true,
-    });
-
-    anime({
       targets: '.panel-card',
       backgroundColor: ['#f9f6f1', '#ffffff'],
       direction: 'alternate',
