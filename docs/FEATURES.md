@@ -22,3 +22,8 @@
 - Speaker diarization.
 - Clip generation.
 
+## Extras implemented (beyond v0.1 scope)
+- Stable `.app` bundle build for consistent Screen Recording permissions.
+- Combined dev runner to build, launch, and start backend together.
+- Export Markdown to file (in addition to Copy Markdown and Export JSON).
+- Permission status banner in the side panel UI.
