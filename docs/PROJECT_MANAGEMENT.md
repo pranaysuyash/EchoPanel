@@ -21,3 +21,10 @@
 - No silent capture behavior.
 - Clear user-facing status in error and reconnect states.
 
+## Open TODOs
+- Replace local ASR stub with production streaming ASR and validate latency targets.
+- Implement backend reconnect and buffering behavior aligned with spec.
+- Surface diarization results in UI (currently only in final JSON).
+- Align macOS UI visuals with landing page and spec UI polish.
+- Add integration tests for WebSocket streaming and exports.
+- Add lightweight UI snapshot or visual regression checks.
