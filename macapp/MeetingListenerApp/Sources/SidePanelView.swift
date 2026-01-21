@@ -54,6 +54,7 @@ struct SidePanelView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(appState.transcriptSegments) { segment in
                         TranscriptRow(segment: segment)
+                            .transition(.opacity)
                     }
                     if appState.transcriptSegments.isEmpty {
                         Text("Waiting for speech")
@@ -64,6 +65,7 @@ struct SidePanelView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: appState.transcriptSegments)
     }
 
     private var cardsLane: some View {
@@ -78,6 +80,7 @@ struct SidePanelView: View {
                                 title: item.text,
                                 meta: itemMeta(owner: item.owner, due: item.due, confidence: item.confidence)
                             )
+                            .transition(.opacity)
                         }
                     }
                 }
@@ -87,6 +90,7 @@ struct SidePanelView: View {
                     } else {
                         ForEach(appState.decisions) { item in
                             CardRow(title: item.text, meta: confidenceMeta(item.confidence))
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -96,11 +100,15 @@ struct SidePanelView: View {
                     } else {
                         ForEach(appState.risks) { item in
                             CardRow(title: item.text, meta: confidenceMeta(item.confidence))
+                                .transition(.opacity)
                         }
                     }
                 }
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: appState.actions)
+        .animation(.easeInOut(duration: 0.2), value: appState.decisions)
+        .animation(.easeInOut(duration: 0.2), value: appState.risks)
     }
 
     private var entitiesLane: some View {
@@ -112,12 +120,14 @@ struct SidePanelView: View {
                     } else {
                         ForEach(appState.entities) { entity in
                             EntityRow(entity: entity)
+                                .transition(.opacity)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: appState.entities)
     }
 
     private var controls: some View {
@@ -136,6 +146,15 @@ struct SidePanelView: View {
                 Label("Export JSON", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(.bordered)
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+
+            Button {
+                appState.exportMarkdown()
+            } label: {
+                Label("Export Markdown", systemImage: "doc.text")
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut("m", modifiers: [.command, .shift])
 
             Spacer()
 

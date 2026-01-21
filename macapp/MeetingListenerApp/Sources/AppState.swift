@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
@@ -50,13 +51,19 @@ final class AppState: ObservableObject {
         }
         streamer.onCardsUpdate = { [weak self] actions, decisions, risks in
             Task { @MainActor in
-                self?.actions = actions
-                self?.decisions = decisions
-                self?.risks = risks
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self?.actions = actions
+                    self?.decisions = decisions
+                    self?.risks = risks
+                }
             }
         }
         streamer.onEntitiesUpdate = { [weak self] entities in
-            Task { @MainActor in self?.entities = entities }
+            Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self?.entities = entities
+                }
+            }
         }
         streamer.onFinalSummary = { [weak self] markdown, jsonObject in
             Task { @MainActor in
@@ -169,6 +176,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    func exportMarkdown() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "echopanel-notes.md"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let markdown = self.finalSummaryMarkdown.isEmpty ? self.renderLiveMarkdown() : self.finalSummaryMarkdown
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSLog("Export Markdown failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func renderLiveMarkdown() -> String {
         var lines: [String] = []
         lines.append("# Live Notes")
@@ -275,18 +298,22 @@ final class AppState: ObservableObject {
     }
 
     private func handlePartial(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double) {
-        if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-            transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence)
-        } else {
-            transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence))
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
+                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence)
+            } else {
+                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence))
+            }
         }
     }
 
     private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double) {
-        if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-            transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence)
-        } else {
-            transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence))
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
+                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence)
+            } else {
+                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence))
+            }
         }
     }
 }

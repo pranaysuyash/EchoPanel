@@ -24,6 +24,16 @@ struct MeetingListenerApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command])
 
+                Button("Export JSON") {
+                    appState.exportJSON()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+
+                Button("Export Markdown") {
+                    appState.exportMarkdown()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+
                 Divider()
                 Button("Quit") { NSApp.terminate(nil) }
             }
@@ -50,6 +60,14 @@ struct MeetingListenerApp: App {
                 toggleSession()
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Export JSON") {
+                appState.exportJSON()
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            Button("Export Markdown") {
+                appState.exportMarkdown()
+            }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
             Divider()
             Button("Quit") { NSApp.terminate(nil) }
         }
@@ -59,9 +77,12 @@ struct MeetingListenerApp: App {
     private var labelContent: some View {
         HStack(spacing: 6) {
             Image(systemName: appState.sessionState == .listening ? "waveform.circle.fill" : "waveform.circle")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(appState.sessionState == .listening ? Color.green : Color.secondary, Color.secondary.opacity(0.3))
             Text(appState.timerText)
                 .monospacedDigit()
         }
+        .accessibilityLabel(appState.sessionState == .listening ? "EchoPanel listening" : "EchoPanel idle")
     }
 
     private func toggleSession() {
@@ -77,4 +98,3 @@ struct MeetingListenerApp: App {
         }
     }
 }
-

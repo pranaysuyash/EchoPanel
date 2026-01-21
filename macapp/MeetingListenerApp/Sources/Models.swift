@@ -21,7 +21,7 @@ enum AudioQuality: String {
     case unknown = "Unknown"
 }
 
-struct TranscriptSegment: Identifiable {
+struct TranscriptSegment: Identifiable, Equatable {
     let id = UUID()
     let text: String
     let t0: TimeInterval
@@ -30,7 +30,7 @@ struct TranscriptSegment: Identifiable {
     let confidence: Double
 }
 
-struct ActionItem: Identifiable {
+struct ActionItem: Identifiable, Equatable {
     let id = UUID()
     let text: String
     let owner: String?
@@ -38,23 +38,22 @@ struct ActionItem: Identifiable {
     let confidence: Double
 }
 
-struct DecisionItem: Identifiable {
+struct DecisionItem: Identifiable, Equatable {
     let id = UUID()
     let text: String
     let confidence: Double
 }
 
-struct RiskItem: Identifiable {
+struct RiskItem: Identifiable, Equatable {
     let id = UUID()
     let text: String
     let confidence: Double
 }
 
-struct EntityItem: Identifiable {
+struct EntityItem: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let type: String
     let lastSeen: TimeInterval
     let confidence: Double
 }
-
