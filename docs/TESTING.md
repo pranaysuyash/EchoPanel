@@ -21,6 +21,8 @@ This repo starts with manual verification. Add automated tests once the core pip
 Optional local ASR:
 - `uv pip install -e ".[asr]"`
 - `export ECHOPANEL_WHISPER_MODEL=base`
+- `export ECHOPANEL_WHISPER_DEVICE=metal`
+- `export ECHOPANEL_WHISPER_COMPUTE=int8_float16`
 
 ### macOS app build (if present)
 - `cd macapp/MeetingListenerApp && swift build`

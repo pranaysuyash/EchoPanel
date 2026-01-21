@@ -24,7 +24,9 @@ def _get_model() -> Optional["WhisperModel"]:
         return None
     if _MODEL is None:
         model_size = os.getenv("ECHOPANEL_WHISPER_MODEL", "base")
-        _MODEL = WhisperModel(model_size, compute_type="int8")
+        device = os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto")
+        compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8_float16")
+        _MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
     return _MODEL
 
 

@@ -13,6 +13,8 @@ uv pip install -e ".[dev]"
 ```sh
 uv pip install -e ".[asr]"
 export ECHOPANEL_WHISPER_MODEL=base
+export ECHOPANEL_WHISPER_DEVICE=metal
+export ECHOPANEL_WHISPER_COMPUTE=int8_float16
 ```
 
 ## Run
