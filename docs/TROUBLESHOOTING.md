@@ -48,6 +48,14 @@ Checks:
   - Look for `Debug: ... samples ... sent` in the panel header.
   - Look for `AudioCaptureManager: received` and `ws_live_listener: received` logs.
 
+## ScreenCaptureKit "stream output NOT found. Dropping frame"
+Symptoms:
+- Console logs show `stream output NOT found. Dropping frame`.
+
+Checks:
+- Ensure video capture is disabled for audio-only streams.
+- Confirm the app is built with the latest `AudioCaptureManager` changes.
+
 ## Diarization not showing in outputs
 Symptoms:
 - Final JSON has an empty `diarization` list.

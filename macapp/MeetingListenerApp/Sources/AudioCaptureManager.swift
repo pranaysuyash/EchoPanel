@@ -49,6 +49,7 @@ final class AudioCaptureManager: NSObject {
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let configuration = SCStreamConfiguration()
         configuration.capturesAudio = true
+        configuration.capturesVideo = false
         configuration.excludesCurrentProcessAudio = true
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: sampleHandler)
