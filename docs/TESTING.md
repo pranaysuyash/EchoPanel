@@ -27,6 +27,12 @@ Optional local ASR:
 ### macOS app build (if present)
 - `cd macapp/MeetingListenerApp && swift build`
 
+### Stable dev build (avoid repeated permission prompts)
+```sh
+scripts/build-dev-app.sh
+~/Applications/MeetingListenerApp-Dev
+```
+
 ## Automated tests (Python)
 Run unit and integration tests with uv-managed environment:
 ```sh
