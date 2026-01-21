@@ -63,25 +63,6 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
-      targets: '[data-hero-panel]',
-      translateY: [0, -6],
-      direction: 'alternate',
-      easing: 'easeInOutSine',
-      duration: 2400,
-      loop: true,
-    });
-
-    anime({
-      targets: '[data-hero-bar]',
-      translateY: [0, -4],
-      direction: 'alternate',
-      easing: 'easeInOutSine',
-      duration: 2000,
-      delay: 300,
-      loop: true,
-    });
-
-    anime({
       targets: '.mesh-orb',
       translateX: () => anime.random(-20, 20),
       translateY: () => anime.random(-16, 16),

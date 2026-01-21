@@ -294,13 +294,13 @@ input:focus {
 
 .panel-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: repeat(3, minmax(140px, 1fr));
 }
 
 .panel-column {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   align-content: start;
 }
 
