@@ -8,6 +8,7 @@ final class AudioCaptureManager: NSObject {
     var onPCMFrame: ((Data) -> Void)?
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
     var onSampleCount: ((Int) -> Void)?
+    var onScreenFrameCount: ((Int) -> Void)?
 
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
@@ -21,11 +22,20 @@ final class AudioCaptureManager: NSObject {
     private var lastQualityUpdate: TimeInterval = 0
     private var lastDebugLog: TimeInterval = 0
     private var totalSamples: Int = 0
+    private var screenFrames: Int = 0
 
     override init() {
         super.init()
         sampleHandler.onAudioSampleBuffer = { [weak self] sampleBuffer in
             self?.processAudio(sampleBuffer: sampleBuffer)
+        }
+        sampleHandler.onScreenSampleBuffer = { [weak self] _ in
+            guard let self else { return }
+            self.screenFrames += 1
+            self.onScreenFrameCount?(self.screenFrames)
+            if self.debugEnabled && self.screenFrames % 60 == 0 {
+                NSLog("AudioCaptureManager: received %d screen frames", self.screenFrames)
+            }
         }
     }
 
@@ -228,10 +238,17 @@ final class AudioCaptureManager: NSObject {
 
 final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
     var onAudioSampleBuffer: ((CMSampleBuffer) -> Void)?
+    var onScreenSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio else { return }
-        onAudioSampleBuffer?(sampleBuffer)
+        switch type {
+        case .audio:
+            onAudioSampleBuffer?(sampleBuffer)
+        case .screen:
+            onScreenSampleBuffer?(sampleBuffer)
+        default:
+            break
+        }
     }
 }
 

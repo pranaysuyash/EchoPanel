@@ -36,6 +36,7 @@ final class AppState: ObservableObject {
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var debugSamples: Int = 0
     private var debugBytes: Int = 0
+    private var debugScreenFrames: Int = 0
 
     init() {
         refreshScreenRecordingStatus()
@@ -47,6 +48,12 @@ final class AppState: ObservableObject {
         audioCapture.onSampleCount = { [weak self] sampleCount in
             Task { @MainActor in
                 self?.debugSamples = sampleCount
+                self?.updateDebugLine()
+            }
+        }
+        audioCapture.onScreenFrameCount = { [weak self] frameCount in
+            Task { @MainActor in
+                self?.debugScreenFrames = frameCount
                 self?.updateDebugLine()
             }
         }
@@ -360,7 +367,7 @@ final class AppState: ObservableObject {
             return
         }
         let bytes = ByteCountFormatter.string(fromByteCount: Int64(debugBytes), countStyle: .file)
-        debugLine = "Debug: \(debugSamples) samples · \(bytes) sent"
+        debugLine = "Debug: \(debugSamples) samples · \(debugScreenFrames) screen frames · \(bytes) sent"
     }
 }
 
