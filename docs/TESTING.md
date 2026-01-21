@@ -33,6 +33,11 @@ scripts/build-dev-app.sh
 ~/Applications/MeetingListenerApp-Dev
 ```
 
+### Start backend server (dev)
+```sh
+scripts/run-dev-stack.sh
+```
+
 ## Automated tests (Python)
 Run unit and integration tests with uv-managed environment:
 ```sh
