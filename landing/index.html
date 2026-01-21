@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="EchoPanel is a macOS menu bar app that turns any system audio into live meeting notes with actions, decisions, risks, and entities." />
+    <title>EchoPanel — Live meeting notes from any Mac audio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <nav class="nav">
+          <div class="logo">EchoPanel</div>
+          <div class="nav-links">
+            <a href="#how">How it works</a>
+            <a href="#trust">Trust</a>
+            <a href="#waitlist">Waitlist</a>
+          </div>
+        </nav>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <div class="tag">macOS menu bar app</div>
+            <h1>Live meeting notes from any Mac audio.</h1>
+            <p>
+              Start listening with one click. EchoPanel streams system audio to produce a live transcript plus
+              Actions, Decisions, Risks, and Entities in real time.
+            </p>
+            <ul class="hero-bullets">
+              <li>Works with Meet, Zoom, Teams, video playback, and in person audio</li>
+              <li>No calendar or meeting integrations required</li>
+              <li>Clear permission prompts and visible listening indicator</li>
+            </ul>
+            <div class="hero-form" id="waitlist">
+              <h3>Join the waitlist</h3>
+              <p>Be the first to try the v0.1 beta.</p>
+              <form class="waitlist-form" data-waitlist>
+                <div class="form-row">
+                  <label>
+                    Name
+                    <input type="text" name="name" placeholder="Avery Chen" autocomplete="name" />
+                  </label>
+                  <label>
+                    Work email
+                    <input type="email" name="email" placeholder="you@company.com" autocomplete="email" required />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Role
+                    <input type="text" name="role" placeholder="Founder, PM, Recruiter" />
+                  </label>
+                  <label>
+                    Company
+                    <input type="text" name="company" placeholder="EchoPanel" />
+                  </label>
+                </div>
+                <input type="hidden" name="source" value="landing" />
+                <button type="submit" class="btn-primary">Request access</button>
+                <div class="form-status" data-form-status></div>
+              </form>
+            </div>
+          </div>
+          <div class="hero-visual">
+            <div class="menu-bar">
+              <div class="menu-dot listening"></div>
+              <span>EchoPanel · 12:34</span>
+            </div>
+            <div class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">Live Meeting Listener</div>
+                  <div class="panel-subtitle">Streaming · Audio: Good</div>
+                </div>
+                <div class="panel-timer">12:34</div>
+              </div>
+              <div class="panel-grid">
+                <div class="panel-column">
+                  <h4>Transcript</h4>
+                  <div class="panel-card">
+                    <div class="line">
+                      <span class="time">12:31</span>
+                      <span>We should ship by Friday.</span>
+                    </div>
+                    <div class="line faint">
+                      <span class="time">12:33</span>
+                      <span>I'll send the proposal tomorrow.</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="panel-column">
+                  <h4>Actions</h4>
+                  <div class="panel-card">
+                    <div>Send revised proposal</div>
+                    <div class="meta">Owner: Pranay · Due: Tue · 82%</div>
+                  </div>
+                  <h4>Decisions</h4>
+                  <div class="panel-card">
+                    <div>Ship v0.1 on Friday</div>
+                    <div class="meta">74%</div>
+                  </div>
+                </div>
+                <div class="panel-column">
+                  <h4>Entities</h4>
+                  <div class="panel-card">
+                    <div>EchoPanel · org</div>
+                    <div class="meta">Last seen 12:31 · 88%</div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel-footer">
+                <button class="ghost">Copy Markdown</button>
+                <button class="ghost">Export JSON</button>
+                <button class="ghost danger">End session</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Everything you need without integrations.</h2>
+          <p>EchoPanel captures what is already playing on your Mac. No bots. No calendar setup.</p>
+        </div>
+        <div class="value-grid">
+          <div class="value-card">
+            <h3>Live transcript</h3>
+            <p>Stable, timestamped segments that replace partials cleanly.</p>
+          </div>
+          <div class="value-card">
+            <h3>Actions, Decisions, Risks</h3>
+            <p>Structured cards with confidence and evidence.</p>
+          </div>
+          <div class="value-card">
+            <h3>Entities</h3>
+            <p>People, orgs, projects, and dates with last seen time.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="how">
+        <div class="section-header">
+          <h2>How it works</h2>
+          <p>Designed for quick setup and zero meeting friction.</p>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="step-number">01</span>
+            <div>
+              <h3>Start listening</h3>
+              <p>Click the menu bar toggle. EchoPanel requests Screen Recording permission once.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">02</span>
+            <div>
+              <h3>Stream system audio</h3>
+              <p>Audio is captured locally and streamed for live ASR and analysis.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">03</span>
+            <div>
+              <h3>Export instantly</h3>
+              <p>Copy Markdown or export JSON the moment your meeting ends.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="section trust" id="trust">
+        <div class="section-header">
+          <h2>Built for trust and transparency</h2>
+          <p>We only listen when you click Start, with visible indicators and clear permissions.</p>
+        </div>
+        <div class="trust-grid">
+          <div class="trust-card">
+            <h3>Clear consent</h3>
+            <p>Screen Recording permission is required and explained.</p>
+          </div>
+          <div class="trust-card">
+            <h3>Visible status</h3>
+            <p>Streaming, reconnecting, and audio quality are always shown.</p>
+          </div>
+          <div class="trust-card">
+            <h3>Minimal data</h3>
+            <p>Store only session outputs you choose to keep.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section waitlist">
+        <div class="section-header">
+          <h2>Get early access</h2>
+          <p>We are onboarding a small number of teams for the v0.1 beta.</p>
+        </div>
+        <div class="waitlist-card">
+          <form class="waitlist-form" data-waitlist>
+            <div class="form-row">
+              <label>
+                Work email
+                <input type="email" name="email" placeholder="you@company.com" required />
+              </label>
+              <label>
+                Role
+                <input type="text" name="role" placeholder="Founder, PM, Recruiter" />
+              </label>
+            </div>
+            <input type="hidden" name="source" value="footer" />
+            <button type="submit" class="btn-primary">Join waitlist</button>
+            <div class="form-status" data-form-status></div>
+          </form>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>EchoPanel · macOS Live Meeting Listener</div>
+        <div class="footer-links">
+          <a href="mailto:hello@echopanel.ai">hello@echopanel.ai</a>
+          <a href="#">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

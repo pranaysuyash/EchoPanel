@@ -1,6 +1,11 @@
 .DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
 .venv/
 .pytest_cache/
 *.egg-info/
 .swiftpm/
 .build/
+xcuserdata/
+*.xcuserstate
