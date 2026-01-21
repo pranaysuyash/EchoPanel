@@ -85,47 +85,62 @@ final class AudioCaptureManager: NSObject {
     private func processAudio(sampleBuffer: CMSampleBuffer) {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
+            NSLog("⛔ processAudio: Failed to get format description")
             return
         }
 
-        let inputFormat = AVAudioFormat(streamDescription: asbd)
+        guard let inputFormat = AVAudioFormat(streamDescription: asbd) else {
+            NSLog("⛔ processAudio: Failed to create AVAudioFormat from stream description")
+            return
+        }
+        
         let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
-
-        var blockBuffer: CMBlockBuffer?
-        var audioBufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(mNumberChannels: asbd.pointee.mChannelsPerFrame, mDataByteSize: 0, mData: nil)
-        )
-
-        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: nil,
-            bufferListOut: &audioBufferList,
-            bufferListSize: MemoryLayout<AudioBufferList>.size,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer
-        )
-
-        guard status == noErr else {
-            return
+        
+        // Log input format details (only first few times)
+        if totalSamples == 0 {
+            NSLog("📊 processAudio: Input format - sampleRate: %.0f, channels: %d, bitsPerChannel: %d, formatID: %u, isNonInterleaved: %d", 
+                  asbd.pointee.mSampleRate, asbd.pointee.mChannelsPerFrame, asbd.pointee.mBitsPerChannel, asbd.pointee.mFormatID, inputFormat.isInterleaved ? 0 : 1)
         }
 
-        guard let inputFormat,
-              let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, bufferListNoCopy: &audioBufferList) else {
+        // Create AVAudioPCMBuffer directly from the CMSampleBuffer
+        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(numSamples)) else {
+            NSLog("⛔ processAudio: Failed to create inputBuffer with capacity %d", numSamples)
             return
         }
-
         inputBuffer.frameLength = AVAudioFrameCount(numSamples)
+        
+        // Copy the audio data from CMSampleBuffer into the AVAudioPCMBuffer
+        let audioBufferList = inputBuffer.mutableAudioBufferList
+        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer,
+            at: 0,
+            frameCount: Int32(numSamples),
+            into: audioBufferList
+        )
+        
+        guard status == noErr else {
+            NSLog("⛔ processAudio: CMSampleBufferCopyPCMDataIntoAudioBufferList failed with status %d", status)
+            return
+        }
+
+        // Convert to target format (mono 16kHz)
         if converter == nil || converter?.inputFormat != inputFormat || converter?.outputFormat != targetFormat {
             converter = AVAudioConverter(from: inputFormat, to: targetFormat)
+            if converter == nil {
+                NSLog("⛔ processAudio: Failed to create AVAudioConverter from %@ to %@", inputFormat.description, targetFormat.description)
+            } else {
+                NSLog("✅ processAudio: Created AVAudioConverter")
+            }
         }
 
-        guard let converter else { return }
+        guard let converter else { 
+            NSLog("⛔ processAudio: converter is nil")
+            return 
+        }
 
         let outputFrameCapacity = AVAudioFrameCount(Double(inputBuffer.frameLength) * targetFormat.sampleRate / inputFormat.sampleRate)
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
+            NSLog("⛔ processAudio: Failed to create outputBuffer with capacity %d", outputFrameCapacity)
             return
         }
 
@@ -142,13 +157,23 @@ final class AudioCaptureManager: NSObject {
         }
 
         if statusConvert == .error {
+            NSLog("⛔ processAudio: Conversion failed with error: %@", error?.localizedDescription ?? "unknown")
             return
         }
 
-        guard let channelData = outputBuffer.floatChannelData else { return }
+        guard let channelData = outputBuffer.floatChannelData else { 
+            NSLog("⛔ processAudio: outputBuffer.floatChannelData is nil")
+            return 
+        }
         let samples = channelData[0]
         let frameCount = Int(outputBuffer.frameLength)
         totalSamples += frameCount
+        
+        // Log success periodically (debug mode only)
+        if debugEnabled && (totalSamples <= 1000 || totalSamples % 16000 == 0) {
+            NSLog("✅ processAudio: Processed %d samples, total: %d, emitting PCM frames", frameCount, totalSamples)
+        }
+        
         if debugEnabled {
             let now = CACurrentMediaTime()
             if now - lastDebugLog > 2 {
@@ -239,12 +264,23 @@ final class AudioCaptureManager: NSObject {
 final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
     var onAudioSampleBuffer: ((CMSampleBuffer) -> Void)?
     var onScreenSampleBuffer: ((CMSampleBuffer) -> Void)?
+    private var audioCallCount = 0
+    private var screenCallCount = 0
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         switch type {
         case .audio:
+            audioCallCount += 1
+            if audioCallCount <= 5 || audioCallCount % 100 == 0 {
+                let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
+                NSLog("🎤 AudioSampleHandler: Received audio buffer #%d with %d samples", audioCallCount, numSamples)
+            }
             onAudioSampleBuffer?(sampleBuffer)
         case .screen:
+            screenCallCount += 1
+            if screenCallCount <= 3 || screenCallCount % 60 == 0 {
+                NSLog("🖥️ AudioSampleHandler: Received screen buffer #%d", screenCallCount)
+            }
             onScreenSampleBuffer?(sampleBuffer)
         default:
             break

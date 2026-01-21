@@ -61,6 +61,7 @@ final class AppState: ObservableObject {
             Task { @MainActor in self?.audioQuality = quality }
         }
         audioCapture.onPCMFrame = { [weak self] frame in
+            NSLog("🔊 onPCMFrame callback triggered: %d bytes", frame.count)
             if let self {
                 self.debugBytes += frame.count
                 if self.debugEnabled {

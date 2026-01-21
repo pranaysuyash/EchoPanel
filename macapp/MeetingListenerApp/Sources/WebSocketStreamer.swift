@@ -51,8 +51,14 @@ final class WebSocketStreamer: NSObject {
     }
 
     func sendPCMFrame(_ data: Data) {
+        if debugEnabled {
+            NSLog("📤 WebSocketStreamer sending PCM frame: %d bytes", data.count)
+        }
         task?.send(.data(data)) { [weak self] error in
-            if let error { self?.handleError(error) }
+            if let error {
+                NSLog("❌ WebSocketStreamer send error: %@", error.localizedDescription)
+                self?.handleError(error)
+            }
         }
     }
 
