@@ -38,9 +38,10 @@ Checks:
 - Verify sample rate and format match the contract.
 - If running locally, ensure ASR extras are installed and enabled:
   - `scripts/run-dev-all.sh --asr`
- - Enable debug logs to confirm PCM and ASR activity:
-   - `export ECHOPANEL_DEBUG=1`
-   - `scripts/run-dev-all.sh`
+- Enable debug logs to confirm PCM and ASR activity:
+  - `export ECHOPANEL_DEBUG=1`
+  - `scripts/run-dev-all.sh`
+  - Look for `AudioCaptureManager: received` and `ws_live_listener: received` logs.
 
 ## Diarization not showing in outputs
 Symptoms:

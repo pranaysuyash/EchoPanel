@@ -8,6 +8,7 @@ final class AudioCaptureManager: NSObject {
     var onPCMFrame: ((Data) -> Void)?
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
 
+    private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
     private let sampleHandler = AudioSampleHandler()
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
@@ -17,6 +18,8 @@ final class AudioCaptureManager: NSObject {
     private var silenceEMA: Float = 0
     private var clipEMA: Float = 0
     private var lastQualityUpdate: TimeInterval = 0
+    private var lastDebugLog: TimeInterval = 0
+    private var totalSamples: Int = 0
 
     override init() {
         super.init()
@@ -53,6 +56,9 @@ final class AudioCaptureManager: NSObject {
         try stream.addStreamOutput(sampleHandler, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
         try await stream.startCapture()
         onAudioQualityUpdate?(.ok)
+        if debugEnabled {
+            NSLog("AudioCaptureManager: startCapture ok")
+        }
     }
 
     func stopCapture() async {
@@ -130,6 +136,14 @@ final class AudioCaptureManager: NSObject {
         guard let channelData = outputBuffer.floatChannelData else { return }
         let samples = channelData[0]
         let frameCount = Int(outputBuffer.frameLength)
+        totalSamples += frameCount
+        if debugEnabled {
+            let now = CACurrentMediaTime()
+            if now - lastDebugLog > 2 {
+                lastDebugLog = now
+                NSLog("AudioCaptureManager: received %d samples", totalSamples)
+            }
+        }
 
         updateAudioQuality(samples: samples, count: frameCount)
         emitPCMFrames(samples: samples, count: frameCount)

@@ -64,7 +64,11 @@ trap cleanup EXIT
 sleep 1
 
 echo "Launching app..."
-open "$APP_BUNDLE"
+if [[ "${ECHOPANEL_DEBUG:-0}" == "1" ]]; then
+  open "$APP_BUNDLE" --args --debug
+else
+  open "$APP_BUNDLE"
+fi
 
 echo "Backend running (PID $SERVER_PID). Press Ctrl+C to stop."
 wait "$SERVER_PID"
