@@ -33,6 +33,11 @@ scripts/build-dev-app.sh
 ~/Applications/MeetingListenerApp-Dev
 ```
 
+### Build and launch dev app
+```sh
+scripts/run-dev-app.sh
+```
+
 ### Start backend server (dev)
 ```sh
 scripts/run-dev-stack.sh
