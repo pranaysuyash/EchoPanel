@@ -5,7 +5,7 @@ struct SidePanelView: View {
     let onEndSession: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             header
             Divider()
             HStack(alignment: .top, spacing: 12) {
@@ -16,13 +16,13 @@ struct SidePanelView: View {
             Divider()
             controls
         }
-        .padding(16)
-        .frame(minWidth: 960, minHeight: 520)
+        .padding(12)
+        .frame(minWidth: 920, minHeight: 480)
         .background(Color(NSColor.windowBackgroundColor))
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Live Meeting Listener")
                     .font(.title2)
@@ -32,7 +32,7 @@ struct SidePanelView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 StatusPill(label: appState.sessionState == .listening ? "Listening" : "Idle",
                            color: appState.sessionState == .listening ? .green : .gray)
                 StatusPill(label: "Audio \(appState.audioQuality.rawValue)", color: qualityColor(appState.audioQuality))
@@ -40,8 +40,8 @@ struct SidePanelView: View {
                     .font(.footnote)
                     .monospacedDigit()
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
                     .background(Color.secondary.opacity(0.08))
                     .clipShape(Capsule())
             }
@@ -51,7 +51,7 @@ struct SidePanelView: View {
     private var transcriptLane: some View {
         LaneCard(title: "Transcript") {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(appState.transcriptSegments) { segment in
                         TranscriptRow(segment: segment)
                             .transition(.opacity)
@@ -70,8 +70,8 @@ struct SidePanelView: View {
 
     private var cardsLane: some View {
         LaneCard(title: "Cards") {
-            VStack(alignment: .leading, spacing: 12) {
-                CardSection(title: "Actions") {
+                VStack(alignment: .leading, spacing: 10) {
+                    CardSection(title: "Actions") {
                     if appState.actions.isEmpty {
                         EmptyStateRow(text: "No actions yet")
                     } else {
@@ -94,7 +94,7 @@ struct SidePanelView: View {
                         }
                     }
                 }
-                CardSection(title: "Risks") {
+                    CardSection(title: "Risks") {
                     if appState.risks.isEmpty {
                         EmptyStateRow(text: "No risks yet")
                     } else {
@@ -114,7 +114,7 @@ struct SidePanelView: View {
     private var entitiesLane: some View {
         LaneCard(title: "Entities") {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     if appState.entities.isEmpty {
                         EmptyStateRow(text: "No entities yet")
                     } else {
@@ -209,13 +209,13 @@ private struct LaneCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -237,8 +237,8 @@ private struct StatusPill: View {
             Text(label)
                 .font(.caption)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
         .background(Color.secondary.opacity(0.08))
         .clipShape(Capsule())
     }
@@ -301,7 +301,7 @@ private struct CardRow: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -347,7 +347,7 @@ private struct EmptyStateRow: View {
         Text(text)
             .font(.footnote)
             .foregroundColor(.secondary)
-            .padding(10)
+            .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.secondary.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
