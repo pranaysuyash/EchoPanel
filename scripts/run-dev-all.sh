@@ -5,10 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
 APP_BUNDLE="$HOME/Applications/MeetingListenerApp.app"
 ENABLE_ASR=0
+ENABLE_DIARIZATION=0
 
 for arg in "$@"; do
   if [[ "$arg" == "--asr" ]]; then
     ENABLE_ASR=1
+  elif [[ "$arg" == "--diarization" ]]; then
+    ENABLE_DIARIZATION=1
   fi
 done
 
@@ -32,6 +35,15 @@ if [[ "$ENABLE_ASR" -eq 1 ]]; then
       export ECHOPANEL_WHISPER_DEVICE="auto"
       export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8}"
     fi
+  fi
+fi
+
+if [[ "$ENABLE_DIARIZATION" -eq 1 ]]; then
+  echo "Installing diarization extras..."
+  uv pip install -e ".[diarization]"
+  export ECHOPANEL_DIARIZATION=1
+  if [[ -z "${ECHOPANEL_HF_TOKEN:-}" ]]; then
+    echo "Missing ECHOPANEL_HF_TOKEN for pyannote models. Diarization will be skipped."
   fi
 fi
 

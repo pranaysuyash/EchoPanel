@@ -38,3 +38,12 @@ Checks:
 - Verify sample rate and format match the contract.
 - If running locally, ensure ASR extras are installed and enabled:
   - `scripts/run-dev-all.sh --asr`
+
+## Diarization not showing in outputs
+Symptoms:
+- Final JSON has an empty `diarization` list.
+
+Checks:
+- Set `ECHOPANEL_HF_TOKEN` and enable diarization:
+  - `scripts/run-dev-all.sh --asr --diarization`
+- Confirm `pyannote.audio` and `torch` are installed in the active venv.

@@ -55,6 +55,12 @@ To enable local ASR output (required for live transcripts):
 scripts/run-dev-all.sh --asr
 ```
 
+To enable diarization (requires Hugging Face token):
+```sh
+export ECHOPANEL_HF_TOKEN=your_token_here
+scripts/run-dev-all.sh --asr --diarization
+```
+
 ### Start backend server (dev)
 ```sh
 scripts/run-dev-stack.sh

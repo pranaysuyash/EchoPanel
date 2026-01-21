@@ -24,7 +24,7 @@ def _get_model() -> Optional["WhisperModel"]:
     if WhisperModel is None:
         return None
     if _MODEL is None:
-        model_size = os.getenv("ECHOPANEL_WHISPER_MODEL", "base")
+        model_size = os.getenv("ECHOPANEL_WHISPER_MODEL", "large-v3-turbo")
         device = os.getenv("ECHOPANEL_WHISPER_DEVICE")
         if device is None:
             device = "metal" if platform.system() == "Darwin" else "auto"

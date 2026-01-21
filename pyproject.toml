@@ -18,6 +18,10 @@ asr = [
     "faster-whisper==1.0.3",
     "numpy==1.26.4",
 ]
+diarization = [
+    "pyannote.audio==3.3.0",
+    "torch==2.5.1",
+]
 
 [build-system]
 requires = ["setuptools>=69.0.0"]
