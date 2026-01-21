@@ -23,7 +23,7 @@ final class SidePanelController {
                 panel.level = .floating
                 panel.hidesOnDeactivate = false
                 panel.isReleasedWhenClosed = false
-                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .moveToActiveSpace]
+                panel.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
                 panel.contentViewController = host
                 self.panel = panel
             } else if let hostingController = self.hostingController {
