@@ -30,6 +30,10 @@ struct SidePanelView: View {
                 Text(appState.statusLine)
                     .font(.footnote)
                     .foregroundColor(.secondary)
+                PermissionBanner(isGranted: appState.screenRecordingAuthorized)
+                Text(appState.permissionDebugLine)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -239,6 +243,25 @@ private struct StatusPill: View {
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(Capsule())
+    }
+}
+
+private struct PermissionBanner: View {
+    let isGranted: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(isGranted ? Color.green : Color.red)
+                .frame(width: 7, height: 7)
+            Text("Screen Recording: \(isGranted ? "Granted" : "Not granted")")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background(Color.secondary.opacity(0.08))
         .clipShape(Capsule())
     }

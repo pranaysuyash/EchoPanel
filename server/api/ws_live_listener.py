@@ -65,7 +65,10 @@ async def ws_live_listener(websocket: WebSocket) -> None:
 
     try:
         while True:
-            message = await websocket.receive()
+            try:
+                message = await websocket.receive()
+            except RuntimeError:
+                break
             if "text" in message and message["text"] is not None:
                 payload: Dict[str, Any] = json.loads(message["text"])
                 msg_type = payload.get("type")

@@ -30,13 +30,25 @@ Optional local ASR:
 ### Stable dev build (avoid repeated permission prompts)
 ```sh
 scripts/build-dev-app.sh
-~/Applications/MeetingListenerApp-Dev
+open ~/Applications/MeetingListenerApp-Dev.app
+```
+
+### Build a proper .app bundle (recommended for permissions)
+```sh
+scripts/build-app-bundle.sh
+open ~/Applications/MeetingListenerApp.app
 ```
 
 ### Build and launch dev app
 ```sh
 scripts/run-dev-app.sh
 ```
+
+### Run backend + app together (recommended)
+```sh
+scripts/run-dev-all.sh
+```
+This builds the app bundle, starts the backend, and launches the app.
 
 ### Start backend server (dev)
 ```sh
@@ -60,3 +72,21 @@ See `docs/VISUAL_TESTING.md`.
   - Sends `start`
   - Streams 20 ms PCM frames (640 bytes each)
   - Sends `stop`
+
+## Troubleshooting
+### Screen Recording permission keeps prompting
+Use the app bundle flow so macOS attributes permission to the app, not the shell.
+```sh
+pkill -f MeetingListenerApp || true
+tccutil reset ScreenCapture
+scripts/build-app-bundle.sh
+open ~/Applications/MeetingListenerApp.app
+```
+Then toggle the app in System Settings:
+`System Settings -> Privacy & Security -> Screen & System Audio Recording`.
+
+### App shows "Could not connect to the server"
+Start the backend in another terminal or use the combined script:
+```sh
+scripts/run-dev-all.sh
+```

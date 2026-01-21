@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -11,6 +12,8 @@ final class AppState: ObservableObject {
     @Published var audioQuality: AudioQuality = .unknown
     @Published var streamStatus: StreamStatus = .reconnecting
     @Published var statusMessage: String = ""
+    @Published var screenRecordingAuthorized: Bool = CGPreflightScreenCaptureAccess()
+    @Published var permissionDebugLine: String = ""
 
     @Published var transcriptSegments: [TranscriptSegment] = []
     @Published var actions: [ActionItem] = []
@@ -25,11 +28,18 @@ final class AppState: ObservableObject {
     private var sessionStart: Date?
     private var sessionEnd: Date?
     private var timerCancellable: AnyCancellable?
+    private var permissionCancellable: AnyCancellable?
 
     private let audioCapture = AudioCaptureManager()
     private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
 
     init() {
+        refreshScreenRecordingStatus()
+        permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.refreshScreenRecordingStatus()
+            }
+
         audioCapture.onAudioQualityUpdate = { [weak self] quality in
             Task { @MainActor in self?.audioQuality = quality }
         }
@@ -97,8 +107,10 @@ final class AppState: ObservableObject {
         statusMessage = "Requesting permission"
 
         Task {
+            refreshScreenRecordingStatus()
             let granted = await audioCapture.requestPermission()
             guard granted else {
+                refreshScreenRecordingStatus()
                 sessionState = .error
                 statusMessage = "Screen Recording permission required"
                 return
@@ -315,6 +327,15 @@ final class AppState: ObservableObject {
                 transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence))
             }
         }
+    }
+
+    private func refreshScreenRecordingStatus() {
+        screenRecordingAuthorized = CGPreflightScreenCaptureAccess()
+        let bundleID = Bundle.main.bundleIdentifier ?? "none"
+        let processName = ProcessInfo.processInfo.processName
+        let bundlePath = Bundle.main.bundleURL.path
+        let isAppBundle = bundlePath.hasSuffix(".app")
+        permissionDebugLine = "Bundle \(bundleID) · Process \(processName) · \(isAppBundle ? "App" : "Binary")"
     }
 }
 
