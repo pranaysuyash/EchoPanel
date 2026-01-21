@@ -60,6 +60,45 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
+      targets: "[data-hero-panel]",
+      translateY: [0, -6],
+      direction: "alternate",
+      easing: "easeInOutSine",
+      duration: 2400,
+      loop: true,
+    });
+
+    anime({
+      targets: "[data-hero-bar]",
+      translateY: [0, -4],
+      direction: "alternate",
+      easing: "easeInOutSine",
+      duration: 2000,
+      delay: 300,
+      loop: true,
+    });
+
+    anime({
+      targets: ".menu-dot.listening",
+      scale: [1, 1.25],
+      opacity: [0.7, 1],
+      direction: "alternate",
+      easing: "easeInOutSine",
+      duration: 1200,
+      loop: true,
+    });
+
+    anime({
+      targets: ".panel-card",
+      backgroundColor: ["#f9f6f1", "#ffffff"],
+      direction: "alternate",
+      easing: "easeInOutSine",
+      duration: 2800,
+      delay: anime.stagger(200),
+      loop: true,
+    });
+
+    anime({
       targets: ".value-card, .trust-card, .steps li",
       opacity: [0, 1],
       translateY: [12, 0],
