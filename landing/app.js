@@ -2,6 +2,8 @@ const WAITLIST_ENDPOINT = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exe
 
 const forms = document.querySelectorAll("[data-waitlist]");
 
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 async function submitWaitlist(form) {
   const status = form.querySelector("[data-form-status]");
   status.textContent = "Submitting…";
@@ -36,3 +38,88 @@ forms.forEach((form) => {
     submitWaitlist(form);
   });
 });
+
+if (!prefersReducedMotion && window.anime) {
+  window.addEventListener("load", () => {
+    anime({
+      targets: ".hero .tag, .hero h1, .hero p, .hero-bullets li, .hero-form",
+      translateY: [16, 0],
+      opacity: [0, 1],
+      delay: anime.stagger(80),
+      duration: 600,
+      easing: "easeOutQuad",
+    });
+
+    anime({
+      targets: ".panel, .menu-bar",
+      translateY: [20, 0],
+      opacity: [0, 1],
+      delay: 300,
+      duration: 700,
+      easing: "easeOutQuart",
+    });
+
+    anime({
+      targets: ".value-card, .trust-card, .steps li",
+      opacity: [0, 1],
+      translateY: [12, 0],
+      delay: anime.stagger(90, { start: 400 }),
+      duration: 500,
+      easing: "easeOutQuad",
+    });
+
+    const nodes = document.querySelectorAll("[data-flow-node]");
+    const cards = document.querySelectorAll("[data-flow-card]");
+    const progress = document.querySelector("[data-flow-progress]");
+    const head = document.querySelector("[data-flow-head]");
+    const track = document.querySelector("[data-flow-track]");
+    let flowTimeline;
+
+    function setupFlow() {
+      if (!nodes.length || !cards.length || !progress || !head || !track) {
+        return;
+      }
+      if (flowTimeline) {
+        flowTimeline.pause();
+      }
+      const trackRect = track.getBoundingClientRect();
+      const positions = Array.from(nodes).map((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.left - trackRect.left + rect.width / 2;
+      });
+
+      flowTimeline = anime.timeline({
+        loop: true,
+        autoplay: true,
+      });
+
+      positions.forEach((x, index) => {
+        flowTimeline.add(
+          {
+            targets: head,
+            translateX: x,
+            duration: 600,
+            easing: "easeInOutQuad",
+            update: () => {
+              progress.style.width = `${x}px`;
+            },
+            begin: () => {
+              nodes.forEach((n) => n.classList.remove("active"));
+              cards.forEach((c) => c.classList.remove("active"));
+              nodes[index].classList.add("active");
+              if (cards[index]) {
+                cards[index].classList.add("active");
+              }
+            },
+          },
+          index === 0 ? 0 : "+=600"
+        );
+      });
+    }
+
+    setupFlow();
+    window.addEventListener("resize", () => {
+      setupFlow();
+    });
+  });
+}

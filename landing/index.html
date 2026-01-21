@@ -173,6 +173,45 @@
         </ol>
       </section>
 
+      <section class="section flow" id="flow">
+        <div class="section-header">
+          <h2>Live flow, end to end</h2>
+          <p>See the whole loop from menu bar toggle to exportable outputs.</p>
+        </div>
+        <div class="flow-track" data-flow-track>
+          <div class="flow-line"></div>
+          <div class="flow-progress" data-flow-progress></div>
+          <div class="flow-node active" data-flow-node>Start listening</div>
+          <div class="flow-node" data-flow-node>Stream audio</div>
+          <div class="flow-node" data-flow-node>ASR partials</div>
+          <div class="flow-node" data-flow-node>Cards & entities</div>
+          <div class="flow-node" data-flow-node>Export notes</div>
+          <div class="flow-playhead" data-flow-head></div>
+        </div>
+        <div class="flow-cards">
+          <div class="flow-card active" data-flow-card>
+            <h3>Start in the menu bar</h3>
+            <p>One click triggers permission checks and opens the side panel.</p>
+          </div>
+          <div class="flow-card" data-flow-card>
+            <h3>Stream system audio</h3>
+            <p>Audio is captured locally and streamed as PCM16 for low latency.</p>
+          </div>
+          <div class="flow-card" data-flow-card>
+            <h3>Transcript arrives live</h3>
+            <p>Partials appear quickly and resolve into final segments with timestamps.</p>
+          </div>
+          <div class="flow-card" data-flow-card>
+            <h3>Actions & entities update</h3>
+            <p>Cards refresh on cadence while entities track people, orgs, and projects.</p>
+          </div>
+          <div class="flow-card" data-flow-card>
+            <h3>Export instantly</h3>
+            <p>Copy Markdown or export JSON the moment the meeting ends.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="section trust" id="trust">
         <div class="section-header">
           <h2>Built for trust and transparency</h2>
@@ -227,6 +266,7 @@
       </footer>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

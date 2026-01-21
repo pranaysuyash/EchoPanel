@@ -372,6 +372,94 @@ input:focus {
   border: 1px solid var(--border);
 }
 
+.flow {
+  background: var(--panel-strong);
+  border-radius: var(--radius-lg);
+  padding: 48px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.flow-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  padding: 28px 0 10px;
+  margin-top: 20px;
+}
+
+.flow-line {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(31, 31, 28, 0.12);
+}
+
+.flow-progress {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  height: 2px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), rgba(31, 111, 235, 0.2));
+}
+
+.flow-node {
+  background: #f9f6f1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--muted);
+  position: relative;
+  z-index: 1;
+}
+
+.flow-node.active {
+  color: var(--ink);
+  border-color: rgba(31, 111, 235, 0.35);
+  box-shadow: 0 6px 16px rgba(31, 111, 235, 0.15);
+}
+
+.flow-playhead {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 18px rgba(31, 111, 235, 0.4);
+  transform: translateX(-6px);
+}
+
+.flow-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.flow-card {
+  background: #fdfbf8;
+  border-radius: var(--radius-md);
+  padding: 18px;
+  border: 1px solid var(--border);
+  opacity: 0.6;
+  transform: translateY(8px);
+}
+
+.flow-card.active {
+  opacity: 1;
+  transform: translateY(0);
+  border-color: rgba(31, 111, 235, 0.2);
+  box-shadow: 0 12px 24px rgba(31, 111, 235, 0.1);
+}
+
 .waitlist-card {
   background: var(--panel-strong);
   border-radius: var(--radius-md);
@@ -411,6 +499,10 @@ input:focus {
     padding: 28px;
   }
 
+  .flow {
+    padding: 28px;
+  }
+
   .footer {
     flex-direction: column;
     gap: 12px;
@@ -438,5 +530,16 @@ input:focus {
 
   .panel-footer {
     flex-wrap: wrap;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .flow-line,
+  .flow-progress,
+  .flow-playhead {
+    display: none;
   }
 }
