@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import platform
 from collections.abc import AsyncIterator
 from typing import Optional
 
@@ -24,8 +25,12 @@ def _get_model() -> Optional["WhisperModel"]:
         return None
     if _MODEL is None:
         model_size = os.getenv("ECHOPANEL_WHISPER_MODEL", "base")
-        device = os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto")
-        compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8_float16")
+        device = os.getenv("ECHOPANEL_WHISPER_DEVICE")
+        if device is None:
+            device = "metal" if platform.system() == "Darwin" else "auto"
+        compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE")
+        if compute_type is None:
+            compute_type = "int8_float16" if device == "metal" else "int8"
         _MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
     return _MODEL
 
@@ -39,7 +44,7 @@ async def stream_asr(pcm_stream: AsyncIterator[bytes], sample_rate: int = 16000)
     """
 
     bytes_per_sample = 2
-    chunk_seconds = 5
+    chunk_seconds = int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "4"))
     chunk_bytes = sample_rate * chunk_seconds * bytes_per_sample
     buffer = bytearray()
     samples_seen = 0
@@ -88,6 +93,14 @@ async def stream_asr(pcm_stream: AsyncIterator[bytes], sample_rate: int = 16000)
             text = segment.text.strip()
             if not text:
                 continue
+            yield {
+                "type": "asr_partial",
+                "t0": segment.start,
+                "t1": segment.end,
+                "text": text,
+                "stable": False,
+                "confidence": 0.7,
+            }
             yield {
                 "type": "asr_final",
                 "t0": segment.start,

@@ -50,6 +50,11 @@ scripts/run-dev-all.sh
 ```
 This builds the app bundle, starts the backend, and launches the app.
 
+To enable local ASR output (required for live transcripts):
+```sh
+scripts/run-dev-all.sh --asr
+```
+
 ### Start backend server (dev)
 ```sh
 scripts/run-dev-stack.sh

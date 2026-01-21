@@ -4,6 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
 APP_BUNDLE="$HOME/Applications/MeetingListenerApp.app"
+ENABLE_ASR=0
+
+for arg in "$@"; do
+  if [[ "$arg" == "--asr" ]]; then
+    ENABLE_ASR=1
+  fi
+done
 
 if [[ ! -d "$VENV_DIR" ]]; then
   echo "Missing venv at $VENV_DIR"
@@ -12,6 +19,21 @@ if [[ ! -d "$VENV_DIR" ]]; then
 fi
 
 source "$VENV_DIR/bin/activate"
+
+if [[ "$ENABLE_ASR" -eq 1 ]]; then
+  echo "Installing ASR extras..."
+  uv pip install -e ".[asr]"
+  export ECHOPANEL_WHISPER_MODEL="${ECHOPANEL_WHISPER_MODEL:-base}"
+  if [[ -z "${ECHOPANEL_WHISPER_DEVICE:-}" ]]; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      export ECHOPANEL_WHISPER_DEVICE="metal"
+      export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8_float16}"
+    else
+      export ECHOPANEL_WHISPER_DEVICE="auto"
+      export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8}"
+    fi
+  fi
+fi
 
 echo "Building app bundle..."
 "$ROOT_DIR/scripts/build-app-bundle.sh"

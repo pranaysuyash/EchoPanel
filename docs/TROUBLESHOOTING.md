@@ -36,4 +36,5 @@ Checks:
 - Backend is receiving binary PCM frames (20 ms frames, 640 bytes).
 - Client sent `start` before sending binary frames.
 - Verify sample rate and format match the contract.
-
+- If running locally, ensure ASR extras are installed and enabled:
+  - `scripts/run-dev-all.sh --asr`
