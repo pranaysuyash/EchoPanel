@@ -108,14 +108,13 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     const nodes = document.querySelectorAll("[data-flow-node]");
-    const cards = document.querySelectorAll("[data-flow-card]");
     const progress = document.querySelector("[data-flow-progress]");
     const head = document.querySelector("[data-flow-head]");
     const track = document.querySelector("[data-flow-track]");
     let flowTimeline;
 
     function setupFlow() {
-      if (!nodes.length || !cards.length || !progress || !head || !track) {
+      if (!nodes.length || !progress || !head || !track) {
         return;
       }
       if (flowTimeline) {
@@ -144,11 +143,7 @@ if (!prefersReducedMotion && window.anime) {
             },
             begin: () => {
               nodes.forEach((n) => n.classList.remove("active"));
-              cards.forEach((c) => c.classList.remove("active"));
               nodes[index].classList.add("active");
-              if (cards[index]) {
-                cards[index].classList.add("active");
-              }
             },
           },
           index === 0 ? 0 : "+=600"

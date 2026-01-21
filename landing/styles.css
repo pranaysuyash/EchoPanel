@@ -453,12 +453,6 @@ input:focus {
   transform: translateY(8px);
 }
 
-.flow-card.active {
-  opacity: 1;
-  transform: translateY(0);
-  border-color: rgba(31, 111, 235, 0.2);
-  box-shadow: 0 12px 24px rgba(31, 111, 235, 0.1);
-}
 
 .waitlist-card {
   background: var(--panel-strong);
