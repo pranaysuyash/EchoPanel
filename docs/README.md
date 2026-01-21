@@ -6,6 +6,9 @@
 - `docs/UI.md`
 - `docs/UX.md`
 - `docs/GLOSSARY.md`
+- `docs/MARKETING.md`
+- `docs/PRICING.md`
+- `docs/GTM.md`
 
 ## Protocol and Architecture
 - `docs/WS_CONTRACT.md`
