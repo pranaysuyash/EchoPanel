@@ -11,6 +11,8 @@ final class WebSocketStreamer: NSObject {
     private let session = URLSession(configuration: .default)
     private var task: URLSessionWebSocketTask?
     private var url: URL
+    private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
+    private var pingTimer: Timer?
 
     private var sessionID: String?
     private var reconnectDelay: TimeInterval = 1
@@ -27,8 +29,14 @@ final class WebSocketStreamer: NSObject {
         task?.cancel(with: .goingAway, reason: nil)
         task = session.webSocketTask(with: url)
         task?.resume()
-        sendStart()
         receiveLoop()
+        schedulePing()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.sendStart()
+        }
+        if debugEnabled {
+            NSLog("WebSocketStreamer: connect \(url.absoluteString)")
+        }
     }
 
     func disconnect() {
@@ -36,6 +44,10 @@ final class WebSocketStreamer: NSObject {
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         sessionID = nil
+        stopPing()
+        if debugEnabled {
+            NSLog("WebSocketStreamer: disconnect")
+        }
     }
 
     func sendPCMFrame(_ data: Data) {
@@ -46,6 +58,9 @@ final class WebSocketStreamer: NSObject {
 
     private func sendStart() {
         guard let sessionID else { return }
+        if debugEnabled {
+            NSLog("WebSocketStreamer: send start")
+        }
         let payload: [String: Any] = [
             "type": "start",
             "session_id": sessionID,
@@ -58,6 +73,9 @@ final class WebSocketStreamer: NSObject {
 
     private func sendStop() {
         guard let sessionID else { return }
+        if debugEnabled {
+            NSLog("WebSocketStreamer: send stop")
+        }
         let payload: [String: Any] = [
             "type": "stop",
             "session_id": sessionID
@@ -201,6 +219,9 @@ final class WebSocketStreamer: NSObject {
     }
 
     private func handleError(_ error: Error) {
+        if debugEnabled {
+            NSLog("WebSocketStreamer: error %@", error.localizedDescription)
+        }
         onStatus?(.reconnecting, error.localizedDescription)
         reconnect()
     }
@@ -209,6 +230,7 @@ final class WebSocketStreamer: NSObject {
         guard let sessionID else { return }
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        stopPing()
 
         let delay = min(reconnectDelay, maxReconnectDelay)
         reconnectDelay = min(reconnectDelay * 2, maxReconnectDelay)
@@ -218,5 +240,21 @@ final class WebSocketStreamer: NSObject {
             self.connect(sessionID: sessionID)
         }
     }
-}
 
+    private func schedulePing() {
+        stopPing()
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.task?.sendPing { error in
+                if let error {
+                    self.handleError(error)
+                }
+            }
+        }
+    }
+
+    private func stopPing() {
+        pingTimer?.invalidate()
+        pingTimer = nil
+    }
+}
