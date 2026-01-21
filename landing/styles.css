@@ -295,7 +295,13 @@ input:focus {
 .panel-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+}
+
+.panel-column {
+  display: grid;
+  gap: 8px;
+  align-content: start;
 }
 
 .panel-column h4 {
@@ -541,6 +547,12 @@ input:focus {
   .footer {
     flex-direction: column;
     gap: 12px;
+  }
+}
+
+@media (min-width: 980px) {
+  .hero-grid {
+    grid-template-columns: 1fr 1.1fr;
   }
 }
 
