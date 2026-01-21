@@ -50,9 +50,10 @@ scripts/run-dev-all.sh
 ```
 This builds the app bundle, starts the backend, and launches the app.
 
-To enable local ASR output (required for live transcripts):
+Local ASR output is enabled by default for live transcripts.
+Disable with:
 ```sh
-scripts/run-dev-all.sh --asr
+scripts/run-dev-all.sh --no-asr
 ```
 
 To enable diarization (requires Hugging Face token):

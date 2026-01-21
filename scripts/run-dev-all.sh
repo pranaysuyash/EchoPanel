@@ -4,12 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
 APP_BUNDLE="$HOME/Applications/MeetingListenerApp.app"
-ENABLE_ASR=0
+ENABLE_ASR=1
 ENABLE_DIARIZATION=0
 
 for arg in "$@"; do
-  if [[ "$arg" == "--asr" ]]; then
-    ENABLE_ASR=1
+  if [[ "$arg" == "--no-asr" ]]; then
+    ENABLE_ASR=0
   elif [[ "$arg" == "--diarization" ]]; then
     ENABLE_DIARIZATION=1
   fi
