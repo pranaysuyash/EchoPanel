@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppState: ObservableObject {
@@ -20,6 +21,8 @@ final class AppState: ObservableObject {
     @Published var finalSummaryJSON: [String: Any] = [:]
 
     private var sessionID: String?
+    private var sessionStart: Date?
+    private var sessionEnd: Date?
     private var timerCancellable: AnyCancellable?
 
     private let audioCapture = AudioCaptureManager()
@@ -96,6 +99,8 @@ final class AppState: ObservableObject {
 
             let id = UUID().uuidString
             sessionID = id
+            sessionStart = Date()
+            sessionEnd = nil
 
             do {
                 try await audioCapture.startCapture()
@@ -117,6 +122,7 @@ final class AppState: ObservableObject {
         guard sessionState == .listening || sessionState == .starting else { return }
         sessionState = .finalizing
         stopTimer()
+        sessionEnd = Date()
 
         Task {
             await audioCapture.stopCapture()
@@ -136,12 +142,31 @@ final class AppState: ObservableObject {
         finalSummaryMarkdown = ""
         finalSummaryJSON = [:]
         sessionID = nil
+        sessionStart = nil
+        sessionEnd = nil
     }
 
     func copyMarkdownToClipboard() {
         let markdown = finalSummaryMarkdown.isEmpty ? renderLiveMarkdown() : finalSummaryMarkdown
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(markdown, forType: .string)
+    }
+
+    func exportJSON() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "echopanel-session.json"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let payload = self.exportPayload()
+            do {
+                let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: url)
+            } catch {
+                NSLog("Export JSON failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     private func renderLiveMarkdown() -> String {
@@ -165,6 +190,63 @@ final class AppState: ObservableObject {
         lines.append("## Entities")
         for entity in entities { lines.append("- \(entity.name) (\(entity.type))") }
         return lines.joined(separator: "\n")
+    }
+
+    private func exportPayload() -> [String: Any] {
+        let transcript = transcriptSegments.map { segment in
+            [
+                "t0": segment.t0,
+                "t1": segment.t1,
+                "text": segment.text,
+                "is_final": segment.isFinal,
+                "confidence": segment.confidence
+            ]
+        }
+        let actionsPayload = actions.map { item in
+            [
+                "text": item.text,
+                "owner": item.owner as Any,
+                "due": item.due as Any,
+                "confidence": item.confidence
+            ]
+        }
+        let decisionsPayload = decisions.map { item in
+            [
+                "text": item.text,
+                "confidence": item.confidence
+            ]
+        }
+        let risksPayload = risks.map { item in
+            [
+                "text": item.text,
+                "confidence": item.confidence
+            ]
+        }
+        let entitiesPayload = entities.map { item in
+            [
+                "name": item.name,
+                "type": item.type,
+                "last_seen": item.lastSeen,
+                "confidence": item.confidence
+            ]
+        }
+
+        return [
+            "session": [
+                "session_id": sessionID as Any,
+                "started_at": sessionStart?.iso8601 as Any,
+                "ended_at": sessionEnd?.iso8601 as Any
+            ],
+            "transcript": transcript,
+            "actions": actionsPayload,
+            "decisions": decisionsPayload,
+            "risks": risksPayload,
+            "entities": entitiesPayload,
+            "final_summary": [
+                "markdown": finalSummaryMarkdown,
+                "json": finalSummaryJSON
+            ]
+        ]
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -206,5 +288,11 @@ final class AppState: ObservableObject {
         } else {
             transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence))
         }
+    }
+}
+
+private extension Date {
+    var iso8601: String {
+        ISO8601DateFormatter().string(from: self)
     }
 }
