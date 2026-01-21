@@ -12,7 +12,6 @@ final class AudioCaptureManager: NSObject {
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
     private let sampleHandler = AudioSampleHandler()
-    private let screenHandler = ScreenSampleHandler()
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
     private var pcmRemainder: [Int16] = []
@@ -55,7 +54,7 @@ final class AudioCaptureManager: NSObject {
         let stream = SCStream(filter: filter, configuration: configuration, delegate: sampleHandler)
         self.stream = stream
 
-        try stream.addStreamOutput(screenHandler, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
+        try stream.addStreamOutput(sampleHandler, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
         try stream.addStreamOutput(sampleHandler, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
         try await stream.startCapture()
         onAudioQualityUpdate?(.ok)
@@ -233,12 +232,6 @@ final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio else { return }
         onAudioSampleBuffer?(sampleBuffer)
-    }
-}
-
-final class ScreenSampleHandler: NSObject, SCStreamOutput {
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        // Intentionally ignored. This keeps the video queue alive without processing frames.
     }
 }
 
