@@ -1,0 +1,377 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.MeetingListenerApp-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/sources",
+      "importPath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AppState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/Models.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "MeetingListenerApp",
+      "moduleOutputPath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/Modules/MeetingListenerApp.swiftmodule",
+      "objects" : [
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AppState.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AudioCaptureManager.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/MeetingListenerApp.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/Models.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelController.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelView.swift.o",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/WebSocketStreamer.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "MeetingListenerApp_main",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "meetinglistenerapp"
+      ],
+      "outputFileMapPath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AppState.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AudioCaptureManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/MeetingListenerApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/Models.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/WebSocketStreamer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/Modules/MeetingListenerApp.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AppState.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/Models.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelController.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelView.swift",
+        "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift"
+      ],
+      "tempsPath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "MeetingListenerApp" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "MeetingListenerApp",
+      "-package-name",
+      "meetinglistenerapp",
+      "-c",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AppState.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/Models.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelController.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelView.swift",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift",
+      "-I",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "MeetingListenerApp_main",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "meetinglistenerapp",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "MeetingListenerApp" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp-entitlement.plist"
+    },
+    "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AppState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/Models.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/SidePanelView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/sources"
+    },
+    "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AppState.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/AudioCaptureManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/MeetingListenerApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/Models.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/SidePanelView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.build/WebSocketStreamer.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/MeetingListenerApp.product/Objects.LinkFileList"
+    },
+    "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}
