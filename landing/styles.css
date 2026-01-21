@@ -197,6 +197,43 @@ input:focus {
   z-index: 1;
 }
 
+.hero-mesh {
+  position: absolute;
+  inset: -40px -40px auto -40px;
+  height: 360px;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(30px);
+}
+
+.mesh-orb {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background: radial-gradient(circle, rgba(31, 111, 235, 0.35), rgba(31, 111, 235, 0));
+}
+
+.mesh-orb.orb-one {
+  top: 10px;
+  left: 40px;
+  background: radial-gradient(circle, rgba(31, 111, 235, 0.4), rgba(31, 111, 235, 0));
+}
+
+.mesh-orb.orb-two {
+  top: 120px;
+  right: 60px;
+  background: radial-gradient(circle, rgba(255, 180, 120, 0.35), rgba(255, 180, 120, 0));
+}
+
+.mesh-orb.orb-three {
+  top: 40px;
+  right: 200px;
+  background: radial-gradient(circle, rgba(90, 200, 250, 0.3), rgba(90, 200, 250, 0));
+}
+
 .menu-bar {
   display: inline-flex;
   align-items: center;
@@ -207,6 +244,8 @@ input:focus {
   border: 1px solid var(--border);
   width: fit-content;
   backdrop-filter: blur(12px);
+  position: relative;
+  z-index: 1;
 }
 
 .menu-dot {
@@ -225,15 +264,17 @@ input:focus {
   background: var(--panel-strong);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  padding: 20px;
+  padding: 16px;
   box-shadow: var(--shadow);
+  position: relative;
+  z-index: 1;
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .panel-title {
@@ -253,19 +294,19 @@ input:focus {
 
 .panel-grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .panel-column h4 {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 14px;
 }
 
 .panel-card {
   background: #f9f6f1;
   border-radius: var(--radius-sm);
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--border);
   font-size: 13px;
 }
@@ -273,7 +314,7 @@ input:focus {
 .line {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .line.faint {
@@ -294,7 +335,7 @@ input:focus {
 .panel-footer {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .ghost {
