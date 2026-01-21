@@ -34,6 +34,11 @@ struct SidePanelView: View {
                 Text(appState.permissionDebugLine)
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                if !appState.debugLine.isEmpty {
+                    Text(appState.debugLine)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
             HStack(spacing: 6) {

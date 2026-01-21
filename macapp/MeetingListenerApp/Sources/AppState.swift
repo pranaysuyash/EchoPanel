@@ -14,6 +14,7 @@ final class AppState: ObservableObject {
     @Published var statusMessage: String = ""
     @Published var screenRecordingAuthorized: Bool = CGPreflightScreenCaptureAccess()
     @Published var permissionDebugLine: String = ""
+    @Published var debugLine: String = ""
 
     @Published var transcriptSegments: [TranscriptSegment] = []
     @Published var actions: [ActionItem] = []
@@ -32,6 +33,9 @@ final class AppState: ObservableObject {
 
     private let audioCapture = AudioCaptureManager()
     private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
+    private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
+    private var debugSamples: Int = 0
+    private var debugBytes: Int = 0
 
     init() {
         refreshScreenRecordingStatus()
@@ -40,10 +44,22 @@ final class AppState: ObservableObject {
                 self?.refreshScreenRecordingStatus()
             }
 
+        audioCapture.onSampleCount = { [weak self] sampleCount in
+            Task { @MainActor in
+                self?.debugSamples = sampleCount
+                self?.updateDebugLine()
+            }
+        }
         audioCapture.onAudioQualityUpdate = { [weak self] quality in
             Task { @MainActor in self?.audioQuality = quality }
         }
         audioCapture.onPCMFrame = { [weak self] frame in
+            if let self {
+                self.debugBytes += frame.count
+                if self.debugEnabled {
+                    Task { @MainActor in self.updateDebugLine() }
+                }
+            }
             self?.streamer.sendPCMFrame(frame)
         }
 
@@ -336,6 +352,15 @@ final class AppState: ObservableObject {
         let bundlePath = Bundle.main.bundleURL.path
         let isAppBundle = bundlePath.hasSuffix(".app")
         permissionDebugLine = "Bundle \(bundleID) · Process \(processName) · \(isAppBundle ? "App" : "Binary")"
+    }
+
+    private func updateDebugLine() {
+        guard debugEnabled else {
+            debugLine = ""
+            return
+        }
+        let bytes = ByteCountFormatter.string(fromByteCount: Int64(debugBytes), countStyle: .file)
+        debugLine = "Debug: \(debugSamples) samples · \(bytes) sent"
     }
 }
 

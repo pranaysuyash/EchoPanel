@@ -7,6 +7,7 @@ import ScreenCaptureKit
 final class AudioCaptureManager: NSObject {
     var onPCMFrame: ((Data) -> Void)?
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
+    var onSampleCount: ((Int) -> Void)?
 
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
@@ -144,6 +145,7 @@ final class AudioCaptureManager: NSObject {
                 NSLog("AudioCaptureManager: received %d samples", totalSamples)
             }
         }
+        onSampleCount?(totalSamples)
 
         updateAudioQuality(samples: samples, count: frameCount)
         emitPCMFrames(samples: samples, count: frameCount)

@@ -41,6 +41,7 @@ Checks:
 - Enable debug logs to confirm PCM and ASR activity:
   - `export ECHOPANEL_DEBUG=1`
   - `scripts/run-dev-all.sh`
+  - Look for `Debug: ... samples ... sent` in the panel header.
   - Look for `AudioCaptureManager: received` and `ws_live_listener: received` logs.
 
 ## Diarization not showing in outputs
