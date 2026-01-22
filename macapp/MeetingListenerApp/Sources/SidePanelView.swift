@@ -41,6 +41,29 @@ struct SidePanelView: View {
                 }
             }
             Spacer()
+            
+            // Audio Source Picker (v0.2)
+            VStack(alignment: .trailing, spacing: 4) {
+                Picker("Source", selection: $appState.audioSource) {
+                    ForEach(AppState.AudioSource.allCases, id: \.self) { source in
+                        Text(source.rawValue).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+                .disabled(appState.sessionState == .listening)
+                
+                // Dual Level Meters
+                HStack(spacing: 8) {
+                    if appState.audioSource == .system || appState.audioSource == .both {
+                        AudioLevelMeter(label: "Sys", level: appState.systemAudioLevel)
+                    }
+                    if appState.audioSource == .microphone || appState.audioSource == .both {
+                        AudioLevelMeter(label: "Mic", level: appState.microphoneAudioLevel)
+                    }
+                }
+            }
+            
             HStack(spacing: 6) {
                 StatusPill(label: appState.sessionState == .listening ? "Listening" : "Idle",
                            color: appState.sessionState == .listening ? .green : .gray)
@@ -415,3 +438,43 @@ private struct EmptyStateRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
+
+// v0.2: Audio Level Meter
+private struct AudioLevelMeter: View {
+    let label: String
+    let level: Float // 0.0 to 1.0 (EMA)
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(width: 24, alignment: .trailing)
+            
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background track
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.secondary.opacity(0.15))
+                    
+                    // Level bar
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(levelColor)
+                        .frame(width: max(2, CGFloat(level) * geometry.size.width))
+                }
+            }
+            .frame(width: 60, height: 6)
+        }
+    }
+    
+    private var levelColor: Color {
+        if level > 0.8 {
+            return .red // Clipping
+        } else if level > 0.3 {
+            return .green // Good level
+        } else {
+            return .yellow // Low level
+        }
+    }
+}
+

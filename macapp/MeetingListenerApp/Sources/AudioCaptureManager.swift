@@ -5,7 +5,7 @@ import QuartzCore
 import ScreenCaptureKit
 
 final class AudioCaptureManager: NSObject {
-    var onPCMFrame: ((Data) -> Void)?
+    var onPCMFrame: ((Data, String) -> Void)? // (frame, source="system")
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
     var onSampleCount: ((Int) -> Void)?
     var onScreenFrameCount: ((Int) -> Void)?
@@ -207,7 +207,7 @@ final class AudioCaptureManager: NSObject {
         while index + frameSize <= pcmSamples.count {
             let slice = Array(pcmSamples[index..<index + frameSize])
             let data = slice.withUnsafeBufferPointer { Data(buffer: $0) }
-            onPCMFrame?(data)
+            onPCMFrame?(data, "system")
             index += frameSize
         }
 

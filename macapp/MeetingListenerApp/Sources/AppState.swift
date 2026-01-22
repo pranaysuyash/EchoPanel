@@ -13,6 +13,12 @@ final class AppState: ObservableObject {
         case authorized
         case denied
     }
+    
+    enum AudioSource: String, CaseIterable {
+        case system = "System Audio"
+        case microphone = "Microphone"
+        case both = "Both"
+    }
 
     @Published var sessionState: SessionState = .idle
     @Published var elapsedSeconds: Int = 0
@@ -23,6 +29,11 @@ final class AppState: ObservableObject {
     // Permission Tracking
     @Published var screenRecordingPermission: PermissionState = .unknown
     @Published var microphonePermission: PermissionState = .unknown
+    
+    // Audio Source Selection (v0.2)
+    @Published var audioSource: AudioSource = .both
+    @Published var systemAudioLevel: Float = 0
+    @Published var microphoneAudioLevel: Float = 0
     
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
@@ -43,6 +54,7 @@ final class AppState: ObservableObject {
     private var permissionCancellable: AnyCancellable?
 
     private let audioCapture = AudioCaptureManager()
+    private let micCapture = MicrophoneCaptureManager()
     private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var debugSamples: Int = 0
@@ -71,15 +83,26 @@ final class AppState: ObservableObject {
         audioCapture.onAudioQualityUpdate = { [weak self] quality in
             Task { @MainActor in self?.audioQuality = quality }
         }
-        audioCapture.onPCMFrame = { [weak self] frame in
-            NSLog("🔊 onPCMFrame callback triggered: %d bytes", frame.count)
+        audioCapture.onPCMFrame = { [weak self] frame, source in
+            NSLog("🔊 onPCMFrame callback triggered: %d bytes, source: %@", frame.count, source)
             if let self {
                 self.debugBytes += frame.count
                 if self.debugEnabled {
                     Task { @MainActor in self.updateDebugLine() }
                 }
             }
-            self?.streamer.sendPCMFrame(frame)
+            self?.streamer.sendPCMFrame(frame, source: source)
+        }
+        
+        // Mic capture callbacks (v0.2)
+        micCapture.onPCMFrame = { [weak self] frame, source in
+            if let self {
+                self.debugBytes += frame.count
+            }
+            self?.streamer.sendPCMFrame(frame, source: source)
+        }
+        micCapture.onAudioLevelUpdate = { [weak self] level in
+            Task { @MainActor in self?.microphoneAudioLevel = level }
         }
 
         streamer.onStatus = { [weak self] status, message in
@@ -172,12 +195,30 @@ final class AppState: ObservableObject {
             sessionStart = Date()
             sessionEnd = nil
 
-            do {
-                try await audioCapture.startCapture()
-            } catch {
-                sessionState = .error
-                statusMessage = "Capture failed: \(error.localizedDescription)"
-                return
+            // Start System Audio capture if needed
+            if audioSource == .system || audioSource == .both {
+                do {
+                    try await audioCapture.startCapture()
+                } catch {
+                    sessionState = .error
+                    statusMessage = "Capture failed: \(error.localizedDescription)"
+                    return
+                }
+            }
+            
+            // Start Mic capture if needed
+            if audioSource == .microphone || audioSource == .both {
+                do {
+                    try micCapture.startCapture()
+                } catch {
+                    sessionState = .error
+                    statusMessage = "Mic capture failed: \(error.localizedDescription)"
+                    // Stop system capture if it was started
+                    if audioSource == .both {
+                        await audioCapture.stopCapture()
+                    }
+                    return
+                }
             }
 
             streamStatus = .reconnecting
@@ -195,7 +236,12 @@ final class AppState: ObservableObject {
         sessionEnd = Date()
 
         Task {
-            await audioCapture.stopCapture()
+            if audioSource == .system || audioSource == .both {
+                await audioCapture.stopCapture()
+            }
+            if audioSource == .microphone || audioSource == .both {
+                micCapture.stopCapture()
+            }
             streamer.disconnect()
             sessionState = .idle
             statusMessage = ""

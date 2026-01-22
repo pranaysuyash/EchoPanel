@@ -50,10 +50,12 @@ final class WebSocketStreamer: NSObject {
         }
     }
 
-    func sendPCMFrame(_ data: Data) {
+    func sendPCMFrame(_ data: Data, source: String = "system") {
         if debugEnabled {
-            NSLog("📤 WebSocketStreamer sending PCM frame: %d bytes", data.count)
+            NSLog("📤 WebSocketStreamer sending PCM frame: %d bytes, source: %@", data.count, source)
         }
+        // TODO (v0.2): Change to JSON-based audio_frame with source tag
+        // For now, send raw binary for backward compatibility
         task?.send(.data(data)) { [weak self] error in
             if let error {
                 NSLog("❌ WebSocketStreamer send error: %@", error.localizedDescription)
