@@ -132,6 +132,16 @@ struct OnboardingView: View {
             Text("Click 'Open Settings' and add EchoPanel to the allowed apps.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            
+            // Gap reduction: Self-test button (plays sound)
+            Button {
+                NSSound.beep()
+            } label: {
+                Label("Test Audio System (Play Beep)", systemImage: "speaker.wave.3.fill")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .padding(.top, 4)
         }
     }
     

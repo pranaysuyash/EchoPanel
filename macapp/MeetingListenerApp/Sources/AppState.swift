@@ -135,11 +135,11 @@ final class AppState: ObservableObject {
                 self?.statusMessage = message
             }
         }
-        streamer.onASRPartial = { [weak self] text, t0, t1, confidence in
-            Task { @MainActor in self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence) }
+        streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
+            Task { @MainActor in self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source) }
         }
-        streamer.onASRFinal = { [weak self] text, t0, t1, confidence in
-            Task { @MainActor in self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence) }
+        streamer.onASRFinal = { [weak self] text, t0, t1, confidence, source in
+            Task { @MainActor in self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source) }
         }
         streamer.onCardsUpdate = { [weak self] actions, decisions, risks in
             Task { @MainActor in
@@ -488,22 +488,22 @@ final class AppState: ObservableObject {
         elapsedSeconds = 0
     }
 
-    private func handlePartial(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double) {
+    private func handlePartial(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
         withAnimation(.easeInOut(duration: 0.2)) {
             if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence)
+                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source)
             } else {
-                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence))
+                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source))
             }
         }
     }
 
-    private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double) {
+    private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
         withAnimation(.easeInOut(duration: 0.2)) {
             if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence)
+                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
             } else {
-                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence))
+                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source))
             }
         }
     }

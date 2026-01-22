@@ -2,8 +2,8 @@ import Foundation
 
 final class WebSocketStreamer: NSObject {
     var onStatus: ((StreamStatus, String) -> Void)?
-    var onASRPartial: ((String, TimeInterval, TimeInterval, Double) -> Void)?
-    var onASRFinal: ((String, TimeInterval, TimeInterval, Double) -> Void)?
+    var onASRPartial: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)? // + source
+    var onASRFinal: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)?   // + source
     var onCardsUpdate: (([ActionItem], [DecisionItem], [RiskItem]) -> Void)?
     var onEntitiesUpdate: (([EntityItem]) -> Void)?
     var onFinalSummary: ((String, [String: Any]) -> Void)?
@@ -145,14 +145,16 @@ final class WebSocketStreamer: NSObject {
             let t0 = (object["t0"] as? TimeInterval) ?? 0
             let t1 = (object["t1"] as? TimeInterval) ?? 0
             let confidence = (object["confidence"] as? Double) ?? 0.6
-            onASRPartial?(text, t0, t1, confidence)
+            let source = object["source"] as? String
+            onASRPartial?(text, t0, t1, confidence, source)
 
         case "asr_final":
             let text = (object["text"] as? String) ?? ""
             let t0 = (object["t0"] as? TimeInterval) ?? 0
             let t1 = (object["t1"] as? TimeInterval) ?? 0
             let confidence = (object["confidence"] as? Double) ?? 0.9
-            onASRFinal?(text, t0, t1, confidence)
+            let source = object["source"] as? String
+            onASRFinal?(text, t0, t1, confidence, source)
 
         case "cards_update":
             let actions = decodeActionItems(object["actions"])

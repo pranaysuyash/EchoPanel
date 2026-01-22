@@ -375,6 +375,14 @@ private struct TranscriptRow: View {
                 .monospacedDigit()
                 .foregroundColor(.secondary)
             VStack(alignment: .leading, spacing: 2) {
+                // Gap reduction: Pseudo-diarization label based on source
+                if let source = segment.source {
+                    Text(source == "microphone" ? "You" : "System")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(source == "microphone" ? .blue : .purple)
+                }
+                
                 Text(segment.text)
                     .font(.footnote)
                     .foregroundColor(textColor)

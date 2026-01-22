@@ -14,6 +14,13 @@
 - First-run onboarding wizard
 - Embedded backend (auto-start/stop)
 
+### De-risking & Quality
+- **Pseudo-diarization**: Live labels "You" vs "System" based on source
+- **Self-test**: "Test Audio" button in onboarding
+- **Trust**: "Needs review" labels for low-confidence
+- **Silence Detection**: Banner after 10s of no audio
+- **Recovery**: "Recover/Discard" prompts on launch
+
 ---
 
 ## 🔧 Pending Items
@@ -21,7 +28,6 @@
 ### High Priority
 | Item | Description | Effort |
 |------|-------------|--------|
-| **Test E2E flow** | Manually test full flow with all sources | 1h |
 | **Bundle Python runtime** | Package Python + deps for distribution | 4h |
 | **Model preloading** | Pre-download Whisper models on first launch | 2h |
 | **Error recovery** | Handle server crash gracefully in UI | 2h |
