@@ -30,7 +30,7 @@ struct SidePanelView: View {
                 Text(appState.statusLine)
                     .font(.footnote)
                     .foregroundColor(.secondary)
-                PermissionBanner(isGranted: appState.screenRecordingAuthorized)
+                PermissionBanner(appState: appState)
                 Text(appState.permissionDebugLine)
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -254,21 +254,55 @@ private struct StatusPill: View {
 }
 
 private struct PermissionBanner: View {
-    let isGranted: Bool
-
+    @ObservedObject var appState: AppState
+    
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(isGranted ? Color.green : Color.red)
-                .frame(width: 7, height: 7)
-            Text("Screen Recording: \(isGranted ? "Granted" : "Not granted")")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+        if appState.screenRecordingPermission == .denied || appState.microphonePermission == .denied {
+            VStack(alignment: .leading, spacing: 6) {
+                if appState.screenRecordingPermission == .denied {
+                    permissionRow(
+                        label: "Screen Recording Not Granted",
+                        url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+                    )
+                }
+                if appState.microphonePermission == .denied {
+                    permissionRow(
+                        label: "Microphone Not Granted",
+                        url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                    )
+                }
+            }
+            .padding(8)
+            .background(Color.red.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if appState.screenRecordingPermission == .authorized && appState.microphonePermission == .authorized {
+             // Optional: Show "All Systems Go" or keep minimal
+             HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 7, height: 7)
+                Text("Ready to Capture").font(.caption2).foregroundColor(.secondary)
+             }
+             .padding(.horizontal, 8).padding(.vertical, 4)
+             .background(Color.secondary.opacity(0.08)).clipShape(Capsule())
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(Capsule())
+    }
+    
+    private func permissionRow(label: String, url: String) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
+                .font(.caption)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.red)
+            Spacer()
+            Button("Open Settings") {
+                if let nsUrl = URL(string: url) {
+                    NSWorkspace.shared.open(nsUrl)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
     }
 }
 

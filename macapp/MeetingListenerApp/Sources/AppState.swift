@@ -7,12 +7,23 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppState: ObservableObject {
+    enum PermissionState {
+        case unknown
+        case nonInteractive // During init
+        case authorized
+        case denied
+    }
+
     @Published var sessionState: SessionState = .idle
     @Published var elapsedSeconds: Int = 0
     @Published var audioQuality: AudioQuality = .unknown
     @Published var streamStatus: StreamStatus = .reconnecting
     @Published var statusMessage: String = ""
-    @Published var screenRecordingAuthorized: Bool = CGPreflightScreenCaptureAccess()
+    
+    // Permission Tracking
+    @Published var screenRecordingPermission: PermissionState = .unknown
+    @Published var microphonePermission: PermissionState = .unknown
+    
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
 
@@ -132,11 +143,27 @@ final class AppState: ObservableObject {
 
         Task {
             refreshScreenRecordingStatus()
-            let granted = await audioCapture.requestPermission()
-            guard granted else {
-                refreshScreenRecordingStatus()
+            
+            // Check Screen Recording first
+            if screenRecordingPermission != .authorized {
+                // We can't request it programmatically in a nice way, but we can check
+                let granted = CGPreflightScreenCaptureAccess()
+                screenRecordingPermission = granted ? .authorized : .denied
+                
+                if !granted {
+                    sessionState = .error
+                    statusMessage = "Screen Recording permission required"
+                    return
+                }
+            }
+
+            // Request Microphone Permission (using AudioCaptureManager)
+            let micGranted = await audioCapture.requestPermission()
+            microphonePermission = micGranted ? .authorized : .denied
+            
+            guard micGranted else {
                 sessionState = .error
-                statusMessage = "Screen Recording permission required"
+                statusMessage = "Microphone permission required"
                 return
             }
 
@@ -354,7 +381,10 @@ final class AppState: ObservableObject {
     }
 
     private func refreshScreenRecordingStatus() {
-        screenRecordingAuthorized = CGPreflightScreenCaptureAccess()
+        let authorized = CGPreflightScreenCaptureAccess()
+        screenRecordingPermission = authorized ? .authorized : .denied
+        
+        // Debug info
         let bundleID = Bundle.main.bundleIdentifier ?? "none"
         let processName = ProcessInfo.processInfo.processName
         let bundlePath = Bundle.main.bundleURL.path

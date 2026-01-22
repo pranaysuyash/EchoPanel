@@ -21,9 +21,24 @@ This document is the source of truth for the client/server WebSocket protocol be
 - Encoding: PCM signed 16-bit little-endian (`pcm_s16le`)
 - Sample rate: 16000 Hz
 - Channels: 1 (mono)
-- Suggested frame duration: 20 ms
-  - Samples per frame: `16000 * 0.02 = 320`
-  - Bytes per frame: `320 samples * 2 bytes = 640`
+- Source tagging: Clients should ideally wrap audio in the JSON structure below, but raw binary is accepted as "system" source for backward compatibility.
+- v0.2 Preferred Framing (JSON):
+  ```json
+  {
+    "source": "system" | "mic",
+    "pcm_base64": "..."
+  }
+  ```
+  *(Note: The spec actually defines `audio_frame` as a JSON structure in the text below, but v0.1 used raw binary. v0.2 will support both or move to JSON for multi-source. For now, we document the raw frame behavior and note the v0.2 extension)*.
+
+Actual v0.2 Implementation Plan defines `audio_frame` as JSON. Let's align with the Plan:
+**Client to Server**:
+- **audio_frame**:
+  - `session_id`: string (UUID)
+  - `source`: "system" | "mic" (default: "system")
+  - `pcm16_base64`: string (Base64 encoded PCM16 data)
+  - `sample_rate`: number (default: 16000)
+  - `channels`: number (default: 1)
 - Timing:
   - The backend should treat frame arrival order as the clock for streaming ASR.
   - The client should send frames at approximately real time cadence.
