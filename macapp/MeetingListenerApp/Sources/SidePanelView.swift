@@ -54,6 +54,19 @@ struct SidePanelView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+                
+                // Risk mitigation: Show finalizing state with spinner
+                if appState.sessionState == .finalizing {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                        Text("Finalizing Session...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 2)
+                }
             }
             Spacer()
             
@@ -247,7 +260,12 @@ struct SidePanelView: View {
     }
 
     private func confidenceMeta(_ value: Double) -> String {
-        "Confidence \(formatConfidence(value))"
+        let base = "Confidence \(formatConfidence(value))"
+        // Risk mitigation: Mark low-confidence cards as Draft
+        if value < 0.5 {
+            return "\(base) (Draft)"
+        }
+        return base
     }
 }
 
