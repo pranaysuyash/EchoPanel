@@ -56,10 +56,12 @@ final class AppState: ObservableObject {
     private let audioCapture = AudioCaptureManager()
     private let micCapture = MicrophoneCaptureManager()
     private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
+    private let sessionStore = SessionStore.shared
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var debugSamples: Int = 0
     private var debugBytes: Int = 0
     private var debugScreenFrames: Int = 0
+    private var autoSaveCancellable: AnyCancellable?
 
     init() {
         refreshScreenRecordingStatus()
