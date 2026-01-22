@@ -37,6 +37,12 @@ final class AppState: ObservableObject {
     
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
+    
+    // Gap 2 fix: Silence detection
+    @Published var noAudioDetected: Bool = false
+    @Published var silenceMessage: String = ""
+    private var lastAudioTimestamp: Date?
+    private var silenceCheckTimer: Timer?
 
     @Published var transcriptSegments: [TranscriptSegment] = []
     @Published var actions: [ActionItem] = []
@@ -92,6 +98,14 @@ final class AppState: ObservableObject {
                 if self.debugEnabled {
                     Task { @MainActor in self.updateDebugLine() }
                 }
+                // Gap 2 fix: Track audio activity
+                Task { @MainActor in
+                    self.lastAudioTimestamp = Date()
+                    if self.noAudioDetected {
+                        self.noAudioDetected = false
+                        self.silenceMessage = ""
+                    }
+                }
             }
             self?.streamer.sendPCMFrame(frame, source: source)
         }
@@ -100,6 +114,14 @@ final class AppState: ObservableObject {
         micCapture.onPCMFrame = { [weak self] frame, source in
             if let self {
                 self.debugBytes += frame.count
+                // Gap 2 fix: Track audio activity
+                Task { @MainActor in
+                    self.lastAudioTimestamp = Date()
+                    if self.noAudioDetected {
+                        self.noAudioDetected = false
+                        self.silenceMessage = ""
+                    }
+                }
             }
             self?.streamer.sendPCMFrame(frame, source: source)
         }
@@ -237,6 +259,12 @@ final class AppState: ObservableObject {
             
             // Start session storage (v0.2)
             sessionStore.startSession(sessionId: id, audioSource: audioSource.rawValue)
+            
+            // Gap 2 fix: Start silence detection
+            lastAudioTimestamp = Date()
+            noAudioDetected = false
+            silenceMessage = ""
+            startSilenceCheck()
         }
     }
 
@@ -254,6 +282,9 @@ final class AppState: ObservableObject {
                 micCapture.stopCapture()
             }
             streamer.disconnect()
+            
+            // Gap 2 fix: Stop silence detection
+            stopSilenceCheck()
             
             // End session storage (v0.2)
             if let id = sessionID {
@@ -282,6 +313,35 @@ final class AppState: ObservableObject {
     /// Save current session snapshot for auto-save (v0.2)
     func saveSnapshot() {
         sessionStore.saveSnapshot(data: exportPayload())
+    }
+    
+    // MARK: - Gap 2: Silence Detection
+    
+    private func startSilenceCheck() {
+        silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.checkForSilence()
+        }
+    }
+    
+    private func stopSilenceCheck() {
+        silenceCheckTimer?.invalidate()
+        silenceCheckTimer = nil
+        noAudioDetected = false
+        silenceMessage = ""
+    }
+    
+    private func checkForSilence() {
+        guard sessionState == .listening else { return }
+        guard let lastAudio = lastAudioTimestamp else { return }
+        
+        let silenceDuration = Date().timeIntervalSince(lastAudio)
+        if silenceDuration >= 10.0 && !noAudioDetected {
+            noAudioDetected = true
+            silenceMessage = "No audio detected for \(Int(silenceDuration))s. Check: Is the meeting muted? Is the correct audio source selected?"
+        } else if noAudioDetected {
+            // Update the duration
+            silenceMessage = "No audio detected for \(Int(silenceDuration))s. Check: Is the meeting muted? Is the correct audio source selected?"
+        }
     }
 
     func copyMarkdownToClipboard() {

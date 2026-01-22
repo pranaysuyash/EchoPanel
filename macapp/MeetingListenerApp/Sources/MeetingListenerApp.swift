@@ -4,12 +4,21 @@ import SwiftUI
 struct MeetingListenerApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var backendManager = BackendManager.shared
+    @StateObject private var sessionStore = SessionStore.shared
     @State private var sidePanelController = SidePanelController()
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
+    @State private var showRecoveryPrompt = false
 
     init() {
         // Start backend server on app launch
         BackendManager.shared.startServer()
+        
+        // Gap 5 fix: Check for recoverable session
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            if SessionStore.shared.hasRecoverableSession {
+                // Will be handled in view
+            }
+        }
     }
 
     var body: some Scene {
@@ -107,6 +116,32 @@ struct MeetingListenerApp: App {
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
             Divider()
+            
+            // Gap 5 fix: Session recovery option
+            if sessionStore.hasRecoverableSession {
+                Button("Recover Last Session...") {
+                    if let data = sessionStore.loadRecoverableSession() {
+                        // Export recovered data to JSON
+                        let panel = NSSavePanel()
+                        panel.nameFieldStringValue = "recovered-session.json"
+                        panel.begin { response in
+                            guard response == .OK, let url = panel.url else { return }
+                            do {
+                                let jsonData = try JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted])
+                                try jsonData.write(to: url)
+                                sessionStore.discardRecoverableSession()
+                            } catch {
+                                NSLog("Recovery export failed: %@", error.localizedDescription)
+                            }
+                        }
+                    }
+                }
+                Button("Discard Last Session") {
+                    sessionStore.discardRecoverableSession()
+                }
+                Divider()
+            }
+            
             Button("Show Onboarding") {
                 showOnboarding = true
             }

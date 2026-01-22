@@ -31,6 +31,21 @@ struct SidePanelView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
                 PermissionBanner(appState: appState)
+                
+                // Gap 2 fix: Silence warning banner
+                if appState.noAudioDetected {
+                    HStack(spacing: 6) {
+                        Image(systemName: "speaker.slash.fill")
+                            .foregroundColor(.orange)
+                        Text(appState.silenceMessage)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(8)
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                
                 Text(appState.permissionDebugLine)
                     .font(.caption2)
                     .foregroundColor(.secondary)
