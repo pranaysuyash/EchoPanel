@@ -93,53 +93,26 @@ if (!prefersReducedMotion && window.anime) {
       easing: 'easeOutQuad',
     });
 
-    const nodes = document.querySelectorAll('[data-flow-node]');
-    const progress = document.querySelector('[data-flow-progress]');
-    const head = document.querySelector('[data-flow-head]');
-    const track = document.querySelector('[data-flow-track]');
-    let flowTimeline;
-
-    function setupFlow() {
-      if (!nodes.length || !progress || !head || !track) {
-        return;
-      }
-      if (flowTimeline) {
-        flowTimeline.pause();
-      }
-      const trackRect = track.getBoundingClientRect();
-      const positions = Array.from(nodes).map((node) => {
-        const rect = node.getBoundingClientRect();
-        return rect.left - trackRect.left + rect.width / 2;
+    // Scroll-triggered animation for Flow Cards
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          anime({
+            targets: '.flow-card',
+            translateY: [30, 0],
+            opacity: [0, 1],
+            delay: anime.stagger(120),
+            duration: 800,
+            easing: 'easeOutExpo'
+          });
+          observer.unobserve(entry.target);
+        }
       });
+    }, { threshold: 0.15 });
 
-      flowTimeline = anime.timeline({
-        loop: true,
-        autoplay: true,
-      });
-
-      positions.forEach((x, index) => {
-        flowTimeline.add(
-          {
-            targets: head,
-            translateX: x,
-            duration: 600,
-            easing: 'easeInOutQuad',
-            update: () => {
-              progress.style.width = `${x}px`;
-            },
-            begin: () => {
-              nodes.forEach((n) => n.classList.remove('active'));
-              nodes[index].classList.add('active');
-            },
-          },
-          index === 0 ? 0 : '+=600',
-        );
-      });
+    const flowGrid = document.querySelector('.flow-cards');
+    if (flowGrid) {
+      observer.observe(flowGrid);
     }
-
-    setupFlow();
-    window.addEventListener('resize', () => {
-      setupFlow();
-    });
   });
 }

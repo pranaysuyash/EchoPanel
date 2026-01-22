@@ -14,32 +14,37 @@
 - First-run onboarding wizard
 - Embedded backend (auto-start/stop)
 
+### User Experience & UI
+- **Source-tagged Audio**: Internal JSON protocol for separate System/Mic processing
+- **Level Meters**: Dual meters for System and Mic in Side Panel
+- **Recovery UI**: "Recover/Discard" options in main menu
+- **Diarization Config**: Token input in Onboarding
+- **Transcript Persistence**: Real-time append-to-disk logic
+
 ### De-risking & Quality
 - **Pseudo-diarization**: Live labels "You" vs "System" based on source
 - **Self-test**: "Test Audio" button in onboarding
 - **Trust**: "Needs review" labels for low-confidence
 - **Silence Detection**: Banner after 10s of no audio
-- **Recovery**: "Recover/Discard" prompts on launch
+- **Backend Error UI**: Onboarding alerts if server fails to start
 
 ---
 
 ## 🔧 Pending Items
 
-### High Priority
+### Distribution (Launch Blockers)
 | Item | Description | Effort |
 |------|-------------|--------|
-| **Bundle Python runtime** | Package Python + deps for distribution | 4h |
-| **Model preloading** | Pre-download Whisper models on first launch | 2h |
-| **Error recovery** | Handle server crash gracefully in UI | 2h |
+| **Bundle Python runtime** | Package Python + deps for distribution (PyInstaller) | 4h |
+| **Model Preloading UI** | Download progress bar on first launch (currently just checks availability) | 2h |
 
-### Medium Priority
+### Feature Backlog (v0.3 Candidates)
 | Item | Description | Effort |
 |------|-------------|--------|
-| Source-tagged WS protocol | Switch from raw binary to JSON audio frames | 3h |
 | Cloud ASR provider | Implement OpenAI Whisper API provider | 4h |
-| Transcript append to store | Write each ASR segment to JSONL immediately | 1h |
-| Recovery UI | Add "Recover Previous Session" sheet | 2h |
-| Level meter for system audio | Currently only mic has level meter | 1h |
+| Export to Notion/Slack | Push summary to integrations | 8h |
+| Custom entity detection | Allow user-defined entity patterns | 4h |
+| Multi-language UI | Localization support | 4h |
 
 ### Low Priority
 | Item | Description | Effort |

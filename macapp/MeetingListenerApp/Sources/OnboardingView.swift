@@ -205,6 +205,10 @@ struct OnboardingView: View {
             Text("You can leave this empty and set it later. Speaker labels won't be available without it.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            
+            Text("Note: Speaker identification is performed after the meeting ends.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
     }
     

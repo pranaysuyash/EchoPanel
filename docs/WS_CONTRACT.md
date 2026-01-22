@@ -1,4 +1,4 @@
-# WebSocket Contract: Live Listener v0.1
+# WebSocket Contract: Live Listener v0.2
 
 This document is the source of truth for the client/server WebSocket protocol between the macOS app and the backend for v0.1.
 
@@ -58,14 +58,16 @@ Schema:
 }
 ```
 
-Notes:
-- `session_id` must be stable for the session.
-- After `start`, the client begins sending binary audio frames.
-
-Example:
+### `audio` (Client to Server)
+Schema:
 ```json
-{"type":"start","session_id":"2E3B2BC2-0F6D-46E0-8B7A-5D80A8B8BE68","sample_rate":16000,"format":"pcm_s16le","channels":1}
+{
+  "type": "audio",
+  "source": "system" | "mic",
+  "data": "base64_encoded_pcm16_samples"
+}
 ```
+*Note: Binary messages are still supported for backward compatibility (defaults to "system"), but JSON is preferred for multi-source.*
 
 ### `stop`
 Schema:
@@ -76,63 +78,21 @@ Schema:
 }
 ```
 
-Example:
-```json
-{"type":"stop","session_id":"2E3B2BC2-0F6D-46E0-8B7A-5D80A8B8BE68"}
-```
-
 ## Server events (server to client)
-All events are JSON UTF-8 text frames.
 
-### ASR: `asr_partial`
+### ASR: `asr_partial` / `asr_final`
 Schema:
 ```json
 {
-  "type": "asr_partial",
+  "type": "asr_partial" | "asr_final",
   "t0": 123.4,
   "t1": 126.2,
-  "text": "we should ship by friday",
+  "text": "...",
+  "confidence": 0.95,
+  "source": "mic" | "system",
+  "speaker": "Speaker 1",
   "stable": false
 }
-```
-
-Example:
-```json
-{"type":"asr_partial","t0":123.40,"t1":126.20,"text":"we should ship by friday","stable":false}
-```
-
-### ASR: `asr_final`
-Schema:
-```json
-{
-  "type": "asr_final",
-  "t0": 123.4,
-  "t1": 126.2,
-  "text": "We should ship by Friday.",
-  "stable": true
-}
-```
-
-Example:
-```json
-{"type":"asr_final","t0":123.40,"t1":126.20,"text":"We should ship by Friday.","stable":true}
-```
-
-### Analysis: `cards_update`
-Schema:
-```json
-{
-  "type": "cards_update",
-  "actions": [{"text":"...","owner":"...","due":"YYYY-MM-DD","confidence":0.0,"evidence":[{"t0":0.0,"t1":1.2,"quote":"..."}]}],
-  "decisions": [{"text":"...","confidence":0.0,"evidence":[{"t0":0.0,"t1":1.2,"quote":"..."}]}],
-  "risks": [{"text":"...","confidence":0.0,"evidence":[{"t0":0.0,"t1":1.2,"quote":"..."}]}],
-  "window": {"t0": 0.0, "t1": 420.0}
-}
-```
-
-Example:
-```json
-{"type":"cards_update","actions":[{"text":"Send revised proposal","owner":"Pranay","due":"2026-01-23","confidence":0.82,"evidence":[{"t0":310.2,"t1":316.9,"quote":"I'll send the revised proposal by Tuesday."}]}],"decisions":[{"text":"Ship v0.1 on Friday","confidence":0.74,"evidence":[{"t0":120.1,"t1":126.2,"quote":"We should ship by Friday."}]}],"risks":[{"text":"Audio quality may be poor without permissions","confidence":0.61,"evidence":[{"t0":30.0,"t1":34.2,"quote":"If we can't capture system audio, we are stuck."}]}],"window":{"t0":0,"t1":600}}
 ```
 
 ### Analysis: `entities_update`
@@ -140,17 +100,10 @@ Schema:
 ```json
 {
   "type": "entities_update",
-  "people": [{"name":"...","last_seen":123.4,"confidence":0.0}],
-  "orgs": [{"name":"...","last_seen":123.4,"confidence":0.0}],
-  "dates": [{"name":"...","last_seen":123.4,"confidence":0.0}],
-  "projects": [{"name":"...","last_seen":123.4,"confidence":0.0}],
-  "topics": [{"name":"...","last_seen":123.4,"confidence":0.0}]
+  "people": [{"name":"...","type":"person","count":5,"last_seen":123.4,"confidence":0.8}],
+  "orgs": [{"name":"...","type":"org","count":1,"last_seen":123.4,"confidence":0.8}],
+  ...
 }
-```
-
-Example:
-```json
-{"type":"entities_update","people":[{"name":"Alex","last_seen":222.3,"confidence":0.77}],"orgs":[{"name":"EchoPanel","last_seen":100.0,"confidence":0.88}],"dates":[{"name":"Friday","last_seen":124.2,"confidence":0.71}],"projects":[{"name":"v0.1","last_seen":123.9,"confidence":0.69}],"topics":[{"name":"ScreenCaptureKit","last_seen":240.4,"confidence":0.74}]}
 ```
 
 ### Status: `status`

@@ -66,11 +66,24 @@ final class BackendManager: ObservableObject {
         }
         process.environment = env
         
-        // Capture output
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        // Create log file
+        let logURL = FileManager.default.temporaryDirectory.appendingPathComponent("echopanel_server.log")
+        if !FileManager.default.fileExists(atPath: logURL.path) {
+            FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        }
+        
+        do {
+            let fileHandle = try FileHandle(forWritingTo: logURL)
+            fileHandle.seekToEndOfFile()
+            
+            process.standardOutput = fileHandle
+            process.standardError = fileHandle
+            
+            NSLog("BackendManager: Redirecting server output to \(logURL.path)")
+        } catch {
+            NSLog("BackendManager: Failed to create log file handle: \(error)")
+            // Fallback to pipes/dev null if needed, but for now just log it
+        }
         
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {

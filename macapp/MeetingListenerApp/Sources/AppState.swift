@@ -38,6 +38,9 @@ final class AppState: ObservableObject {
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
     
+    // Diagnostics (v0.2)
+    @Published var lastMessageDate: Date?
+    
     // Gap 2 fix: Silence detection
     @Published var noAudioDetected: Bool = false
     @Published var silenceMessage: String = ""
@@ -66,6 +69,8 @@ final class AppState: ObservableObject {
     private let audioCapture = AudioCaptureManager()
     private let micCapture = MicrophoneCaptureManager()
     private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
+    // Note: URL hardcoding is acceptable for v0.2 MVP as per M9 resolution plan (low risk local app)
+    // But ideally should read from configuration. Keeping as is for now to avoid large refactor risk.
     private let sessionStore = SessionStore.shared
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var debugSamples: Int = 0
@@ -143,10 +148,16 @@ final class AppState: ObservableObject {
             }
         }
         streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
-            Task { @MainActor in self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source) }
+            Task { @MainActor in 
+                self?.lastMessageDate = Date()
+                self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
+            }
         }
         streamer.onASRFinal = { [weak self] text, t0, t1, confidence, source in
-            Task { @MainActor in self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source) }
+            Task { @MainActor in 
+                self?.lastMessageDate = Date()
+                self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
+            }
         }
         streamer.onCardsUpdate = { [weak self] actions, decisions, risks in
             Task { @MainActor in
@@ -315,8 +326,13 @@ final class AppState: ObservableObject {
                 sessionStore.endSession(sessionId: id, finalData: exportPayload())
             }
             
-            sessionState = .idle
-            statusMessage = ""
+            // Hard Kill: Force UI state reset immediately
+            Task { @MainActor in
+                self.sessionState = .idle
+                self.statusMessage = ""
+                self.streamStatus = .reconnecting // Reset stream status
+                self.noAudioDetected = false
+            }
         }
     }
 
@@ -403,6 +419,57 @@ final class AppState: ObservableObject {
                 try markdown.write(to: url, atomically: true, encoding: .utf8)
             } catch {
                 NSLog("Export Markdown failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func exportDebugBundle() {
+        Task {
+            // 1. Prepare files
+            let tmpDir = FileManager.default.temporaryDirectory
+            let bundleDir = tmpDir.appendingPathComponent("echopanel_debug_\(UUID().uuidString)")
+            let logFile = tmpDir.appendingPathComponent("echopanel_server.log")
+            
+            do {
+                try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+                
+                // Copy Server Log
+                if FileManager.default.fileExists(atPath: logFile.path) {
+                    try FileManager.default.copyItem(at: logFile, to: bundleDir.appendingPathComponent("server.log"))
+                } else {
+                    try "Log file not found".write(to: bundleDir.appendingPathComponent("server.log_missing"), atomically: true, encoding: .utf8)
+                }
+                
+                // Dump Session State
+                let sessionData = try JSONSerialization.data(withJSONObject: exportPayload(), options: [.prettyPrinted, .sortedKeys])
+                try sessionData.write(to: bundleDir.appendingPathComponent("session_dump.json"))
+                
+                // 2. Zip
+                let zipURL = tmpDir.appendingPathComponent("echopanel_debug.zip")
+                try? FileManager.default.removeItem(at: zipURL)
+                
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+                process.arguments = ["-r", zipURL.path, "."]
+                process.currentDirectoryURL = bundleDir
+                try process.run()
+                process.waitUntilExit()
+                
+                // 3. Save Panel
+                DispatchQueue.main.async {
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [UTType.zip]
+                    panel.nameFieldStringValue = "echopanel-debug.zip"
+                    panel.begin { response in
+                        guard response == .OK, let url = panel.url else { return }
+                        try? FileManager.default.copyItem(at: zipURL, to: url)
+                        // Cleanup
+                        try? FileManager.default.removeItem(at: bundleDir)
+                        try? FileManager.default.removeItem(at: zipURL)
+                    }
+                }
+            } catch {
+                NSLog("Debug export failed: \(error)")
             }
         }
     }
