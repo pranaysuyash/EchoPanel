@@ -7,9 +7,9 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from server.services.analysis_stream import extract_cards, extract_entities
+from server.services.analysis_stream import extract_cards, extract_entities, generate_rolling_summary
 from server.services.asr_stream import stream_asr
-from server.services.diarization import diarize_pcm
+from server.services.diarization import diarize_pcm, merge_transcript_with_speakers
 
 router = APIRouter()
 DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
@@ -102,22 +102,38 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     await pcm_queue.put(None)
                     if DEBUG:
                         print("ws_live_listener: stop")
+                    
+                    # Run diarization if enabled
                     diarization_segments = []
                     if state.diarization_enabled and state.pcm_buffer:
                         diarization_segments = await asyncio.to_thread(
                             diarize_pcm, bytes(state.pcm_buffer), 16000
                         )
+                    
+                    # Merge transcript with speaker labels
+                    labeled_transcript = merge_transcript_with_speakers(
+                        state.transcript, diarization_segments
+                    )
+                    
+                    # Generate rolling summary as markdown
+                    summary_md = generate_rolling_summary(state.transcript)
+                    
+                    # Extract final cards and entities
+                    cards = extract_cards(state.transcript)
+                    entities = extract_entities(state.transcript)
+                    
                     await websocket.send_text(
                         json.dumps(
                             {
                                 "type": "final_summary",
-                                "markdown": "# Summary\n- Session ended",
+                                "markdown": summary_md,
                                 "json": {
                                     "session_id": state.session_id or payload.get("session_id"),
-                                    "actions": extract_cards(state.transcript)["actions"],
-                                    "decisions": extract_cards(state.transcript)["decisions"],
-                                    "risks": extract_cards(state.transcript)["risks"],
-                                    "entities": extract_entities(state.transcript),
+                                    "transcript": labeled_transcript,
+                                    "actions": cards["actions"],
+                                    "decisions": cards["decisions"],
+                                    "risks": cards["risks"],
+                                    "entities": entities,
                                     "diarization": diarization_segments,
                                 },
                             }
