@@ -141,6 +141,12 @@ final class AppState: ObservableObject {
                 self?.finalSummaryJSON = jsonObject
             }
         }
+        
+        // Auto-save observer (v0.2)
+        autoSaveCancellable = NotificationCenter.default.publisher(for: .sessionAutoSaveRequested)
+            .sink { [weak self] _ in
+                self?.saveSnapshot()
+            }
     }
 
     var statusLine: String {
@@ -228,6 +234,9 @@ final class AppState: ObservableObject {
             streamer.connect(sessionID: id)
             startTimer()
             sessionState = .listening
+            
+            // Start session storage (v0.2)
+            sessionStore.startSession(sessionId: id, audioSource: audioSource.rawValue)
         }
     }
 
@@ -245,6 +254,12 @@ final class AppState: ObservableObject {
                 micCapture.stopCapture()
             }
             streamer.disconnect()
+            
+            // End session storage (v0.2)
+            if let id = sessionID {
+                sessionStore.endSession(sessionId: id, finalData: exportPayload())
+            }
+            
             sessionState = .idle
             statusMessage = ""
         }
@@ -262,6 +277,11 @@ final class AppState: ObservableObject {
         sessionID = nil
         sessionStart = nil
         sessionEnd = nil
+    }
+    
+    /// Save current session snapshot for auto-save (v0.2)
+    func saveSnapshot() {
+        sessionStore.saveSnapshot(data: exportPayload())
     }
 
     func copyMarkdownToClipboard() {

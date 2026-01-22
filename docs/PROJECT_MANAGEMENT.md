@@ -28,3 +28,8 @@
 - Align macOS UI visuals with landing page and spec UI polish.
 - Add integration tests for WebSocket streaming and exports.
 - Add lightweight UI snapshot or visual regression checks.
+- Draft v0.2 spec and run the audit prompt in `docs/V0_2_AUDIT_PROMPT.md`.
+- Decide waitlist policy (cap, pricing, invite cadence) and update landing copy.
+- Add "Roadmap" tab with Sheet-backed features list on landing page.
+- Add "Request a feature" form and publish "Most requested" summary on landing page.
+- Define pricing tiers for local vs cloud models and document in `docs/PRICING.md`.

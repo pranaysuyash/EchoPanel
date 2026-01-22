@@ -7,8 +7,13 @@ app.include_router(ws_router)
 
 
 @app.get("/")
-async def health_check() -> dict:
+async def root() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/health")
+async def health_check() -> dict:
+    return {"status": "ok", "service": "echopanel"}
 
 
 def main() -> None:

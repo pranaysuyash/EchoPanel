@@ -3,7 +3,14 @@ import SwiftUI
 @main
 struct MeetingListenerApp: App {
     @StateObject private var appState = AppState()
+    @StateObject private var backendManager = BackendManager.shared
     @State private var sidePanelController = SidePanelController()
+    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
+
+    init() {
+        // Start backend server on app launch
+        BackendManager.shared.startServer()
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -35,11 +42,29 @@ struct MeetingListenerApp: App {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
                 Divider()
-                Button("Quit") { NSApp.terminate(nil) }
+                
+                // Server status
+                Text("Server: \(backendManager.serverStatus.rawValue)")
+                    .foregroundColor(backendManager.isServerReady ? .green : .secondary)
+                
+                Divider()
+                Button("Quit") { 
+                    BackendManager.shared.stopServer()
+                    NSApp.terminate(nil) 
+                }
             }
         }
+        
+        // Onboarding window shown on first launch
+        Window("Welcome to EchoPanel", id: "onboarding") {
+            OnboardingView(appState: appState, isPresented: $showOnboarding)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 500, height: 400)
+        .windowResizability(.contentSize)
+        
         Settings {
-            EmptyView()
+            SettingsView(appState: appState, backendManager: backendManager)
         }
     }
 
@@ -55,11 +80,24 @@ struct MeetingListenerApp: App {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+            
+            // Server status indicator
+            HStack {
+                Circle()
+                    .fill(backendManager.isServerReady ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(backendManager.serverStatus.rawValue)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
             Divider()
             Button(appState.sessionState == .listening ? "Stop Listening" : "Start Listening") {
                 toggleSession()
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
+            .disabled(!backendManager.isServerReady)
+            
             Button("Export JSON") {
                 appState.exportJSON()
             }
@@ -69,7 +107,13 @@ struct MeetingListenerApp: App {
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
             Divider()
-            Button("Quit") { NSApp.terminate(nil) }
+            Button("Show Onboarding") {
+                showOnboarding = true
+            }
+            Button("Quit") { 
+                BackendManager.shared.stopServer()
+                NSApp.terminate(nil) 
+            }
         }
         .padding(.vertical, 4)
     }
@@ -90,11 +134,75 @@ struct MeetingListenerApp: App {
             appState.stopSession()
             sidePanelController.hide()
         } else {
+            // Check if onboarding completed and server ready
+            if !UserDefaults.standard.bool(forKey: "onboardingCompleted") {
+                showOnboarding = true
+                return
+            }
+            
+            if !backendManager.isServerReady {
+                // TODO: Show alert that server is not ready
+                return
+            }
+            
             appState.startSession()
             sidePanelController.show(appState: appState) {
                 appState.stopSession()
                 sidePanelController.hide()
             }
         }
+    }
+}
+
+// MARK: - Settings View
+
+struct SettingsView: View {
+    @ObservedObject var appState: AppState
+    @ObservedObject var backendManager: BackendManager
+    
+    @AppStorage("whisperModel") private var whisperModel = "large-v3-turbo"
+    
+    var body: some View {
+        Form {
+            Section("Audio") {
+                Picker("Source", selection: $appState.audioSource) {
+                    ForEach(AppState.AudioSource.allCases, id: \.self) { source in
+                        Text(source.rawValue).tag(source)
+                    }
+                }
+            }
+            
+            Section("ASR Model") {
+                Picker("Whisper Model", selection: $whisperModel) {
+                    Text("Base (Fast)").tag("base")
+                    Text("Small").tag("small")
+                    Text("Medium").tag("medium")
+                    Text("Large v3 Turbo (Best)").tag("large-v3-turbo")
+                }
+                Text("Changes take effect after restarting the server.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section("Server") {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Circle()
+                        .fill(backendManager.isServerReady ? Color.green : Color.orange)
+                        .frame(width: 10, height: 10)
+                    Text(backendManager.serverStatus.rawValue)
+                }
+                
+                Button("Restart Server") {
+                    backendManager.stopServer()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        backendManager.startServer()
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 400, height: 300)
     }
 }
