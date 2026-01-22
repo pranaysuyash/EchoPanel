@@ -11,6 +11,7 @@ This file records decisions and deltas from the original v0.1 draft spec.
 - Added export to Markdown file in addition to Copy Markdown and Export JSON.
 - Added a permission status banner and debug line in the side panel UI.
 - Added optional local ASR (faster-whisper) wiring and env flags in backend.
+- Documented a combined dev run flow and server connectivity troubleshooting in `docs/TESTING.md`.
 
 ## Why These Help
 - Stable `.app` bundles prevent permission prompts from attributing to Terminal or IDEs.

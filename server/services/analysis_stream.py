@@ -202,10 +202,86 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
     known_orgs = {"EchoPanel", "Zoom", "Google", "Microsoft", "Apple", "Amazon", "Slack", 
                   "Teams", "Meet", "Discord", "Notion", "Figma", "Linear", "Jira", "GitHub"}
     
+    # Common first names for person detection (Gap 4 fix)
+    common_first_names = {
+        "John", "James", "Michael", "David", "Robert", "William", "Richard", "Joseph", "Thomas", "Charles",
+        "Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen",
+        "Alex", "Chris", "Sam", "Jordan", "Taylor", "Morgan", "Casey", "Jamie", "Drew", "Pat",
+        "Pranay", "Raj", "Amit", "Priya", "Neha", "Arjun", "Ravi", "Sanjay", "Anita", "Kavita",
+    }
+    
     for segment in windowed:
         text = segment.get("text", "")
         t1 = segment.get("t1", 0.0)
         t0 = segment.get("t0", 0.0)
+        
+        # Gap 4 fix: Detect person names with titles (Mr./Mrs./Ms./Dr.)
+        title_pattern = r"\b(Mr\.|Mrs\.|Ms\.|Dr\.)\s+([A-Z][a-z]+)"
+        title_matches = re.findall(title_pattern, text)
+        for title, name in title_matches:
+            full_name = f"{title} {name}"
+            key = (full_name, "person")
+            if key not in entity_map:
+                entity_map[key] = Entity(
+                    name=full_name,
+                    entity_type="person",
+                    count=0,
+                    first_seen=t0,
+                    last_seen=t1,
+                    grounding_quotes=[],
+                )
+            entity = entity_map[key]
+            entity.count += 1
+            entity.last_seen = max(entity.last_seen, t1)
+            if len(entity.grounding_quotes) < 3:
+                entity.grounding_quotes.append(text[:100])
+        
+        # Gap 4 fix: Detect two-word capitalized names (likely person names)
+        two_word_pattern = r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b"
+        two_word_matches = re.findall(two_word_pattern, text)
+        for first, last in two_word_matches:
+            if first in common_words or last in common_words:
+                continue
+            if first in day_names or last in day_names:
+                continue
+            if first in known_orgs or last in known_orgs:
+                continue
+            # Likely a person name
+            full_name = f"{first} {last}"
+            key = (full_name, "person")
+            if key not in entity_map:
+                entity_map[key] = Entity(
+                    name=full_name,
+                    entity_type="person",
+                    count=0,
+                    first_seen=t0,
+                    last_seen=t1,
+                    grounding_quotes=[],
+                )
+            entity = entity_map[key]
+            entity.count += 1
+            entity.last_seen = max(entity.last_seen, t1)
+            if len(entity.grounding_quotes) < 3:
+                entity.grounding_quotes.append(text[:100])
+        
+        # Gap 4 fix: Single common first names
+        for first_name in common_first_names:
+            if first_name in text:
+                key = (first_name, "person")
+                if key not in entity_map:
+                    entity_map[key] = Entity(
+                        name=first_name,
+                        entity_type="person",
+                        count=0,
+                        first_seen=t0,
+                        last_seen=t1,
+                        grounding_quotes=[],
+                    )
+                entity = entity_map[key]
+                entity.count += 1
+                entity.last_seen = max(entity.last_seen, t1)
+                if len(entity.grounding_quotes) < 3:
+                    entity.grounding_quotes.append(text[:100])
         
         # Extract capitalized tokens (potential named entities)
         tokens = re.findall(r"\b[A-Z][a-zA-Z0-9\.]+\b", text)
@@ -245,7 +321,7 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
     def sort_key(e: Entity) -> Tuple[int, float]:
         return (-e.count, -e.last_seen)
     
-    people = []  # Not yet implemented (requires NER)
+    people = sorted([e for e in entity_map.values() if e.entity_type == "person"], key=sort_key)
     orgs = sorted([e for e in entity_map.values() if e.entity_type == "org"], key=sort_key)
     dates = sorted([e for e in entity_map.values() if e.entity_type == "date"], key=sort_key)
     projects = sorted([e for e in entity_map.values() if e.entity_type == "project"], key=sort_key)

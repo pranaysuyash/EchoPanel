@@ -135,12 +135,22 @@ class FasterWhisperProvider(ASRProvider):
                 if not text:
                     continue
 
-                # Emit partial
+                # Compute real confidence from avg_logprob (Gap 3 fix)
+                # avg_logprob ranges from ~-2.0 (low confidence) to ~0 (high confidence)
+                # Map to 0-1: confidence = max(0, min(1, 1 + avg_logprob / 2))
+                avg_logprob = getattr(segment, 'avg_logprob', -0.5)
+                confidence = max(0.0, min(1.0, 1.0 + avg_logprob / 2.0))
+                
+                # Log confidence for debugging
+                if self._debug:
+                    self.log(f"Segment: '{text[:30]}...' logprob={avg_logprob:.2f} conf={confidence:.2f}")
+
+                # Emit partial (slightly lower confidence since not final)
                 yield ASRSegment(
                     text=text,
                     t0=t0 + segment.start,
                     t1=t0 + segment.end,
-                    confidence=0.7,
+                    confidence=confidence * 0.9,  # Partial is slightly less confident
                     is_final=False,
                     source=source,
                     language=detected_lang,
@@ -150,7 +160,7 @@ class FasterWhisperProvider(ASRProvider):
                     text=text,
                     t0=t0 + segment.start,
                     t1=t0 + segment.end,
-                    confidence=0.8,
+                    confidence=confidence,
                     is_final=True,
                     source=source,
                     language=detected_lang,

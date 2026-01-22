@@ -331,6 +331,9 @@ private struct PermissionBanner: View {
 
 private struct TranscriptRow: View {
     let segment: TranscriptSegment
+    
+    // Gap 3 fix: Threshold for flagging low-confidence segments
+    private let lowConfidenceThreshold = 0.5
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -341,11 +344,46 @@ private struct TranscriptRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(segment.text)
                     .font(.footnote)
-                    .foregroundColor(segment.isFinal ? .primary : .secondary)
-                Text(formatConfidence(segment.confidence))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(textColor)
+                
+                HStack(spacing: 6) {
+                    Text(formatConfidence(segment.confidence))
+                        .font(.caption2)
+                        .foregroundColor(confidenceColor)
+                    
+                    // Gap 3 fix: Show "Needs review" label for low-confidence
+                    if segment.confidence < lowConfidenceThreshold {
+                        Text("Needs review")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                }
             }
+        }
+    }
+    
+    private var textColor: Color {
+        if !segment.isFinal {
+            return .secondary
+        }
+        if segment.confidence < lowConfidenceThreshold {
+            return .orange
+        }
+        return .primary
+    }
+    
+    private var confidenceColor: Color {
+        if segment.confidence >= 0.8 {
+            return .green
+        } else if segment.confidence >= 0.5 {
+            return .secondary
+        } else {
+            return .orange
         }
     }
 
