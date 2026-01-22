@@ -1,142 +1,90 @@
+"""
+ASR Streaming Pipeline (v0.2)
+
+Provides the high-level streaming ASR interface using the provider abstraction.
+This file is the main entry point for the WebSocket handler.
+"""
+
 from __future__ import annotations
 
-import asyncio
 import os
-import platform
-from typing import Optional
-from collections.abc import AsyncIterator
-from typing import Optional
+from typing import AsyncIterator, Optional
 
-try:
-    import numpy as np
-except Exception:  # pragma: no cover - optional dependency
-    np = None
+from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource
 
-try:
-    from faster_whisper import WhisperModel
-except Exception:  # pragma: no cover - optional dependency
-    WhisperModel = None
+# Import providers to trigger registration
+from . import provider_faster_whisper  # noqa: F401
 
-_MODEL: Optional["WhisperModel"] = None
 DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 
 
-def _get_model() -> Optional["WhisperModel"]:
-    global _MODEL
-    if WhisperModel is None:
-        return None
-    if _MODEL is None:
-        # User requested better quality. 'large-v3-turbo' is excellent for multilingual (Hindi/Urdu distinction) 
-        # and runs fast on Mac CPU (Accelerate).
-        model_size = os.getenv("ECHOPANEL_WHISPER_MODEL", "large-v3-turbo")
-        device = os.getenv("ECHOPANEL_WHISPER_DEVICE")
-        if device is None:
-            # CTranslate2 does not support "metal". On macOS ARM64, "cpu" uses Accelerate framework and is highly optimized.
-            device = "cpu" if platform.system() == "Darwin" else "auto"
-        compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE")
-        if compute_type is None:
-            compute_type = "int8" # int8 is optimal for CPU/Accelerate
-        if DEBUG:
-            print(f"asr_stream: loading model={model_size} device={device} compute={compute_type}")
-        
-        try:
-            _MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
-        except Exception as e:
-            print(f"asr_stream: FATAL ERROR loading model: {e}")
-            raise e
-    return _MODEL
+def _get_default_config() -> ASRConfig:
+    """Build ASRConfig from environment variables."""
+    return ASRConfig(
+        model_name=os.getenv("ECHOPANEL_WHISPER_MODEL", "large-v3-turbo"),
+        device=os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto"),
+        compute_type=os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8"),
+        language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE"),  # None = auto-detect
+        chunk_seconds=int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "4")),
+        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "0") == "1",
+    )
 
 
-async def stream_asr(pcm_stream: AsyncIterator[bytes], sample_rate: int = 16000) -> AsyncIterator[dict]:
+async def stream_asr(
+    pcm_stream: AsyncIterator[bytes],
+    sample_rate: int = 16000,
+    source: Optional[str] = None,
+) -> AsyncIterator[dict]:
     """
-    Streaming ASR pipeline.
+    Streaming ASR pipeline using the registered provider.
 
-    If faster-whisper is available, it emits final segments from buffered audio.
-    Otherwise, it emits a lightweight placeholder based on audio activity.
+    Converts ASRSegment objects to the dict format expected by the WebSocket handler.
+    
+    Args:
+        pcm_stream: Async iterator of raw PCM16 audio chunks
+        sample_rate: Audio sample rate (default 16000)
+        source: Optional audio source tag ("system" or "mic")
+    
+    Yields:
+        Dict events with type "asr_partial" or "asr_final"
     """
-
-    bytes_per_sample = 2
-    chunk_seconds = int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "4"))
-    chunk_bytes = sample_rate * chunk_seconds * bytes_per_sample
-    buffer = bytearray()
-    samples_seen = 0
-    chunk_count = 0
-
-    print(f"asr_stream: started, chunk_bytes={chunk_bytes} ({chunk_seconds}s)")
-
-    async for chunk in pcm_stream:
-        buffer.extend(chunk)
-        samples_seen += len(chunk) // bytes_per_sample
-        
-        if DEBUG and samples_seen % 16000 == 0:
-            print(f"asr_stream: buffer={len(buffer)} bytes, samples_seen={samples_seen}")
-
-        if len(buffer) < chunk_bytes:
-            continue
-
-        chunk_count += 1
-        t1 = samples_seen / sample_rate
-        t0 = max(0.0, t1 - chunk_seconds)
-        audio_bytes = bytes(buffer)
-        buffer.clear()
-        
-        print(f"asr_stream: processing chunk #{chunk_count}, {len(audio_bytes)} bytes, t={t0:.1f}-{t1:.1f}s")
-
-        model = _get_model()
-        if model is None or np is None:
-            print("asr_stream: missing model or numpy, emitting placeholder")
-            yield {
-                "type": "asr_partial",
-                "t0": t0,
-                "t1": t1,
-                "text": "Audio detected",
-                "stable": False,
-                "confidence": 0.3,
-            }
-            yield {
-                "type": "asr_final",
-                "t0": t0,
-                "t1": t1,
-                "text": "Audio detected.",
-                "stable": True,
-                "confidence": 0.3,
-            }
-            await asyncio.sleep(0)
-            continue
-
-        audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    config = _get_default_config()
+    provider = ASRProviderRegistry.get_provider(config=config)
+    
+    if provider is None or not provider.is_available:
         if DEBUG:
-            print(f"asr_stream: transcribing {len(audio)} samples")
+            print("asr_stream: No ASR provider available, using fallback")
+        # Fallback: emit placeholder events
+        async for chunk in pcm_stream:
+            pass  # Consume the stream
+        return
 
-        def _transcribe():
-            # Disable VAD filter so we don't drop music/lyrics
-            # Remove language="en" to allow auto-detection (for Hindi etc)
-            segments, _info = model.transcribe(audio, vad_filter=False)
-            return list(segments)
+    # Convert source string to AudioSource enum
+    audio_source: Optional[AudioSource] = None
+    if source == "system":
+        audio_source = AudioSource.SYSTEM
+    elif source == "mic":
+        audio_source = AudioSource.MICROPHONE
 
-        segments = await asyncio.to_thread(_transcribe)
-        # segments = list(segments) # Already listed above
+    if DEBUG:
+        print(f"asr_stream: Using provider '{provider.name}', source={source}")
+
+    async for segment in provider.transcribe_stream(pcm_stream, sample_rate, audio_source):
+        event_type = "asr_final" if segment.is_final else "asr_partial"
+        event = {
+            "type": event_type,
+            "t0": segment.t0,
+            "t1": segment.t1,
+            "text": segment.text,
+            "stable": segment.is_final,
+            "confidence": segment.confidence,
+        }
+        # Add optional fields if present
+        if segment.source:
+            event["source"] = segment.source.value
+        if segment.language:
+            event["language"] = segment.language
+        if segment.speaker:
+            event["speaker"] = segment.speaker
         
-        if DEBUG:
-            print(f"asr_stream: transcribed {len(segments)} segments")
-        
-        for segment in segments:
-            text = segment.text.strip()
-            if not text:
-                continue
-            yield {
-                "type": "asr_partial",
-                "t0": t0 + segment.start,
-                "t1": t0 + segment.end,
-                "text": text,
-                "stable": False,
-                "confidence": 0.7,
-            }
-            yield {
-                "type": "asr_final",
-                "t0": t0 + segment.start,
-                "t1": t0 + segment.end,
-                "text": text,
-                "stable": True,
-                "confidence": 0.8,
-            }
+        yield event
