@@ -29,6 +29,7 @@ struct TranscriptSegment: Identifiable, Equatable {
     let isFinal: Bool
     let confidence: Double
     var source: String? = nil // "microphone" or "system"
+    var speaker: String? = nil // "Speaker 1"
 }
 
 struct ActionItem: Identifiable, Equatable {
@@ -55,6 +56,7 @@ struct EntityItem: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let type: String
+    let count: Int
     let lastSeen: TimeInterval
     let confidence: Double
 }

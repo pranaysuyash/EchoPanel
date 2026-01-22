@@ -1,9 +1,10 @@
 import asyncio
+import base64
 import json
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -24,8 +25,11 @@ class SessionState:
     pcm_buffer: bytearray = field(default_factory=bytearray)
     diarization_enabled: bool = False
     diarization_max_bytes: int = 0
-    last_log: float = 0.0
     bytes_received: int = 0
+    active_sources: Set[str] = field(default_factory=set)
+    # Map source -> Queue
+    queues: Dict[str, asyncio.Queue] = field(default_factory=dict)
+    last_log: float = 0.0
 
 
 async def _pcm_stream(queue: asyncio.Queue[Optional[bytes]]):
@@ -36,11 +40,20 @@ async def _pcm_stream(queue: asyncio.Queue[Optional[bytes]]):
         yield chunk
 
 
-async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Queue[Optional[bytes]]) -> None:
-    async for event in stream_asr(_pcm_stream(queue)):
-        await websocket.send_text(json.dumps(event))
-        if event.get("type") == "asr_final":
-            state.transcript.append(event)
+async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Queue, source: str) -> None:
+    if DEBUG:
+        print(f"ws_live_listener: starting ASR loop for source={source}")
+    try:
+        async for event in stream_asr(_pcm_stream(queue), source=source):
+            await websocket.send_text(json.dumps(event))
+            if event.get("type") == "asr_final":
+                # Add source if missing (stream_asr does it, but double check)
+                if "source" not in event:
+                    event["source"] = source
+                state.transcript.append(event)
+    except Exception as e:
+        if DEBUG:
+            print(f"ws_live_listener: error in ASR loop ({source}): {e}")
 
 
 async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
@@ -68,7 +81,8 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
 async def ws_live_listener(websocket: WebSocket) -> None:
     await websocket.accept()
     state = SessionState()
-    pcm_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+    # No single pcm_queue anymore, dynamic via state.queues
+
     diarization_enabled = os.getenv("ECHOPANEL_DIARIZATION", "0") == "1"
     diarization_max_seconds = int(os.getenv("ECHOPANEL_DIARIZATION_MAX_SECONDS", "1800"))
     state.diarization_enabled = diarization_enabled
@@ -84,6 +98,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                 message = await websocket.receive()
             except RuntimeError:
                 break
+
+            # Handle Text (JSON) Messages
             if "text" in message and message["text"] is not None:
                 payload: Dict[str, Any] = json.loads(message["text"])
                 msg_type = payload.get("type")
@@ -94,12 +110,34 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     await websocket.send_text(json.dumps({"type": "status", "state": "streaming", "message": "Streaming"}))
                     if DEBUG:
                         print(f"ws_live_listener: start session_id={state.session_id}")
-
-                    state.tasks.append(asyncio.create_task(_asr_loop(websocket, state, pcm_queue)))
                     state.tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
 
+                elif msg_type == "audio":
+                    # B1 Fix: Handle source-tagged audio frames
+                    if state.started:
+                        b64_data = payload.get("data", "")
+                        source = payload.get("source", "system")
+                        chunk = base64.b64decode(b64_data)
+                        
+                        if source not in state.queues:
+                            state.queues[source] = asyncio.Queue()
+                            state.active_sources.add(source)
+                            state.tasks.append(asyncio.create_task(_asr_loop(websocket, state, state.queues[source], source)))
+                        
+                        await state.queues[source].put(chunk)
+                        
+                        if state.diarization_enabled:
+                            state.pcm_buffer.extend(chunk)
+                            if state.diarization_max_bytes > 0 and len(state.pcm_buffer) > state.diarization_max_bytes:
+                                overflow = len(state.pcm_buffer) - state.diarization_max_bytes
+                                if overflow > 0:
+                                    del state.pcm_buffer[:overflow]
+
                 elif msg_type == "stop":
-                    await pcm_queue.put(None)
+                    # Signal EOF to all queues
+                    for q in state.queues.values():
+                        await q.put(None)
+                        
                     if DEBUG:
                         print("ws_live_listener: stop")
                     
@@ -134,7 +172,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                     "decisions": cards["decisions"],
                                     "risks": cards["risks"],
                                     "entities": entities,
-                                    "diarization": diarization_segments,
+                                    "diarization": diarization_segments, # H8 Fix: Include raw diarization
                                 },
                             }
                         )
@@ -142,28 +180,39 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     await websocket.close()
                     return
 
+            # Handle Binary Messages (Legacy/Fallback)
             if "bytes" in message and message["bytes"] is not None and state.started:
                 chunk = message["bytes"]
-                await pcm_queue.put(chunk)
+                source = "system" # Default for binary
+                
+                if source not in state.queues:
+                    state.queues[source] = asyncio.Queue()
+                    state.active_sources.add(source)
+                    state.tasks.append(asyncio.create_task(_asr_loop(websocket, state, state.queues[source], source)))
+                
+                await state.queues[source].put(chunk)
+                
                 if state.diarization_enabled:
                     state.pcm_buffer.extend(chunk)
                     if state.diarization_max_bytes > 0 and len(state.pcm_buffer) > state.diarization_max_bytes:
                         overflow = len(state.pcm_buffer) - state.diarization_max_bytes
                         if overflow > 0:
                             del state.pcm_buffer[:overflow]
+                
                 if DEBUG:
                     state.bytes_received += len(chunk)
                     now = time.time()
                     if now - state.last_log > 2:
                         state.last_log = now
-                        print(f"ws_live_listener: received {state.bytes_received} bytes")
+                        print(f"ws_live_listener: received {state.bytes_received} bytes (binary)")
 
     except WebSocketDisconnect:
         if DEBUG:
             print("ws_live_listener: disconnect")
         return
     finally:
-        await pcm_queue.put(None)
+        for q in state.queues.values():
+            await q.put(None)
         for task in state.tasks:
             task.cancel()
         await asyncio.gather(*state.tasks, return_exceptions=True)

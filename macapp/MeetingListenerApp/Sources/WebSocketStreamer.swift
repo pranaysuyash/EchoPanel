@@ -54,14 +54,14 @@ final class WebSocketStreamer: NSObject {
         if debugEnabled {
             NSLog("📤 WebSocketStreamer sending PCM frame: %d bytes, source: %@", data.count, source)
         }
-        // TODO (v0.2): Change to JSON-based audio_frame with source tag
-        // For now, send raw binary for backward compatibility
-        task?.send(.data(data)) { [weak self] error in
-            if let error {
-                NSLog("❌ WebSocketStreamer send error: %@", error.localizedDescription)
-                self?.handleError(error)
-            }
-        }
+        
+        let payload: [String: Any] = [
+            "type": "audio",
+            "source": source,
+            "data": data.base64EncodedString()
+        ]
+        
+        sendJSON(payload)
     }
 
     private func sendStart() {
@@ -219,6 +219,7 @@ final class WebSocketStreamer: NSObject {
                     EntityItem(
                         name: (entity["name"] as? String) ?? "",
                         type: type,
+                        count: (entity["count"] as? Int) ?? 0,
                         lastSeen: (entity["last_seen"] as? TimeInterval) ?? 0,
                         confidence: (entity["confidence"] as? Double) ?? 0
                     )

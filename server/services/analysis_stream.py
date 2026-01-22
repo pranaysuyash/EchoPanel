@@ -128,7 +128,7 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
                 text=text,
                 card_type="action",
                 t0=t0, t1=t1,
-                confidence=0.7,
+                confidence=segment.get("confidence", 0.0),
                 evidence=[{"t0": t0, "t1": t1, "quote": text}]
             ))
         
@@ -137,7 +137,7 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
                 text=text,
                 card_type="decision",
                 t0=t0, t1=t1,
-                confidence=0.7,
+                confidence=segment.get("confidence", 0.0),
                 evidence=[{"t0": t0, "t1": t1, "quote": text}]
             ))
         
@@ -146,7 +146,7 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
                 text=text,
                 card_type="risk",
                 t0=t0, t1=t1,
-                confidence=0.7,
+                confidence=segment.get("confidence", 0.0),
                 evidence=[{"t0": t0, "t1": t1, "quote": text}]
             ))
 
@@ -363,35 +363,35 @@ def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANA
     
     lines = []
     
-    # Summarize topics
+    # H10 Fix: Better structure with "Recent" context
+    
+    # 1. Overall Highlights (from whole session)
+    all_decisions = extract_cards(transcript).get("decisions", [])
+    if all_decisions:
+        lines.append(f"## 🏛 Decisions ({len(all_decisions)})")
+        for d in all_decisions[-3:]: # Last 3
+            lines.append(f"- {d['text']}")
+    
+    all_actions = extract_cards(transcript).get("actions", [])
+    if all_actions:
+        lines.append(f"\n## ⚡ Action Items ({len(all_actions)})")
+        for a in all_actions[-3:]:
+             lines.append(f"- {a['text']}")
+
+    # 2. Recent Context (Windowed)
+    lines.append(f"\n## 🕒 Recent Context (Last 10m)")
+    
     topics = entities.get("topics", [])
     if topics:
         topic_names = [t["name"] for t in topics[:5]]
-        lines.append(f"**Topics discussed:** {', '.join(topic_names)}")
+        lines.append(f"**Topics:** {', '.join(topic_names)}")
     
-    # Summarize decisions
-    decisions = cards.get("decisions", [])
-    if decisions:
-        lines.append(f"\n**Decisions ({len(decisions)}):**")
-        for d in decisions[:3]:
-            lines.append(f"- {d['text'][:100]}...")
-    
-    # Summarize actions
-    actions = cards.get("actions", [])
-    if actions:
-        lines.append(f"\n**Action Items ({len(actions)}):**")
-        for a in actions[:3]:
-            lines.append(f"- {a['text'][:100]}...")
-    
-    # Summarize risks
     risks = cards.get("risks", [])
     if risks:
-        lines.append(f"\n**Risks/Issues ({len(risks)}):**")
         for r in risks[:2]:
-            lines.append(f"- {r['text'][:100]}...")
-    
+            lines.append(f"- ⚠️ {r['text']}")
+
     if not lines:
-        # Fallback: just mention recent activity
-        return f"Conversation in progress ({len(windowed)} segments in last 10 minutes)."
+        return "Waiting for conversation..."
     
     return "\n".join(lines)

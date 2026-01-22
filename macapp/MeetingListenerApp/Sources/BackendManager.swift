@@ -60,6 +60,10 @@ final class BackendManager: ObservableObject {
         var env = ProcessInfo.processInfo.environment
         env["ECHOPANEL_DEBUG"] = "1"
         env["ECHOPANEL_WHISPER_MODEL"] = UserDefaults.standard.string(forKey: "whisperModel") ?? "large-v3-turbo"
+        if let hfToken = UserDefaults.standard.string(forKey: "hfToken"), !hfToken.isEmpty {
+            env["ECHOPANEL_HF_TOKEN"] = hfToken
+            env["ECHOPANEL_DIARIZATION"] = "1"
+        }
         process.environment = env
         
         // Capture output

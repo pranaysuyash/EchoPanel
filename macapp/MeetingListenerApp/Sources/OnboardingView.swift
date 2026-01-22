@@ -11,6 +11,7 @@ struct OnboardingView: View {
         case welcome
         case permissions
         case sourceSelection
+        case diarization // B4 Fix
         case ready
     }
     
@@ -37,6 +38,8 @@ struct OnboardingView: View {
                     permissionsStep
                 case .sourceSelection:
                     sourceSelectionStep
+                case .diarization:
+                    diarizationStep
                 case .ready:
                     readyStep
                 }
@@ -171,6 +174,40 @@ struct OnboardingView: View {
         }
     }
     
+    // B4 Fix: Diarization Step
+    private var diarizationStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Speaker Labels (Optional)")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("To identify who is speaking (Diarization), EchoPanel uses a model that requires a HuggingFace User Access Token due to license restrictions.")
+                .foregroundColor(.secondary)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                Text("HuggingFace Token (Read-only)")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                
+                SecureField("hf_...", text: Binding(
+                    get: { UserDefaults.standard.string(forKey: "hfToken") ?? "" },
+                    set: { UserDefaults.standard.set($0, forKey: "hfToken") }
+                ))
+                .textFieldStyle(.roundedBorder)
+                
+                Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
+                    .font(.caption)
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            
+            Text("You can leave this empty and set it later. Speaker labels won't be available without it.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+    
     private var readyStep: some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
@@ -195,6 +232,29 @@ struct OnboardingView: View {
                 .foregroundColor(.secondary)
             }
             .padding(.top)
+            
+            // H9 Fix: Server Status Feedback
+            if appState.serverStatus == .error {
+                VStack(spacing: 4) {
+                    Label("Backend Error", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                        .foregroundColor(.red)
+                    Text("The python server failed to start. Check if Python 3.10+ is installed.")
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(8)
+            } else if !appState.isServerReady {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Starting server...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
     

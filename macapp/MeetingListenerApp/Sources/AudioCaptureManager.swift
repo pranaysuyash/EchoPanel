@@ -7,6 +7,7 @@ import ScreenCaptureKit
 final class AudioCaptureManager: NSObject {
     var onPCMFrame: ((Data, String) -> Void)? // (frame, source="system")
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
+    var onAudioLevelUpdate: ((Float) -> Void)?
     var onSampleCount: ((Int) -> Void)?
     var onScreenFrameCount: ((Int) -> Void)?
 
@@ -258,6 +259,7 @@ final class AudioCaptureManager: NSObject {
         }
 
         onAudioQualityUpdate?(quality)
+        onAudioLevelUpdate?(rmsEMA)
     }
 }
 

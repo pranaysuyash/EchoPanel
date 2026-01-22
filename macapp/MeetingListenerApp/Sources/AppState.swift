@@ -50,6 +50,10 @@ final class AppState: ObservableObject {
     @Published var risks: [RiskItem] = []
     @Published var entities: [EntityItem] = []
 
+    // H9 Fix: Expose backend status
+    var isServerReady: Bool { BackendManager.shared.isServerReady }
+    var serverStatus: BackendManager.ServerStatus { BackendManager.shared.serverStatus }
+
     @Published var finalSummaryMarkdown: String = ""
     @Published var finalSummaryJSON: [String: Any] = [:]
 
@@ -90,6 +94,9 @@ final class AppState: ObservableObject {
         }
         audioCapture.onAudioQualityUpdate = { [weak self] quality in
             Task { @MainActor in self?.audioQuality = quality }
+        }
+        audioCapture.onAudioLevelUpdate = { [weak self] level in
+            Task { @MainActor in self?.systemAudioLevel = level }
         }
         audioCapture.onPCMFrame = { [weak self] frame, source in
             NSLog("🔊 onPCMFrame callback triggered: %d bytes, source: %@", frame.count, source)
@@ -161,6 +168,23 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.finalSummaryMarkdown = markdown
                 self?.finalSummaryJSON = jsonObject
+                
+                // H8 Fix: Update transcript with diarized speakers
+                if let transcriptData = jsonObject["transcript"] as? [[String: Any]] {
+                    var newSegments: [TranscriptSegment] = []
+                    for item in transcriptData {
+                        guard let text = item["text"] as? String,
+                              let t0 = item["t0"] as? TimeInterval,
+                              let t1 = item["t1"] as? TimeInterval else { continue }
+                        let confidence = (item["confidence"] as? Double) ?? 0.0
+                        let isFinal = item["is_final"] as? Bool ?? true
+                        let source = item["source"] as? String
+                        var segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: isFinal, confidence: confidence, source: source)
+                        segment.speaker = item["speaker"] as? String
+                        newSegments.append(segment)
+                    }
+                    self?.transcriptSegments = newSegments
+                }
             }
         }
         
@@ -500,11 +524,24 @@ final class AppState: ObservableObject {
 
     private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
         withAnimation(.easeInOut(duration: 0.2)) {
+            let segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
+            
             if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
+                transcriptSegments[lastIndex] = segment
             } else {
-                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source))
+                transcriptSegments.append(segment)
             }
+            
+            // H6 Fix: Append to persistent transcript log
+            let payload: [String: Any] = [
+                "text": text,
+                "t0": t0,
+                "t1": t1,
+                "confidence": confidence,
+                "source": source as Any,
+                "timestamp": Date().iso8601
+            ]
+            sessionStore.appendTranscriptSegment(payload)
         }
     }
 

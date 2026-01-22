@@ -11,9 +11,19 @@ async def root() -> dict:
     return {"status": "ok"}
 
 
+from server.services.asr_providers import ASRProviderRegistry
+from server.services.asr_stream import _get_default_config
+
 @app.get("/health")
 async def health_check() -> dict:
-    return {"status": "ok", "service": "echopanel"}
+    try:
+        config = _get_default_config()
+        provider = ASRProviderRegistry.get_provider(config)
+        if provider and provider.is_available:
+            return {"status": "ok", "service": "echopanel", "model": provider.name}
+        return {"status": "loading", "service": "echopanel"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 def main() -> None:
