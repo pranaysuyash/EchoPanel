@@ -1,4 +1,5 @@
 import Combine
+import CoreGraphics
 import CoreMedia
 import Foundation
 import QuartzCore
@@ -53,7 +54,9 @@ final class AudioCaptureManager: NSObject {
         }
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first else {
+        let mainDisplayId = CGMainDisplayID()
+        let display = content.displays.first(where: { $0.displayID == mainDisplayId }) ?? content.displays.first
+        guard let display else {
             throw CaptureError.noDisplay
         }
 

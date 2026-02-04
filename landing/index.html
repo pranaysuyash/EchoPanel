@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EchoPanel is a macOS menu bar app that turns any system audio into live meeting notes with actions, decisions, risks, and entities." />
     <title>EchoPanel — Live meeting notes from any Mac audio</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231f6feb' d='M32 6c14.36 0 26 11.64 26 26S46.36 58 32 58 6 46.36 6 32 17.64 6 32 6Zm-7 17a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V26a3 3 0 0 0-3-3Zm14-8a3 3 0 0 0-3 3v28a3 3 0 0 0 6 0V18a3 3 0 0 0-3-3Zm-7 14a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0v-8a3 3 0 0 0-3-3Z'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -19,6 +20,7 @@
             <a href="#how">How it works</a>
             <a href="#trust">Trust</a>
             <a href="#waitlist">Waitlist</a>
+            <a href="#privacy">Privacy</a>
           </div>
         </nav>
 
@@ -61,7 +63,7 @@
                 </div>
                 <input type="hidden" name="source" value="landing" />
                 <button type="submit" class="btn-primary">Request access</button>
-                <div class="form-status" data-form-status></div>
+                <div class="form-status" data-form-status aria-live="polite" role="status"></div>
               </form>
             </div>
           </div>
@@ -275,9 +277,30 @@
         <div class="footer-links">
           <a href="https://echopanel.studio">echopanel.studio</a>
           <a href="mailto:hello@echopanel.studio">hello@echopanel.studio</a>
-          <a href="#">Privacy</a>
+          <a href="#privacy">Privacy</a>
         </div>
       </footer>
+
+      <section class="section" id="privacy">
+        <div class="section-header">
+          <h2>Privacy</h2>
+          <p>EchoPanel only listens when you click Start. You export what you choose to keep.</p>
+        </div>
+        <div class="trust-grid">
+          <div class="trust-card">
+            <h3>Local capture</h3>
+            <p>Audio capture happens on your Mac via ScreenCaptureKit and optional microphone input.</p>
+          </div>
+          <div class="trust-card">
+            <h3>Transparent status</h3>
+            <p>Streaming and audio quality indicators are always visible while listening.</p>
+          </div>
+          <div class="trust-card">
+            <h3>Your exports</h3>
+            <p>Session notes are saved only when you choose Copy or Export.</p>
+          </div>
+        </div>
+      </section>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>

@@ -12,6 +12,9 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 PLIST_PATH="$APP_CONTENTS/Info.plist"
 APP_ID="com.echopanel.meetinglistener.dev"
+VERSION="0.2.0-dev"
+BUILD_ID="$(date +%Y%m%d%H%M)"
+GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 echo "Building $APP_NAME (release)..."
 cd "$APP_DIR"
@@ -38,9 +41,15 @@ cat > "$PLIST_PATH" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>$BUILD_ID</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>$VERSION+$GIT_SHA</string>
+    <key>EchoPanelGitSHA</key>
+    <string>$GIT_SHA</string>
+    <key>EchoPanelBuildID</key>
+    <string>$BUILD_ID</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Capture microphone audio for real-time meeting transcripts and highlights.</string>
 </dict>
 </plist>
 EOF

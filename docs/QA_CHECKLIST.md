@@ -3,7 +3,7 @@
 ## Core flows
 - Start from menu bar toggles to Listening.
 - Side panel appears on Start and hides on Stop.
-- Timer increments while listening and resets on Stop.
+- Timer increments while listening (and tracks transcript time) and resets on Stop.
 
 ## Permissions
 - First run triggers permission UX.
@@ -18,6 +18,7 @@
 ## UI correctness
 - Partial transcript is visually distinct from final.
 - Final segments replace partial cleanly without duplication.
+- With `Source = Both`, mic + system partials don’t overwrite each other.
 - Confidence values show and low confidence is visibly labeled.
 - Cards update at least once per minute (when backend sends updates).
 - Entities update every 10-20 seconds (when backend sends updates).
@@ -25,4 +26,3 @@
 ## Exports
 - Copy Markdown copies final summary if available.
 - Export JSON writes a file containing session metadata and outputs.
-

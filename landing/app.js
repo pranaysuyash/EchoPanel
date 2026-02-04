@@ -1,4 +1,5 @@
 const WAITLIST_ENDPOINT =
+  window.WAITLIST_ENDPOINT ||
   'https://script.google.com/macros/s/AKfycbzln1RWmoPKjI4sc6j7fic1mM_UlYX45yOr3J8wGoouBemcF5WIh304206YsvjF7YHq/exec';
 
 const forms = document.querySelectorAll('[data-waitlist]');
@@ -9,6 +10,9 @@ const prefersReducedMotion = window.matchMedia(
 
 async function submitWaitlist(form) {
   const status = form.querySelector('[data-form-status]');
+  const submitButton = form.querySelector('button[type="submit"]');
+
+  if (submitButton) submitButton.disabled = true;
   status.textContent = 'Submitting…';
 
   const formData = new FormData(form);
@@ -32,6 +36,8 @@ async function submitWaitlist(form) {
   } catch (error) {
     status.textContent = 'Something went wrong. Please try again.';
     console.error(error);
+  } finally {
+    if (submitButton) submitButton.disabled = false;
   }
 }
 

@@ -186,14 +186,30 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
     # Track entities by (name, type)
     entity_map: Dict[Tuple[str, str], Entity] = {}
     
+    # Common capitalized tokens that should NOT become "topics".
+    # This list intentionally includes pronouns and discourse markers that ASR frequently
+    # capitalizes at sentence starts (e.g., "You", "Well", "Alright").
     common_words = {
-        "The", "We", "I", "It", "On", "In", "And", "Or", "For", "To", "A", "An",
-        "This", "That", "These", "Those", "Is", "Are", "Was", "Were", "Be", "Been",
-        "Have", "Has", "Had", "Do", "Does", "Did", "Will", "Would", "Could", "Should",
-        "May", "Might", "Must", "Shall", "Can", "Need", "Dare", "But", "So", "Yet",
-        "Okay", "OK", "Yeah", "Yes", "No", "Not", "Just", "Also", "Now", "Then",
-        "Here", "There", "When", "Where", "What", "Which", "Who", "How", "Why",
+        "A", "An", "And", "Are", "As", "At",
+        "Be", "Been", "But", "By",
+        "Can", "Could",
+        "Did", "Do", "Does", "Done",
+        "For", "From",
+        "Had", "Has", "Have", "Here", "How",
+        "I", "If", "In", "Into", "Is", "It",
+        "Just",
+        "May", "Might", "Must", "My",
+        "No", "Not", "Now",
+        "Of", "On", "Or", "Our", "Out",
+        "So", "Should", "Shall",
+        "That", "The", "Then", "There", "These", "This", "Those", "To",
+        "We", "Were", "What", "When", "Where", "Which", "Who", "Why", "Will", "Would",
+        "You", "Your",
+        # Discourse / filler
+        "Alright", "Okay", "Ok", "OK", "Yeah", "Yes", "Well", "Great", "Thanks", "Thank",
+        "Hello", "Hi",
     }
+    common_words_lower = {w.lower() for w in common_words}
     
     # Day names -> dates
     day_names = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
@@ -240,7 +256,7 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
         two_word_pattern = r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b"
         two_word_matches = re.findall(two_word_pattern, text)
         for first, last in two_word_matches:
-            if first in common_words or last in common_words:
+            if first.lower() in common_words_lower or last.lower() in common_words_lower:
                 continue
             if first in day_names or last in day_names:
                 continue
@@ -287,7 +303,10 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
         tokens = re.findall(r"\b[A-Z][a-zA-Z0-9\.]+\b", text)
         
         for token in tokens:
-            if token in common_words:
+            # Filter noisy "topic" candidates (pronouns, fillers, etc.)
+            if token.lower() in common_words_lower:
+                continue
+            if len(token) < 3:
                 continue
             
             # Classify entity type

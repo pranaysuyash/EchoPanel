@@ -21,7 +21,7 @@ DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 def _get_default_config() -> ASRConfig:
     """Build ASRConfig from environment variables."""
     return ASRConfig(
-        model_name=os.getenv("ECHOPANEL_WHISPER_MODEL", "large-v3-turbo"),
+        model_name=os.getenv("ECHOPANEL_WHISPER_MODEL", "base"),
         device=os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto"),
         compute_type=os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8"),
         language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE"),  # None = auto-detect
@@ -54,9 +54,10 @@ async def stream_asr(
     if provider is None or not provider.is_available:
         if DEBUG:
             print("asr_stream: No ASR provider available, using fallback")
-        # Fallback: emit placeholder events
-        async for chunk in pcm_stream:
-            pass  # Consume the stream
+        # Fallback: emit a single status event and no transcript pollution
+        yield {"type": "status", "state": "no_asr_provider", "message": "ASR provider unavailable"}
+        async for _ in pcm_stream:
+            pass
         return
 
     # Convert source string to AudioSource enum

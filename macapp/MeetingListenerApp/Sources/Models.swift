@@ -28,8 +28,8 @@ struct TranscriptSegment: Identifiable, Equatable {
     let t1: TimeInterval
     let isFinal: Bool
     let confidence: Double
-    var source: String? = nil // "microphone" or "system"
-    var speaker: String? = nil // "Speaker 1"
+    var source: String? = nil // "system" or "mic" (backend); may also appear as "microphone" from older clients
+    var speaker: String? = nil // "Speaker 1" (optional; diarization)
 }
 
 struct ActionItem: Identifiable, Equatable {

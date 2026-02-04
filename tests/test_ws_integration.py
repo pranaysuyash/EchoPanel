@@ -47,9 +47,12 @@ async def test_source_tagged_audio_flow():
         # 5. Send Stop
         websocket.send_json({"type": "stop", "session_id": "test_session_H7"})
         
-        # 6. Verify Final Summary received
-        final = websocket.receive_json()
-        assert final["type"] == "final_summary"
+        # 6. Verify Final Summary received (may receive ASR events first)
+        final_seen = False
+        for _ in range(10):  # Allow up to 10 messages before final_summary
+            msg = websocket.receive_json()
+            if msg.get("type") == "final_summary":
+                final_seen = True
+                break
         
-        # Check if internal state handled sources (hard to check via WS output unless transcript has it)
-        # But if we reached here without error, the JSON handling logic works.
+        assert final_seen, "Expected final_summary but did not receive it"

@@ -12,3 +12,17 @@ __pycache__/
 .build/
 xcuserdata/
 *.xcuserstate
+*.log
+logs/
+*.tmp
+*.temp
+.cache/
+.coverage
+htmlcov/
+.tox/
+.env
+.env.local
+.env.*.local
+*.swp
+*.swo
+*~

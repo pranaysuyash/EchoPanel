@@ -17,6 +17,7 @@ final class WebSocketStreamer: NSObject {
     private var sessionID: String?
     private var reconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 10
+    private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
 
     init(url: URL) {
         self.url = url
@@ -45,9 +46,38 @@ final class WebSocketStreamer: NSObject {
         task = nil
         sessionID = nil
         stopPing()
+        finalSummaryWaiter = nil
         if debugEnabled {
             NSLog("WebSocketStreamer: disconnect")
         }
+    }
+
+    @MainActor
+    func stopAndAwaitFinalSummary(timeout: TimeInterval) async -> Bool {
+        guard task != nil else { return true }
+        if finalSummaryWaiter != nil {
+            return true
+        }
+
+        let didReceive = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            self.finalSummaryWaiter = continuation
+            self.sendStop()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                if let waiter = self.finalSummaryWaiter {
+                    self.finalSummaryWaiter = nil
+                    waiter.resume(returning: false)
+                }
+            }
+        }
+
+        // Ensure the socket is closed even on timeout.
+        task?.cancel(with: .normalClosure, reason: nil)
+        task = nil
+        sessionID = nil
+        stopPing()
+        finalSummaryWaiter = nil
+        return didReceive
     }
 
     func sendPCMFrame(_ data: Data, source: String = "system") {
@@ -132,12 +162,14 @@ final class WebSocketStreamer: NSObject {
         case "status":
             let state = (object["state"] as? String) ?? "error"
             let message = (object["message"] as? String) ?? ""
-            if state == "streaming" {
-                onStatus?(.streaming, message)
-            } else if state == "reconnecting" {
-                onStatus?(.reconnecting, message)
-            } else {
-                onStatus?(.error, message)
+            DispatchQueue.main.async {
+                if state == "streaming" {
+                    self.onStatus?(.streaming, message)
+                } else if state == "reconnecting" {
+                    self.onStatus?(.reconnecting, message)
+                } else {
+                    self.onStatus?(.error, message)
+                }
             }
 
         case "asr_partial":
@@ -146,7 +178,9 @@ final class WebSocketStreamer: NSObject {
             let t1 = (object["t1"] as? TimeInterval) ?? 0
             let confidence = (object["confidence"] as? Double) ?? 0.6
             let source = object["source"] as? String
-            onASRPartial?(text, t0, t1, confidence, source)
+            DispatchQueue.main.async {
+                self.onASRPartial?(text, t0, t1, confidence, source)
+            }
 
         case "asr_final":
             let text = (object["text"] as? String) ?? ""
@@ -154,22 +188,34 @@ final class WebSocketStreamer: NSObject {
             let t1 = (object["t1"] as? TimeInterval) ?? 0
             let confidence = (object["confidence"] as? Double) ?? 0.9
             let source = object["source"] as? String
-            onASRFinal?(text, t0, t1, confidence, source)
+            DispatchQueue.main.async {
+                self.onASRFinal?(text, t0, t1, confidence, source)
+            }
 
         case "cards_update":
             let actions = decodeActionItems(object["actions"])
             let decisions = decodeDecisionItems(object["decisions"])
             let risks = decodeRiskItems(object["risks"])
-            onCardsUpdate?(actions, decisions, risks)
+            DispatchQueue.main.async {
+                self.onCardsUpdate?(actions, decisions, risks)
+            }
 
         case "entities_update":
             let entities = decodeEntityItems(object)
-            onEntitiesUpdate?(entities)
+            DispatchQueue.main.async {
+                self.onEntitiesUpdate?(entities)
+            }
 
         case "final_summary":
             let markdown = (object["markdown"] as? String) ?? ""
             let jsonObject = (object["json"] as? [String: Any]) ?? [:]
-            onFinalSummary?(markdown, jsonObject)
+            DispatchQueue.main.async {
+                self.onFinalSummary?(markdown, jsonObject)
+                if let waiter = self.finalSummaryWaiter {
+                    self.finalSummaryWaiter = nil
+                    waiter.resume(returning: true)
+                }
+            }
 
         default:
             break
@@ -233,7 +279,9 @@ final class WebSocketStreamer: NSObject {
         if debugEnabled {
             NSLog("WebSocketStreamer: error %@", error.localizedDescription)
         }
-        onStatus?(.reconnecting, error.localizedDescription)
+        DispatchQueue.main.async {
+            self.onStatus?(.reconnecting, error.localizedDescription)
+        }
         reconnect()
     }
 

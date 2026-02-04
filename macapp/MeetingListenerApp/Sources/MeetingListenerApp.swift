@@ -29,6 +29,11 @@ struct MeetingListenerApp: App {
             labelContent
         }
         .menuBarExtraStyle(.menu)
+        .onChange(of: showOnboarding) { newValue in
+            if newValue {
+                openWindow(id: "onboarding")
+            }
+        }
         .commands {
             CommandMenu("EchoPanel") {
                 Button(appState.sessionState == .listening ? "Stop Listening" : "Start Listening") {
@@ -60,6 +65,17 @@ struct MeetingListenerApp: App {
                 Button("Diagnostics...") {
                     openWindow(id: "diagnostics")
                 }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Button("Session Summary...") {
+                    openWindow(id: "summary")
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Button("Session History...") {
+                    openWindow(id: "history")
+                }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
                 
                 Divider()
                 Button("Quit") { 
@@ -71,7 +87,9 @@ struct MeetingListenerApp: App {
         
         // Onboarding window shown on first launch
         Window("Welcome to EchoPanel", id: "onboarding") {
-            OnboardingView(appState: appState, isPresented: $showOnboarding)
+            OnboardingView(appState: appState, isPresented: $showOnboarding) {
+                startListeningFromOnboarding()
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 500, height: 400)
@@ -85,10 +103,36 @@ struct MeetingListenerApp: App {
             DiagnosticsView(appState: appState, backendManager: backendManager)
         }
         .windowResizability(.contentSize)
+
+        Window("Session Summary", id: "summary") {
+            SummaryView(appState: appState)
+        }
+        .defaultSize(width: 820, height: 620)
+
+        Window("Session History", id: "history") {
+            SessionHistoryView(appState: appState, sessionStore: sessionStore)
+        }
+        .defaultSize(width: 980, height: 620)
+
+        Window("EchoPanel Demo", id: "demo") {
+            DemoPanelView(appState: appState) {
+                seedDemoData()
+            }
+        }
+        .defaultSize(width: 980, height: 560)
     }
 
     private var menuContent: some View {
         VStack(alignment: .leading, spacing: 8) {
+            StartupTasksView(
+                appState: appState,
+                showOnboarding: $showOnboarding,
+                openOnboarding: { openWindow(id: "onboarding") }
+            ) {
+                seedDemoData()
+                openWindow(id: "demo")
+            }
+
             Text(appState.sessionState == .listening ? "Listening" : "Idle")
                 .font(.headline)
             Text("Timer: \(appState.timerText)")
@@ -115,16 +159,18 @@ struct MeetingListenerApp: App {
                 toggleSession()
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
-            .disabled(!backendManager.isServerReady)
+            .help(backendManager.isServerReady ? "Start live notes" : "Backend not ready — click for details")
             
             Button("Export JSON") {
                 appState.exportJSON()
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
             Button("Export Markdown") {
                 appState.exportMarkdown()
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
+            .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
             Divider()
             
             // Gap 5 fix: Session recovery option
@@ -151,9 +197,22 @@ struct MeetingListenerApp: App {
                 }
                 Divider()
             }
+
+            Button("Session Summary...") {
+                openWindow(id: "summary")
+            }
+            Button("Session History...") {
+                openWindow(id: "history")
+            }
             
             Button("Show Onboarding") {
                 showOnboarding = true
+            }
+            if ProcessInfo.processInfo.arguments.contains("--demo-ui") {
+                Button("Open Demo Window") {
+                    seedDemoData()
+                    openWindow(id: "demo")
+                }
             }
             Button("Quit") { 
                 BackendManager.shared.stopServer()
@@ -161,6 +220,9 @@ struct MeetingListenerApp: App {
             }
         }
         .padding(.vertical, 4)
+        .onReceive(NotificationCenter.default.publisher(for: .summaryShouldOpen)) { _ in
+            openWindow(id: "summary")
+        }
     }
 
     private var labelContent: some View {
@@ -179,6 +241,13 @@ struct MeetingListenerApp: App {
             appState.stopSession()
             sidePanelController.hide()
         } else {
+            // Always open the side panel so the user sees state and guidance even if
+            // we can't start listening yet (permissions/backend not ready).
+            sidePanelController.show(appState: appState) {
+                appState.stopSession()
+                sidePanelController.hide()
+            }
+
             // Check if onboarding completed and server ready
             if !UserDefaults.standard.bool(forKey: "onboardingCompleted") {
                 showOnboarding = true
@@ -186,15 +255,67 @@ struct MeetingListenerApp: App {
             }
             
             if !backendManager.isServerReady {
-                // TODO: Show alert that server is not ready
+                // Surface an actionable error in the side panel header.
+                appState.streamStatus = .error
+                appState.statusMessage = backendManager.healthDetail.isEmpty ? "Backend not ready. Open Diagnostics to see logs." : backendManager.healthDetail
                 return
             }
             
             appState.startSession()
-            sidePanelController.show(appState: appState) {
-                appState.stopSession()
-                sidePanelController.hide()
+        }
+    }
+
+    private func startListeningFromOnboarding() {
+        UserDefaults.standard.set(true, forKey: "onboardingCompleted")
+        showOnboarding = false
+        toggleSession()
+    }
+
+    private func seedDemoData() {
+        appState.seedDemoData()
+    }
+}
+
+private struct StartupTasksView: View {
+    @ObservedObject var appState: AppState
+    @Binding var showOnboarding: Bool
+    let openOnboarding: () -> Void
+    let openDemo: () -> Void
+
+    @State private var didRun = false
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .task {
+                guard !didRun else { return }
+                didRun = true
+
+                // Ensure permission badges are accurate even before the first session.
+                appState.refreshPermissionStatuses()
+
+                if showOnboarding {
+                    // If already true on first launch, .onChange won't fire; open explicitly.
+                    openOnboarding()
+                }
+
+                if ProcessInfo.processInfo.arguments.contains("--demo-ui") {
+                    openDemo()
+                }
             }
+    }
+}
+
+private struct DemoPanelView: View {
+    @ObservedObject var appState: AppState
+    let seed: () -> Void
+
+    var body: some View {
+        SidePanelView(appState: appState) {
+            // Demo window should not end sessions.
+        }
+        .onAppear {
+            seed()
         }
     }
 }
@@ -205,7 +326,9 @@ struct SettingsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var backendManager: BackendManager
     
-    @AppStorage("whisperModel") private var whisperModel = "large-v3-turbo"
+    @AppStorage("whisperModel") private var whisperModel = "base"
+    @AppStorage("backendHost") private var backendHost = "127.0.0.1"
+    @AppStorage("backendPort") private var backendPort = 8000
     
     var body: some View {
         Form {
@@ -228,6 +351,17 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+            Section("Backend") {
+                TextField("Host", text: $backendHost)
+                    .textFieldStyle(.roundedBorder)
+                Stepper(value: $backendPort, in: 1024...65535) {
+                    Text("Port: \(backendPort)")
+                }
+                Text("Backend changes take effect after restarting the server.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             Section("Server") {
                 HStack {
@@ -237,6 +371,18 @@ struct SettingsView: View {
                         .fill(backendManager.isServerReady ? Color.green : Color.orange)
                         .frame(width: 10, height: 10)
                     Text(backendManager.serverStatus.rawValue)
+                }
+                if backendManager.usingExternalBackend {
+                    Text("Using existing backend on \(backendHost):\(backendPort).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !backendManager.healthDetail.isEmpty {
+                    Text(backendManager.healthDetail)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 Button("Restart Server") {
@@ -248,7 +394,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 300)
+        .frame(width: 420, height: 360)
     }
 }
 
@@ -266,6 +412,20 @@ struct DiagnosticsView: View {
                         Text("Backend Status:")
                         Text(backendManager.serverStatus.rawValue)
                             .foregroundColor(backendManager.serverStatus == .running ? .green : .secondary)
+                    }
+                    if !backendManager.healthDetail.isEmpty {
+                        GridRow {
+                            Text("Backend Detail:")
+                            Text(backendManager.healthDetail)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if let code = backendManager.lastExitCode {
+                        GridRow {
+                            Text("Last Exit Code:")
+                            Text("\(code)")
+                                .foregroundColor(code == 0 ? .secondary : .orange)
+                        }
                     }
                     GridRow {
                         Text("Server Ready:")

@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import CoreGraphics
 import Foundation
@@ -37,6 +38,7 @@ final class AppState: ObservableObject {
     
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
+    var isDebugEnabled: Bool { debugEnabled }
     
     // Diagnostics (v0.2)
     @Published var lastMessageDate: Date?
@@ -59,16 +61,25 @@ final class AppState: ObservableObject {
 
     @Published var finalSummaryMarkdown: String = ""
     @Published var finalSummaryJSON: [String: Any] = [:]
+    @Published var finalizationOutcome: FinalizationOutcome = .none
+
+    enum FinalizationOutcome: String {
+        case none
+        case complete
+        case incompleteTimeout
+        case incompleteError
+    }
 
     private var sessionID: String?
     private var sessionStart: Date?
     private var sessionEnd: Date?
     private var timerCancellable: AnyCancellable?
     private var permissionCancellable: AnyCancellable?
+    private var lastPartialIndexBySource: [String: Int] = [:]
 
     private let audioCapture = AudioCaptureManager()
     private let micCapture = MicrophoneCaptureManager()
-    private let streamer = WebSocketStreamer(url: URL(string: "ws://127.0.0.1:8000/ws/live-listener")!)
+    private let streamer: WebSocketStreamer
     // Note: URL hardcoding is acceptable for v0.2 MVP as per M9 resolution plan (low risk local app)
     // But ideally should read from configuration. Keeping as is for now to avoid large refactor risk.
     private let sessionStore = SessionStore.shared
@@ -79,10 +90,11 @@ final class AppState: ObservableObject {
     private var autoSaveCancellable: AnyCancellable?
 
     init() {
-        refreshScreenRecordingStatus()
+        streamer = WebSocketStreamer(url: BackendConfig.webSocketURL)
+        refreshPermissionStatuses()
         permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
-                self?.refreshScreenRecordingStatus()
+                self?.refreshPermissionStatuses()
             }
 
         audioCapture.onSampleCount = { [weak self] sampleCount in
@@ -179,6 +191,7 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.finalSummaryMarkdown = markdown
                 self?.finalSummaryJSON = jsonObject
+                self?.finalizationOutcome = .complete
                 
                 // H8 Fix: Update transcript with diarized speakers
                 if let transcriptData = jsonObject["transcript"] as? [[String: Any]] {
@@ -196,6 +209,8 @@ final class AppState: ObservableObject {
                     }
                     self?.transcriptSegments = newSegments
                 }
+
+                NotificationCenter.default.post(name: .finalSummaryReady, object: nil)
             }
         }
         
@@ -211,7 +226,7 @@ final class AppState: ObservableObject {
         switch streamStatus {
         case .streaming: base = "Streaming"
         case .reconnecting: base = "Reconnecting"
-        case .error: base = "Backend unavailable"
+        case .error: base = "Not ready"
         }
         if statusMessage.isEmpty { return base }
         return "\(base) - \(statusMessage)"
@@ -228,31 +243,44 @@ final class AppState: ObservableObject {
         resetSession()
         sessionState = .starting
         statusMessage = "Requesting permission"
+        finalizationOutcome = .none
 
         Task {
-            refreshScreenRecordingStatus()
-            
-            // Check Screen Recording first
-            if screenRecordingPermission != .authorized {
-                // We can't request it programmatically in a nice way, but we can check
-                let granted = CGPreflightScreenCaptureAccess()
-                screenRecordingPermission = granted ? .authorized : .denied
-                
-                if !granted {
+            refreshPermissionStatuses()
+
+            // Screen Recording is required only if capturing system audio.
+            if audioSource == .system || audioSource == .both {
+                let preflightGranted = CGPreflightScreenCaptureAccess()
+                let granted: Bool
+                if preflightGranted {
+                    granted = true
+                } else {
+                    granted = await audioCapture.requestPermission()
+                }
+                // On macOS, Screen Recording permission often requires an app restart to take effect.
+                let effective = granted && CGPreflightScreenCaptureAccess()
+                screenRecordingPermission = effective ? .authorized : .denied
+                guard granted else {
                     sessionState = .error
-                    statusMessage = "Screen Recording permission required"
+                    statusMessage = "Screen Recording permission required for System Audio. Open Settings → Privacy & Security → Screen Recording."
+                    return
+                }
+                guard effective else {
+                    sessionState = .error
+                    statusMessage = "Screen Recording permission was granted, but macOS requires you to quit and relaunch EchoPanel before system audio can be captured."
                     return
                 }
             }
 
-            // Request Microphone Permission (using AudioCaptureManager)
-            let micGranted = await audioCapture.requestPermission()
-            microphonePermission = micGranted ? .authorized : .denied
-            
-            guard micGranted else {
-                sessionState = .error
-                statusMessage = "Microphone permission required"
-                return
+            // Microphone permission is required only if capturing microphone audio.
+            if audioSource == .microphone || audioSource == .both {
+                let micGranted = await micCapture.requestPermission()
+                microphonePermission = micGranted ? .authorized : .denied
+                guard micGranted else {
+                    sessionState = .error
+                    statusMessage = "Microphone permission required for Microphone audio"
+                    return
+                }
             }
 
             let id = UUID().uuidString
@@ -316,7 +344,12 @@ final class AppState: ObservableObject {
             if audioSource == .microphone || audioSource == .both {
                 micCapture.stopCapture()
             }
-            streamer.disconnect()
+            let didReceiveFinal = await streamer.stopAndAwaitFinalSummary(timeout: 10)
+            if didReceiveFinal {
+                self.finalizationOutcome = .complete
+            } else {
+                self.finalizationOutcome = .incompleteTimeout
+            }
             
             // Gap 2 fix: Stop silence detection
             stopSilenceCheck()
@@ -326,13 +359,12 @@ final class AppState: ObservableObject {
                 sessionStore.endSession(sessionId: id, finalData: exportPayload())
             }
             
-            // Hard Kill: Force UI state reset immediately
-            Task { @MainActor in
-                self.sessionState = .idle
-                self.statusMessage = ""
-                self.streamStatus = .reconnecting // Reset stream status
-                self.noAudioDetected = false
-            }
+            self.sessionState = .idle
+            self.statusMessage = ""
+            self.streamStatus = .reconnecting // Reset stream status
+            self.noAudioDetected = false
+
+            NotificationCenter.default.post(name: .summaryShouldOpen, object: nil)
         }
     }
 
@@ -345,9 +377,11 @@ final class AppState: ObservableObject {
         entities = []
         finalSummaryMarkdown = ""
         finalSummaryJSON = [:]
+        finalizationOutcome = .none
         sessionID = nil
         sessionStart = nil
         sessionEnd = nil
+        lastPartialIndexBySource = [:]
     }
     
     /// Save current session snapshot for auto-save (v0.2)
@@ -359,7 +393,9 @@ final class AppState: ObservableObject {
     
     private func startSilenceCheck() {
         silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.checkForSilence()
+            Task { @MainActor in
+                self?.checkForSilence()
+            }
         }
     }
     
@@ -497,6 +533,38 @@ final class AppState: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
+    func renderLiveMarkdownForSummary() -> String {
+        // Keep this stable and user-friendly (no "Live Notes" framing).
+        var lines: [String] = []
+        lines.append("# Notes")
+        lines.append("")
+        lines.append("## Transcript")
+        for segment in transcriptSegments where segment.isFinal {
+            let who: String
+            if let speaker = segment.speaker, !speaker.isEmpty {
+                who = speaker
+            } else if let source = segment.source {
+                who = (source == "mic" || source == "microphone") ? "You" : "System"
+            } else {
+                who = "Unknown"
+            }
+            lines.append("- [\(formatTime(segment.t0))] **\(who)**: \(segment.text)")
+        }
+        lines.append("")
+        lines.append("## Actions")
+        for item in actions { lines.append("- \(item.text)") }
+        lines.append("")
+        lines.append("## Decisions")
+        for item in decisions { lines.append("- \(item.text)") }
+        lines.append("")
+        lines.append("## Risks")
+        for item in risks { lines.append("- \(item.text)") }
+        lines.append("")
+        lines.append("## Entities")
+        for entity in entities { lines.append("- \(entity.name) (\(entity.type))") }
+        return lines.joined(separator: "\n")
+    }
+
     private func exportPayload() -> [String: Any] {
         let transcript = transcriptSegments.map { segment in
             [
@@ -504,7 +572,9 @@ final class AppState: ObservableObject {
                 "t1": segment.t1,
                 "text": segment.text,
                 "is_final": segment.isFinal,
-                "confidence": segment.confidence
+                "confidence": segment.confidence,
+                "source": segment.source as Any,
+                "speaker": segment.speaker as Any,
             ]
         }
         let actionsPayload = actions.map { item in
@@ -580,24 +650,42 @@ final class AppState: ObservableObject {
     }
 
     private func handlePartial(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        // Keep the UI timer aligned with the server's timeline (t1), especially if the timer
+        // publisher is delayed or throttled in a menu-bar context.
+        if t1.isFinite {
+            elapsedSeconds = max(elapsedSeconds, Int(t1.rounded(.down)))
+        }
+
+        let sourceKey = (source ?? "system").lowercased()
         withAnimation(.easeInOut(duration: 0.2)) {
-            if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-                transcriptSegments[lastIndex] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source)
+            if let index = lastPartialIndexBySource[sourceKey],
+               transcriptSegments.indices.contains(index),
+               transcriptSegments[index].isFinal == false {
+                transcriptSegments[index] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source)
             } else {
                 transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source))
+                lastPartialIndexBySource[sourceKey] = transcriptSegments.count - 1
             }
         }
     }
 
     private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        if t1.isFinite {
+            elapsedSeconds = max(elapsedSeconds, Int(t1.rounded(.down)))
+        }
+
+        let sourceKey = (source ?? "system").lowercased()
         withAnimation(.easeInOut(duration: 0.2)) {
             let segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
             
-            if let lastIndex = transcriptSegments.indices.last, transcriptSegments[lastIndex].isFinal == false {
-                transcriptSegments[lastIndex] = segment
+            if let index = lastPartialIndexBySource[sourceKey],
+               transcriptSegments.indices.contains(index),
+               transcriptSegments[index].isFinal == false {
+                transcriptSegments[index] = segment
             } else {
                 transcriptSegments.append(segment)
             }
+            lastPartialIndexBySource[sourceKey] = nil
             
             // H6 Fix: Append to persistent transcript log
             let payload: [String: Any] = [
@@ -620,8 +708,27 @@ final class AppState: ObservableObject {
         let bundleID = Bundle.main.bundleIdentifier ?? "none"
         let processName = ProcessInfo.processInfo.processName
         let bundlePath = Bundle.main.bundleURL.path
+        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
         let isAppBundle = bundlePath.hasSuffix(".app")
-        permissionDebugLine = "Bundle \(bundleID) · Process \(processName) · \(isAppBundle ? "App" : "Binary")"
+        permissionDebugLine = "Bundle \(bundleID) v\(version) · Process \(processName) · \(isAppBundle ? "App" : "Binary") · \(bundlePath)"
+    }
+
+    func refreshPermissionStatuses() {
+        refreshScreenRecordingStatus()
+        refreshMicrophoneStatus()
+    }
+
+    private func refreshMicrophoneStatus() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            microphonePermission = .authorized
+        case .denied, .restricted:
+            microphonePermission = .denied
+        case .notDetermined:
+            microphonePermission = .unknown
+        @unknown default:
+            microphonePermission = .unknown
+        }
     }
 
     private func updateDebugLine() {
@@ -632,6 +739,40 @@ final class AppState: ObservableObject {
         let bytes = ByteCountFormatter.string(fromByteCount: Int64(debugBytes), countStyle: .file)
         debugLine = "Debug: \(debugSamples) samples · \(debugScreenFrames) screen frames · \(bytes) sent"
     }
+
+    func seedDemoData() {
+        sessionState = .listening
+        streamStatus = .streaming
+        statusMessage = "Demo mode"
+        audioQuality = .good
+        elapsedSeconds = 12 * 60 + 34
+        audioSource = .both
+        systemAudioLevel = 0.22
+        microphoneAudioLevel = 0.18
+
+        transcriptSegments = [
+            TranscriptSegment(text: "We should ship by Friday.", t0: 31, t1: 33, isFinal: true, confidence: 0.87, source: "system", speaker: nil),
+            TranscriptSegment(text: "I'll send the proposal tomorrow.", t0: 33, t1: 35, isFinal: true, confidence: 0.82, source: "mic", speaker: nil),
+            TranscriptSegment(text: "Let’s keep the scope focused.", t0: 34, t1: 36, isFinal: true, confidence: 0.78, source: "system", speaker: nil),
+        ]
+
+        actions = [
+            ActionItem(text: "Send revised proposal", owner: "Pranay", due: "Tue", confidence: 0.82),
+        ]
+        decisions = [
+            DecisionItem(text: "Ship v0.2 on Friday", confidence: 0.74),
+        ]
+        risks = [
+            RiskItem(text: "Audio quality during screen share", confidence: 0.61),
+        ]
+        entities = [
+            EntityItem(name: "EchoPanel", type: "org", count: 2, lastSeen: 31, confidence: 0.88),
+            EntityItem(name: "Friday", type: "date", count: 1, lastSeen: 31, confidence: 0.71),
+            EntityItem(name: "ScreenCaptureKit", type: "topic", count: 1, lastSeen: 33, confidence: 0.74),
+        ]
+    }
+
+    // BackendConfig reads host/port from UserDefaults.
 }
 
 private extension Date {

@@ -3,6 +3,7 @@
 ## ✅ Completed (v0.2)
 
 ### Core Features
+
 - Multi-source audio capture (System/Mic/Both)
 - ASR provider abstraction (FasterWhisperProvider)
 - 10-minute sliding window analysis
@@ -15,6 +16,7 @@
 - Embedded backend (auto-start/stop)
 
 ### User Experience & UI
+
 - **Source-tagged Audio**: Internal JSON protocol for separate System/Mic processing
 - **Level Meters**: Dual meters for System and Mic in Side Panel
 - **Recovery UI**: "Recover/Discard" options in main menu
@@ -22,6 +24,7 @@
 - **Transcript Persistence**: Real-time append-to-disk logic
 
 ### De-risking & Quality
+
 - **Pseudo-diarization**: Live labels "You" vs "System" based on source
 - **Self-test**: "Test Audio" button in onboarding
 - **Trust**: "Needs review" labels for low-confidence
@@ -33,41 +36,48 @@
 ## 🔧 Pending Items
 
 ### Distribution (Launch Blockers)
-| Item | Description | Effort |
-|------|-------------|--------|
-| **Bundle Python runtime** | Package Python + deps for distribution (PyInstaller) | 4h |
-| **Model Preloading UI** | Download progress bar on first launch (currently just checks availability) | 2h |
+
+| Item                      | Description                                                                | Effort |
+| ------------------------- | -------------------------------------------------------------------------- | ------ |
+| **Bundle Python runtime** | Package Python + deps for distribution (PyInstaller)                       | 4h     |
+| **Model Preloading UI**   | Download progress bar on first launch (currently just checks availability) | 2h     |
 
 ### Feature Backlog (v0.3 Candidates)
-| Item | Description | Effort |
-|------|-------------|--------|
-| Cloud ASR provider | Implement OpenAI Whisper API provider | 4h |
-| Export to Notion/Slack | Push summary to integrations | 8h |
-| Custom entity detection | Allow user-defined entity patterns | 4h |
-| Multi-language UI | Localization support | 4h |
+
+| Item                    | Description                           | Effort |
+| ----------------------- | ------------------------------------- | ------ |
+| Cloud ASR provider      | Implement OpenAI Whisper API provider | 4h     |
+| Export to Notion/Slack  | Push summary to integrations          | 8h     |
+| Custom entity detection | Allow user-defined entity patterns    | 4h     |
+| Multi-language UI       | Localization support                  | 4h     |
 
 ### Low Priority
-| Item | Description | Effort |
-|------|-------------|--------|
-| Keyboard shortcuts guide | Show shortcuts in Settings | 30m |
-| Export to Notion/Slack | Push summary to integrations | 8h |
-| Custom entity detection | Allow user-defined entity patterns | 4h |
-| Multi-language UI | Localization support | 4h |
+
+| Item                     | Description                        | Effort |
+| ------------------------ | ---------------------------------- | ------ |
+| Keyboard shortcuts guide | Show shortcuts in Settings         | 30m    |
+| Export to Notion/Slack   | Push summary to integrations       | 8h     |
+| Custom entity detection  | Allow user-defined entity patterns | 4h     |
+| Multi-language UI        | Localization support               | 4h     |
 
 ---
 
 ## ❓ Decision Items
 
 ### 1. Distribution Strategy
+
 **Options:**
+
 - A) **PyInstaller**: Bundle server as single executable (~200MB)
-- B) **Bundled venv**: Include Python + pip install in Resources (~500MB)
+- B) **Bundled venv**: Include Python + uv pip install in Resources (~500MB)
 - C) **Cloud-only**: No local server, require internet
 
 **Recommendation:** Option A (PyInstaller) for smallest bundle size.
 
 ### 2. Model Download Strategy
+
 **Options:**
+
 - A) Pre-bundle `base` model, download larger on-demand
 - B) Download on first launch with progress UI
 - C) Let user choose in Settings, download then
@@ -75,7 +85,9 @@
 **Recommendation:** Option A with Option C for power users.
 
 ### 3. Default Audio Source
+
 **Options:**
+
 - A) Default to "System Audio" (meeting capture)
 - B) Default to "Both" (system + mic)
 - C) Ask in onboarding (current)
@@ -83,8 +95,10 @@
 **Recommendation:** Keep C (onboarding choice).
 
 ### 4. Diarization Token
+
 **Issue:** Requires `ECHOPANEL_HF_TOKEN` for pyannote model.
 **Options:**
+
 - A) User provides own HuggingFace token in Settings
 - B) Bundle a shared token (license issue)
 - C) Make diarization optional/disabled by default

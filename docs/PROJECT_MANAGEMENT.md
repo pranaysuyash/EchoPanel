@@ -1,5 +1,19 @@
 # Project Management
 
+## How we run the project (source of truth)
+- Tickets and execution log: `docs/WORKLOG_TICKETS.md`
+- Prompt library (audits, remediation, UX reviews): `prompts/README.md`
+- Audit artifacts: `docs/audit/`
+- Decisions: `docs/DECISIONS.md`
+
+## Recommended prompts
+- Entrypoint: `prompts/workflow/agent-entrypoint-v1.1.md`
+- Worklog: `prompts/workflow/worklog-v1.1.md`
+- UI/UX audit: `prompts/ui/ui-ux-design-audit-v1.1.0.md`
+- Single-file audit: `prompts/audit/file-audit-v1.0.md`
+- Remediation: `prompts/remediation/implementation-v1.1.md`
+- Verification: `prompts/verification/verification-v1.0.md`
+
 ## Milestones
 - M0: UI shell
 - M1: Audio capture

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
-APP_BUNDLE="$HOME/Applications/MeetingListenerApp.app"
+APP_BUNDLE="$HOME/Applications/MeetingListenerApp-Dev.app"
 ENABLE_ASR=1
 ENABLE_DIARIZATION=0
 SKIP_BUILD=0
@@ -51,8 +51,8 @@ if [[ "$ENABLE_DIARIZATION" -eq 1 ]]; then
 fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  echo "Building app bundle..."
-  "$ROOT_DIR/scripts/build-app-bundle.sh"
+  echo "Building dev app bundle..."
+  "$ROOT_DIR/scripts/build-dev-app.sh"
 else
   echo "Skipping app bundle build (--no-build)"
 fi

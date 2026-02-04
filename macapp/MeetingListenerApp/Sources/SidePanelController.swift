@@ -26,7 +26,7 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 panel.level = .floating
                 panel.hidesOnDeactivate = false
                 panel.isReleasedWhenClosed = false
-                panel.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
+                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .moveToActiveSpace]
                 panel.contentViewController = host
                 panel.delegate = self // Set delegate to capture close event
                 self.panel = panel
@@ -34,6 +34,8 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 hostingController.rootView = SidePanelView(appState: appState, onEndSession: onEndSession)
             }
 
+            // Force activation; MenuBarExtra apps can otherwise fail to bring panels forward.
+            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             NSApp.activate(ignoringOtherApps: true)
             self.panel?.center()
             self.panel?.makeKeyAndOrderFront(nil)
@@ -48,7 +50,7 @@ final class SidePanelController: NSObject, NSWindowDelegate {
     // MARK: - NSWindowDelegate
     func windowWillClose(_ notification: Notification) {
         // High Severity Fix: Ensure session stops when window is closed via 'x'
-        print("SidePanelController: Window closing, stopping session if active")
+        NSLog("SidePanelController: Window closing, stopping session if active")
         self.onEndSession?()
     }
 }

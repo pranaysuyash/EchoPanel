@@ -103,6 +103,7 @@ final class SessionStore: ObservableObject {
         recoverableSessionId = nil
         
         NSLog("SessionStore: Ended session \(sessionId)")
+        NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
     }
     
     // MARK: - Data Persistence
@@ -142,7 +143,7 @@ final class SessionStore: ObservableObject {
     // MARK: - Auto-save
     
     private func startAutoSave() {
-        saveTimer = Timer.scheduledTimer(withTimeInterval: saveInterval, repeats: true) { [weak self] _ in
+        saveTimer = Timer.scheduledTimer(withTimeInterval: saveInterval, repeats: true) { _ in
             // Auto-save will be triggered by AppState
             NotificationCenter.default.post(name: .sessionAutoSaveRequested, object: nil)
         }
@@ -224,6 +225,26 @@ final class SessionStore: ObservableObject {
         
         return nil
     }
+
+    func loadSnapshot(sessionId: String) -> [String: Any]? {
+        guard let sessionsDir = sessionsDirectory else { return nil }
+        let sessionDir = sessionsDir.appendingPathComponent(sessionId)
+        let finalURL = sessionDir.appendingPathComponent("final_snapshot.json")
+        let snapshotURL = sessionDir.appendingPathComponent("snapshot.json")
+
+        let url = fileManager.fileExists(atPath: finalURL.path) ? finalURL : snapshotURL
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+
+        do {
+            let data = try Data(contentsOf: url)
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return json
+            }
+        } catch {
+            NSLog("SessionStore: Failed to load snapshot: \(error)")
+        }
+        return nil
+    }
     
     func discardRecoverableSession() {
         guard let sessionId = recoverableSessionId,
@@ -238,6 +259,29 @@ final class SessionStore: ObservableObject {
         recoverableSessionDate = nil
         
         NSLog("SessionStore: Discarded recoverable session \(sessionId)")
+        NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
+    }
+
+    func deleteSession(sessionId: String) {
+        guard let sessionsDir = sessionsDirectory else { return }
+
+        let sessionDir = sessionsDir.appendingPathComponent(sessionId)
+        do {
+            if fileManager.fileExists(atPath: sessionDir.path) {
+                try fileManager.removeItem(at: sessionDir)
+            }
+        } catch {
+            NSLog("SessionStore: Failed to delete session %@: %@", sessionId, error.localizedDescription)
+        }
+
+        if recoverableSessionId == sessionId {
+            clearRecoveryMarker()
+            hasRecoverableSession = false
+            recoverableSessionId = nil
+            recoverableSessionDate = nil
+        }
+
+        NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
     }
     
     // MARK: - Session History

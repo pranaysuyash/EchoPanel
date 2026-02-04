@@ -15,10 +15,16 @@
 - `docs/ARCHITECTURE.md`
 - `docs/DATA_MODEL.md`
 - `docs/STORAGE_AND_EXPORTS.md`
+- `docs/adr/README.md`
 
 ## Engineering Process
 - `docs/IMPLEMENTATION_PLAN.md`
 - `docs/PROJECT_MANAGEMENT.md`
+- `docs/WORKLOG_TICKETS.md`
+- `docs/CLAIMS.md`
+- `docs/audit/README.md`
+- `docs/AUDIT_BACKLOG.md`
+- `prompts/README.md`
 - `docs/QA_CHECKLIST.md`
 - `docs/TESTING.md`
 - `docs/TROUBLESHOOTING.md`

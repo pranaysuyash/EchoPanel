@@ -6,11 +6,10 @@
 
 ## During session
 - Always show a visible Listening indicator.
-- Show backend state: Streaming, Reconnecting, Backend unavailable.
+- Show backend state: Streaming, Reconnecting, Not ready.
 - Show audio quality: Good/OK/Poor with a short tooltip.
 
 ## Stop flow
 - Stop capture immediately.
 - Trigger final consolidation.
 - Provide Copy Markdown and Export JSON as the next obvious actions.
-

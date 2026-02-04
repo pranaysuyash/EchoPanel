@@ -15,6 +15,5 @@
   - Mitigation: stable session id; explicit state machine for connect/reconnect.
 
 ## Operational risks
-- Backend unavailable or rate limited.
+- Backend not ready or rate limited.
   - Mitigation: visible status, exponential backoff, no silent buffering in v0.1.
-

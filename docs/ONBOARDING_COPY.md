@@ -21,6 +21,5 @@ Secondary:
   - "Screen Recording permission is required to capture system audio. Enable it in System Settings -> Privacy & Security -> Screen Recording, then try again."
 - Unsupported OS:
   - "EchoPanel requires macOS 13 or later for system audio capture."
-- Backend unavailable:
-  - "Backend unavailable. Reconnecting..."
-
+- Not ready:
+  - "Not ready. Reconnecting..."

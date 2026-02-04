@@ -11,7 +11,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncIterator, Optional, List
+from typing import AsyncIterator, Optional, List, cast
 
 
 class AudioSource(Enum):
@@ -81,7 +81,10 @@ class ASRProvider(ABC):
         Yields:
             ASRSegment objects for partial and final transcriptions
         """
-        pass
+        # Makes this an async generator for type checkers (never runs)
+        if False:
+            yield cast(ASRSegment, None)
+        raise NotImplementedError
 
     def log(self, msg: str) -> None:
         """Debug logging helper."""
@@ -101,18 +104,25 @@ class ASRProviderRegistry:
         cls._providers[name] = provider_class
 
     @classmethod
+    def _cfg_key(cls, name: str, cfg: ASRConfig) -> str:
+        return f"{name}|{cfg.model_name}|{cfg.device}|{cfg.compute_type}|{cfg.language}|{int(cfg.vad_enabled)}|{cfg.chunk_seconds}"
+
+    @classmethod
     def get_provider(cls, name: Optional[str] = None, config: Optional[ASRConfig] = None) -> Optional[ASRProvider]:
         """Get or create a provider instance."""
         if name is None:
             name = os.getenv("ECHOPANEL_ASR_PROVIDER", "faster_whisper")
         
-        if name not in cls._instances:
-            if name not in cls._providers:
-                return None
-            cfg = config or ASRConfig()
-            cls._instances[name] = cls._providers[name](cfg)
+        if name not in cls._providers:
+            return None
         
-        return cls._instances[name]
+        cfg = config or ASRConfig()
+        key = cls._cfg_key(name, cfg)
+
+        if key not in cls._instances:
+            cls._instances[key] = cls._providers[name](cfg)
+        
+        return cls._instances[key]
 
     @classmethod
     def available_providers(cls) -> List[str]:

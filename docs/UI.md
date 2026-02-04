@@ -8,7 +8,7 @@
 - Floating side panel
   - Three lanes only: Transcript, Cards, Entities
   - Persistent controls: Copy Markdown, Export JSON, End session
-  - Status line: Streaming/Reconnecting/Backend unavailable
+  - Status line: Streaming/Reconnecting/Not ready
   - Audio quality: Good/OK/Poor
 
 ## Transcript rendering rules
@@ -16,4 +16,3 @@
 - Partial segment is rendered in a lighter style.
 - Final segment replaces the active partial cleanly, without duplicating text.
 - Each final segment shows a timestamp.
-

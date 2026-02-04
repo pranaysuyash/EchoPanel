@@ -93,7 +93,7 @@ Floating side panel:
 ### 5.3 Trust and observability
 
 - Display audio quality: Good/OK/Poor derived from simple signal heuristics (RMS level, clipping rate, silence ratio).
-- Display a small status line: Streaming, Reconnecting, Backend unavailable.
+- Display a small status line: Streaming, Reconnecting, Not ready.
 - All outputs show confidence numbers. Low confidence should be visibly labeled.
 
 ## 6) Technical architecture
@@ -249,7 +249,7 @@ Optional backend storage:
 
 - No audio playing: show No audio detected after N seconds.
 - Very low volume: show Poor audio warning.
-- Backend unavailable: show offline state and optionally buffer limited audio locally (optional).
+- Not ready: show offline state and optionally buffer limited audio locally (optional).
 - Long sessions: cap memory, flush transcript to disk periodically.
 
 ## 11) Open decisions (pick defaults for v0.1)

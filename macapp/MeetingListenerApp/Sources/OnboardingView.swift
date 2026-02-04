@@ -6,6 +6,8 @@ struct OnboardingView: View {
     @ObservedObject var appState: AppState
     @State private var currentStep: OnboardingStep = .welcome
     @Binding var isPresented: Bool
+    @Environment(\.dismiss) private var dismiss
+    let onStartListening: () -> Void
     
     enum OnboardingStep: Int, CaseIterable {
         case welcome
@@ -75,6 +77,13 @@ struct OnboardingView: View {
         }
         .frame(width: 500, height: 400)
         .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            appState.refreshPermissionStatuses()
+        }
+        .onDisappear {
+            // If the user closes the window, keep the app consistent.
+            isPresented = false
+        }
     }
     
     // MARK: - Step Views
@@ -122,7 +131,9 @@ struct OnboardingView: View {
                     icon: "mic.fill",
                     title: "Microphone",
                     description: "Optional: Capture your voice in addition to meeting audio",
-                    status: appState.microphonePermission == .authorized ? .granted : .optional,
+                    status: appState.microphonePermission == .authorized
+                        ? .granted
+                        : (appState.microphonePermission == .denied ? .denied : .optional),
                     action: {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                             NSWorkspace.shared.open(url)
@@ -279,7 +290,8 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: "onboardingCompleted")
         isPresented = false
-        appState.startSession()
+        dismiss()
+        onStartListening()
     }
 }
 
@@ -293,7 +305,7 @@ private struct PermissionRow: View {
     let action: () -> Void
     
     enum PermissionStatus {
-        case granted, notGranted, optional
+        case granted, notGranted, optional, denied
     }
     
     var body: some View {
@@ -346,6 +358,10 @@ private struct PermissionRow: View {
             Label("Optional", systemImage: "minus.circle")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        case .denied:
+            Label("Denied", systemImage: "xmark.octagon.fill")
+                .font(.caption)
+                .foregroundColor(.red)
         }
     }
 }

@@ -168,6 +168,14 @@ input:focus {
   border-color: var(--accent);
 }
 
+.btn-primary:focus-visible,
+input:focus-visible,
+.ghost:focus-visible,
+.nav-links a:focus-visible {
+  outline: 3px solid rgba(31, 111, 235, 0.35);
+  outline-offset: 3px;
+}
+
 .btn-primary {
   padding: 14px 18px;
   border-radius: var(--radius-sm);
@@ -178,6 +186,13 @@ input:focus {
   font-size: 15px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary[disabled] {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-primary:hover {
@@ -438,12 +453,14 @@ input:focus {
 .flow-card {
   background: #fdfbf8;
   border-radius: var(--radius-md);
-  padding: 20px;
+  padding: 16px;
   border: 1px solid var(--border);
-  opacity: 0; /* Hidden by default for anime.js */
+  opacity: 0;
+  /* Hidden by default for anime.js */
   transform: translateY(20px);
-  flex: 1 1 200px; /* Grow, shrink, base width */
-  max-width: 260px;
+  flex: 1 1 150px;
+  /* Grow, shrink, base width */
+  max-width: 240px;
   transition: border-color 0.2s;
 }
 
@@ -452,14 +469,14 @@ input:focus {
 }
 
 .flow-card h3 {
-  font-size: 16px; 
-  margin: 0 0 8px;
+  font-size: 15px;
+  margin: 0 0 6px;
   color: var(--ink);
 }
 
 .flow-card p {
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
   margin: 0;
 }
 
