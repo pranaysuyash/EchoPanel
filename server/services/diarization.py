@@ -7,11 +7,12 @@ Segments are merged by speaker for cleaner output.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
+logger = logging.getLogger(__name__)
 
 try:
     import numpy as np
@@ -54,12 +55,10 @@ def _get_pipeline() -> Optional["Pipeline"]:
     if _PIPELINE is None:
         token = os.getenv("ECHOPANEL_HF_TOKEN")
         if not token:
-            if DEBUG:
-                print("diarization: ECHOPANEL_HF_TOKEN not set")
+            logger.debug("ECHOPANEL_HF_TOKEN not set, diarization unavailable")
             return None
         
-        if DEBUG:
-            print("diarization: Loading pyannote/speaker-diarization-3.1...")
+        logger.debug("Loading pyannote/speaker-diarization-3.1...")
         
         try:
             _PIPELINE = Pipeline.from_pretrained(
@@ -69,18 +68,14 @@ def _get_pipeline() -> Optional["Pipeline"]:
             # Use MPS on Apple Silicon if available
             if torch is not None and torch.backends.mps.is_available():
                 _PIPELINE.to(torch.device("mps"))
-                if DEBUG:
-                    print("diarization: Using MPS device")
+                logger.debug("Diarization using MPS device")
             elif torch is not None and torch.cuda.is_available():
                 _PIPELINE.to(torch.device("cuda"))
-                if DEBUG:
-                    print("diarization: Using CUDA device")
+                logger.debug("Diarization using CUDA device")
             else:
-                if DEBUG:
-                    print("diarization: Using CPU device")
+                logger.debug("Diarization using CPU device")
         except Exception as e:
-            if DEBUG:
-                print(f"diarization: Failed to load pipeline: {e}")
+            logger.error(f"Failed to load diarization pipeline: {e}")
             return None
     
     return _PIPELINE
@@ -145,16 +140,14 @@ def diarize_pcm(pcm_bytes: bytes, sample_rate: int = 16000) -> List[dict[str, An
     Returns a list of segments with t0, t1, and speaker label.
     """
     if np is None or torch is None:
-        if DEBUG:
-            print("diarization: numpy or torch not available")
+        logger.debug("numpy or torch not available, skipping diarization")
         return []
     
     pipeline = _get_pipeline()
     if pipeline is None:
         return []
 
-    if DEBUG:
-        print(f"diarization: Processing {len(pcm_bytes)} bytes of audio")
+    logger.debug(f"Processing {len(pcm_bytes)} bytes for diarization")
 
     try:
         audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
@@ -170,8 +163,7 @@ def diarize_pcm(pcm_bytes: bytes, sample_rate: int = 16000) -> List[dict[str, An
                 speaker=str(speaker)
             ))
         
-        if DEBUG:
-            print(f"diarization: Found {len(segments)} raw segments")
+        logger.debug(f"Diarization found {len(segments)} raw segments")
         
         # Merge adjacent segments from same speaker
         merged = _merge_adjacent_segments(segments)
@@ -179,14 +171,12 @@ def diarize_pcm(pcm_bytes: bytes, sample_rate: int = 16000) -> List[dict[str, An
         # Assign friendly speaker names
         named = _assign_speaker_names(merged)
         
-        if DEBUG:
-            print(f"diarization: {len(named)} segments after merging")
+        logger.debug(f"Diarization produced {len(named)} segments after merging")
         
         return [{"t0": s.t0, "t1": s.t1, "speaker": s.speaker} for s in named]
     
     except Exception as e:
-        if DEBUG:
-            print(f"diarization: Error during processing: {e}")
+        logger.error(f"Error during diarization processing: {e}")
         return []
 
 

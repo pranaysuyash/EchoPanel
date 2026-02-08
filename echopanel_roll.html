@@ -1,0 +1,1614 @@
+<!-- Save as: echopanel_roll.html
+     This is a 3rd version: compact-default "receipt roll" with keyboard cursor, follow-live, overlays.
+     It does NOT replace your existing compact file. -->
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>EchoPanel – Roll (Compact Default)</title>
+    <style>
+      :root {
+        --bg0: #0b0c10;
+        --bg1: #0f1117;
+
+        /* Roll "paper" */
+        --paper: rgba(255, 255, 255, 0.92);
+        --paper2: rgba(255, 255, 255, 0.78);
+        --ink: rgba(15, 17, 23, 0.92);
+        --ink2: rgba(15, 17, 23, 0.62);
+        --edge: rgba(15, 17, 23, 0.12);
+
+        /* Chrome */
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel2: rgba(255, 255, 255, 0.09);
+        --stroke: rgba(255, 255, 255, 0.1);
+        --stroke2: rgba(255, 255, 255, 0.16);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.62);
+        --muted2: rgba(255, 255, 255, 0.42);
+
+        --accent: #7dd3fc;
+        --accent2: #a78bfa;
+        --good: #34d399;
+        --warn: #fbbf24;
+        --bad: #fb7185;
+
+        --r12: 12px;
+        --r16: 16px;
+        --r20: 20px;
+
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        --shadow2: 0 2px 10px rgba(0, 0, 0, 0.35);
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'SF Pro Display',
+          'SF Pro Text',
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial;
+        color: var(--text);
+        background:
+          radial-gradient(
+            1200px 700px at 20% 10%,
+            rgba(167, 139, 250, 0.22),
+            transparent 60%
+          ),
+          radial-gradient(
+            900px 600px at 80% 30%,
+            rgba(125, 211, 252, 0.18),
+            transparent 60%
+          ),
+          radial-gradient(
+            700px 500px at 50% 90%,
+            rgba(52, 211, 153, 0.12),
+            transparent 60%
+          ),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+        overflow: hidden;
+      }
+
+      body:before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.14'/%3E%3C/svg%3E");
+        mix-blend-mode: overlay;
+        pointer-events: none;
+        opacity: 0.28;
+      }
+
+      .glass {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: var(--r20);
+        box-shadow: var(--shadow2);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .app {
+        height: 100%;
+        display: grid;
+        grid-template-rows: 56px 1fr 56px;
+        gap: 12px;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+
+      /* Top strip (tiny) */
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+      }
+      .logo {
+        width: 30px;
+        height: 30px;
+        border-radius: 12px;
+        background:
+          radial-gradient(
+            circle at 30% 30%,
+            rgba(255, 255, 255, 0.25),
+            transparent 55%
+          ),
+          linear-gradient(
+            135deg,
+            rgba(125, 211, 252, 0.95),
+            rgba(167, 139, 250, 0.95)
+          );
+        box-shadow: 0 10px 25px rgba(125, 211, 252, 0.14);
+        position: relative;
+        flex: 0 0 auto;
+      }
+      .logo:after {
+        content: '';
+        position: absolute;
+        inset: 7px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        opacity: 0.9;
+      }
+      .title {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.08;
+        min-width: 0;
+      }
+      .title strong {
+        font-size: 13px;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .title span {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.04);
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease;
+        user-select: none;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.86);
+      }
+      .pill:hover {
+        transform: translateY(-1px);
+        border-color: var(--stroke2);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(52, 211, 153, 0.9);
+        box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.12);
+      }
+      .btn {
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        padding: 8px 10px;
+        border-radius: 12px;
+        cursor: pointer;
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease;
+        font-size: 12px;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        border-color: var(--stroke2);
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      /* Main roll area */
+      .main {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .roll {
+        height: 100%;
+        border-radius: var(--r20);
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.03);
+        box-shadow: var(--shadow2);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .rollInner {
+        height: 100%;
+        overflow: auto;
+        padding: 14px 14px 16px 14px;
+        box-sizing: border-box;
+        scroll-behavior: smooth;
+      }
+
+      /* "Receipt paper" block */
+      .paper {
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--paper), var(--paper2));
+        color: var(--ink);
+        box-shadow:
+          0 22px 48px rgba(0, 0, 0, 0.28),
+          0 2px 10px rgba(0, 0, 0, 0.22);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        position: relative;
+        overflow: hidden;
+      }
+
+      /* Subtle perforated edges */
+      .paper:before,
+      .paper:after {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 14px;
+        background: radial-gradient(
+            circle at 50% 10px,
+            rgba(15, 17, 23, 0.14) 2px,
+            transparent 3px
+          )
+          0 0 / 14px 18px repeat-y;
+        opacity: 0.7;
+        pointer-events: none;
+      }
+      .paper:before {
+        left: 0;
+        mask-image: linear-gradient(90deg, transparent, black 45%);
+      }
+      .paper:after {
+        right: 0;
+        mask-image: linear-gradient(270deg, transparent, black 45%);
+      }
+
+      .paperHeader {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--edge);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+      }
+      .paperHeader strong {
+        font-size: 13px;
+        letter-spacing: 0.2px;
+      }
+      .paperHeader span {
+        font-size: 12px;
+        color: var(--ink2);
+        white-space: nowrap;
+      }
+
+      .rows {
+        padding: 8px 16px 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 62px 32px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        padding: 8px 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(15, 17, 23, 0.1);
+        background: rgba(255, 255, 255, 0.65);
+        transition:
+          transform 0.12s ease,
+          background 0.12s ease,
+          border-color 0.12s ease;
+        position: relative;
+      }
+      .row:hover {
+        transform: translateY(-1px);
+        border-color: rgba(15, 17, 23, 0.16);
+        background: rgba(255, 255, 255, 0.78);
+      }
+
+      /* Focus cursor */
+      .row.focused {
+        border-color: rgba(125, 211, 252, 0.55);
+        box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.16);
+        background: rgba(255, 255, 255, 0.9);
+      }
+      .row.pinned {
+        border-color: rgba(167, 139, 250, 0.45);
+        box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.12);
+      }
+
+      .ts {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', monospace;
+        font-size: 11px;
+        color: var(--ink2);
+        padding-top: 2px;
+      }
+
+      .spk {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 17, 23, 0.14);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(15, 17, 23, 0.78);
+        background: rgba(255, 255, 255, 0.8);
+      }
+
+      .txt {
+        font-size: 14px;
+        line-height: 1.42;
+        color: rgba(15, 17, 23, 0.92);
+        word-break: break-word;
+      }
+
+      /* micro-actions only when focused */
+      .micro {
+        display: none;
+        gap: 6px;
+        align-items: center;
+        padding-top: 1px;
+      }
+      .row.focused .micro {
+        display: inline-flex;
+      }
+      .iconbtn {
+        width: 30px;
+        height: 28px;
+        border-radius: 10px;
+        border: 1px solid rgba(15, 17, 23, 0.14);
+        background: rgba(255, 255, 255, 0.82);
+        cursor: pointer;
+        color: rgba(15, 17, 23, 0.78);
+        transition:
+          transform 0.12s ease,
+          background 0.12s ease,
+          border-color 0.12s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+        font-size: 13px;
+      }
+      .iconbtn:hover {
+        transform: translateY(-1px);
+        border-color: rgba(15, 17, 23, 0.2);
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      /* Inline Focus Lens */
+      .lens {
+        grid-column: 1 / -1;
+        margin-top: 8px;
+        border-radius: 14px;
+        border: 1px solid rgba(15, 17, 23, 0.12);
+        background: rgba(255, 255, 255, 0.92);
+        padding: 10px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .lensTop {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .lensTop strong {
+        font-size: 12px;
+        color: rgba(15, 17, 23, 0.86);
+        letter-spacing: 0.2px;
+      }
+      .lensTop span {
+        font-size: 12px;
+        color: var(--ink2);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 6px 10px;
+        border: 1px solid rgba(15, 17, 23, 0.12);
+        background: rgba(255, 255, 255, 0.86);
+        color: rgba(15, 17, 23, 0.78);
+        cursor: pointer;
+        user-select: none;
+        transition:
+          transform 0.12s ease,
+          border-color 0.12s ease,
+          background 0.12s ease;
+      }
+      .chip:hover {
+        transform: translateY(-1px);
+        border-color: rgba(15, 17, 23, 0.18);
+        background: rgba(255, 255, 255, 0.98);
+      }
+      .chip.good {
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.12);
+      }
+      .chip.warn {
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.12);
+      }
+      .chip.bad {
+        border-color: rgba(251, 113, 133, 0.35);
+        background: rgba(251, 113, 133, 0.12);
+      }
+
+      /* Bottom strip */
+      .bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        gap: 10px;
+      }
+      .stateRow {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+      }
+      .state {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 6px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .state.muted {
+        color: var(--muted);
+      }
+      .jumpLive {
+        display: none;
+      }
+      .jumpLive.show {
+        display: inline-flex;
+      }
+
+      /* Overlay surfaces (appear only when invoked) */
+      .overlay {
+        position: absolute;
+        inset: 12px;
+        border-radius: var(--r20);
+        border: 1px solid var(--stroke2);
+        background: rgba(15, 17, 23, 0.55);
+        backdrop-filter: blur(20px) saturate(150%);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        box-shadow: var(--shadow);
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .overlay.show {
+        display: flex;
+      }
+      .overlayTop {
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .overlayTop strong {
+        font-size: 13px;
+        letter-spacing: 0.2px;
+      }
+      .overlayTop .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .overlayBody {
+        padding: 12px 14px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .card {
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 12px 12px;
+      }
+      .card h4 {
+        margin: 0 0 8px 0;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.2px;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .item {
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 10px 10px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .tag {
+        min-width: 46px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.78);
+        flex: 0 0 auto;
+      }
+      .body .headline {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.92);
+        margin-bottom: 4px;
+      }
+      .body .sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pillRow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .pillMini {
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 8px 10px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.86);
+        cursor: pointer;
+        user-select: none;
+        transition:
+          transform 0.12s ease,
+          background 0.12s ease,
+          border-color 0.12s ease;
+      }
+      .pillMini:hover {
+        transform: translateY(-1px);
+        border-color: rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      /* Shortcuts overlay */
+      .kbdOverlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        box-sizing: border-box;
+        background: rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 30;
+      }
+      .kbdOverlay.show {
+        display: flex;
+      }
+      .kbdCard {
+        width: min(560px, 100%);
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(15, 17, 23, 0.7);
+        box-shadow: var(--shadow);
+        padding: 14px 14px;
+      }
+      .kbdCard h3 {
+        margin: 0 0 10px 0;
+        font-size: 13px;
+        letter-spacing: 0.2px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .krow {
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 10px 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.86);
+      }
+      .keycap {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', monospace;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 3px 7px;
+        border-radius: 8px;
+        white-space: nowrap;
+      }
+
+      /* Scrollbars */
+      .rollInner::-webkit-scrollbar,
+      .overlayBody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .rollInner::-webkit-scrollbar-thumb,
+      .overlayBody::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        border: 3px solid rgba(0, 0, 0, 0);
+        background-clip: padding-box;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app">
+      <div class="glass top">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div class="title">
+            <strong id="sessionName">Design Sync</strong>
+            <span id="statusLine">Listening · Follow Live</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="pill" id="recPill" title="Toggle recording (demo)">
+            <span class="dot" id="recDot"></span>
+            <span id="recText">Listening</span>
+            <span style="color: var(--muted2); font-size: 11px">⌥R</span>
+          </div>
+          <button class="btn" id="fullBtn" title="Open full view">Full</button>
+          <button class="btn" id="helpBtn" title="Shortcuts">?</button>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="roll">
+          <div class="rollInner" id="scroll">
+            <div class="paper" id="paper">
+              <div class="paperHeader">
+                <strong>Live Receipt Roll</strong>
+                <span id="paperMeta"
+                  >↑/↓ focus · Enter lens · → surfaces · Space follow</span
+                >
+              </div>
+              <div class="rows" id="rows"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Surfaces overlay (only when invoked) -->
+        <div class="overlay" id="overlay">
+          <div class="overlayTop">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <strong id="overlayTitle">Summary</strong>
+              <span class="hint" id="overlayHint">→ / ← cycle · Esc close</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <span class="pillMini" id="closeOverlay" title="Close">Esc</span>
+            </div>
+          </div>
+          <div class="overlayBody" id="overlayBody"></div>
+        </div>
+      </div>
+
+      <div class="glass bottom">
+        <div class="stateRow">
+          <div class="state" id="followState">Follow: ON</div>
+          <div class="state muted" id="filterState">Filter: none</div>
+          <div class="state muted" id="pinState">Pins: 0</div>
+        </div>
+
+        <div class="stateRow">
+          <button
+            class="btn jumpLive"
+            id="jumpLiveBtn"
+            title="Jump to live (J)"
+          >
+            Jump to Live
+          </button>
+          <div class="state muted" id="modeState">Mode: Live</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shortcuts overlay -->
+    <div class="kbdOverlay" id="kbdOverlay" aria-hidden="true">
+      <div class="kbdCard">
+        <h3>Keyboard</h3>
+        <div class="grid">
+          <div class="krow">
+            <span>Move focus</span><span class="keycap">↑ / ↓</span>
+          </div>
+          <div class="krow">
+            <span>Toggle Focus Lens</span><span class="keycap">Enter</span>
+          </div>
+          <div class="krow">
+            <span>Pin / unpin</span><span class="keycap">P</span>
+          </div>
+          <div class="krow">
+            <span>Follow Live toggle</span><span class="keycap">Space</span>
+          </div>
+          <div class="krow">
+            <span>Jump to live</span><span class="keycap">J</span>
+          </div>
+          <div class="krow">
+            <span>Surfaces overlay cycle</span><span class="keycap">← / →</span>
+          </div>
+          <div class="krow">
+            <span>Close lens / overlay</span><span class="keycap">Esc</span>
+          </div>
+          <div class="krow"><span>Help</span><span class="keycap">?</span></div>
+        </div>
+        <div style="margin-top: 10px; color: var(--muted); font-size: 12px">
+          Principle: arrows always move the cursor unless a surface overlay is
+          open.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        /* -------------------------
+           Model
+        ------------------------- */
+        const speakers = [
+          { id: 'A', name: 'Pranay', short: 'P', hue: 'var(--accent)' },
+          { id: 'B', name: 'Diksha', short: 'D', hue: 'var(--accent2)' },
+          { id: 'C', name: 'Ravi', short: 'R', hue: 'rgba(251,191,36,.9)' },
+          { id: 'D', name: 'Nina', short: 'N', hue: 'rgba(52,211,153,.9)' },
+        ];
+
+        const seedLines = [
+          {
+            t: '06:58',
+            s: 'A',
+            text: 'If EchoPanel feels like a dashboard, people will abandon it. It has to feel like an instrument panel.',
+          },
+          {
+            t: '07:04',
+            s: 'B',
+            text: 'It has to look native on macOS. The blur must feel like material, not “web app with blur”.',
+          },
+          {
+            t: '07:10',
+            s: 'C',
+            text: 'What’s the one interaction that makes it obviously EchoPanel? Like Figma has the canvas.',
+          },
+          {
+            t: '07:18',
+            s: 'A',
+            text: 'A Focus Lens on any line. Expand in place with entities, decisions, and actions.',
+          },
+          {
+            t: '07:26',
+            s: 'D',
+            text: 'Pins as a running brief. Drag a line into pins, then it auto-updates as the meeting evolves.',
+          },
+          {
+            t: '07:35',
+            s: 'B',
+            text: 'Make the timeline show decision beads. Scrubbing should snap to those beads.',
+          },
+          {
+            t: '07:44',
+            s: 'A',
+            text: 'Speakers as orbits. Active speaker subtly pulls attention without shifting the whole layout.',
+          },
+        ];
+
+        const surfaces = ['summary', 'actions', 'pins', 'entities', 'raw'];
+        const surfaceLabels = {
+          summary: 'Summary',
+          actions: 'Actions',
+          pins: 'Pins',
+          entities: 'Entities',
+          raw: 'Raw',
+        };
+
+        const surfaceData = {
+          summary: [
+            {
+              tag: 'Now',
+              headline: 'Tension: ship vs polish',
+              sub: 'Users forgive missing features, not ugly UX.',
+            },
+            {
+              tag: 'Idea',
+              headline: 'Focus Lens for any line',
+              sub: 'Expand in place: entities, actions, context.',
+            },
+            {
+              tag: 'UI',
+              headline: 'Decision beads',
+              sub: 'Snap to moments that matter.',
+            },
+          ],
+          actions: [
+            {
+              tag: 'A1',
+              headline: 'Define signature interaction spec',
+              sub: 'Focus Lens + Pins behaviors.',
+            },
+            {
+              tag: 'A2',
+              headline: 'Create motion tokens',
+              sub: 'Durations, springs, snap.',
+            },
+            {
+              tag: 'A3',
+              headline: 'Map transcript schema',
+              sub: 'speaker, time, confidence, labels.',
+            },
+          ],
+          pins: [],
+          entities: [
+            {
+              tag: 'People',
+              headline: 'Pranay, Diksha, Ravi, Nina',
+              sub: 'Tap to filter in a real build.',
+            },
+            {
+              tag: 'Topics',
+              headline: 'Focus Lens, Pins, Decision beads, macOS feel',
+              sub: 'High-signal terms.',
+            },
+          ],
+          raw: [],
+        };
+
+        const state = {
+          lines: [...seedLines],
+          focusedIndex: 0,
+          lensIndex: -1,
+
+          followLive: true,
+          overlayOpen: false,
+          overlaySurface: 'summary',
+
+          pins: new Set(),
+          recording: true,
+
+          // demo live stream
+          streamTimer: null,
+          tick: 0,
+        };
+
+        /* -------------------------
+           DOM
+        ------------------------- */
+        const rowsEl = document.getElementById('rows');
+        const scrollEl = document.getElementById('scroll');
+
+        const sessionName = document.getElementById('sessionName');
+        const statusLine = document.getElementById('statusLine');
+
+        const followState = document.getElementById('followState');
+        const filterState = document.getElementById('filterState');
+        const pinState = document.getElementById('pinState');
+        const modeState = document.getElementById('modeState');
+        const jumpLiveBtn = document.getElementById('jumpLiveBtn');
+
+        const recPill = document.getElementById('recPill');
+        const recDot = document.getElementById('recDot');
+        const recText = document.getElementById('recText');
+
+        const fullBtn = document.getElementById('fullBtn');
+        const helpBtn = document.getElementById('helpBtn');
+
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlayBody = document.getElementById('overlayBody');
+        const closeOverlay = document.getElementById('closeOverlay');
+
+        const kbdOverlay = document.getElementById('kbdOverlay');
+
+        function escapeHTML(s) {
+          return String(s).replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+              })[c],
+          );
+        }
+
+        function speakerById(id) {
+          return speakers.find((x) => x.id === id) || speakers[0];
+        }
+
+        function ensureFocusInRange() {
+          state.focusedIndex = Math.max(
+            0,
+            Math.min(state.lines.length - 1, state.focusedIndex),
+          );
+          if (state.lensIndex >= state.lines.length) state.lensIndex = -1;
+        }
+
+        /* -------------------------
+           Rendering
+        ------------------------- */
+        function render() {
+          ensureFocusInRange();
+          renderTop();
+          renderRows();
+          renderBottom();
+          renderOverlay();
+        }
+
+        function renderTop() {
+          sessionName.textContent = 'Design Sync';
+          statusLine.textContent = `${state.recording ? 'Listening' : 'Paused'} · ${state.followLive ? 'Follow Live' : 'Exploring'}`;
+
+          recDot.style.background = state.recording
+            ? 'rgba(52,211,153,.9)'
+            : 'rgba(251,191,36,.9)';
+          recDot.style.boxShadow = state.recording
+            ? '0 0 0 5px rgba(52,211,153,.12)'
+            : '0 0 0 5px rgba(251,191,36,.12)';
+          recText.textContent = state.recording ? 'Listening' : 'Paused';
+        }
+
+        function renderRows() {
+          rowsEl.innerHTML = '';
+
+          state.lines.forEach((ln, i) => {
+            const sp = speakerById(ln.s);
+            const row = document.createElement('div');
+            row.className =
+              'row' +
+              (i === state.focusedIndex ? ' focused' : '') +
+              (state.pins.has(i) ? ' pinned' : '');
+
+            row.dataset.index = String(i);
+
+            row.innerHTML = `
+              <div class="ts">${escapeHTML(ln.t)}</div>
+              <div class="spk" style="border-color: rgba(15,17,23,.14); box-shadow: 0 0 0 4px color-mix(in srgb, ${sp.hue} 12%, transparent);">
+                <span style="color: rgba(15,17,23,.78)">${escapeHTML(sp.short)}</span>
+              </div>
+              <div class="txt">${escapeHTML(ln.text)}</div>
+              <div class="micro" aria-hidden="${i === state.focusedIndex ? 'false' : 'true'}">
+                <div class="iconbtn" data-act="pin" title="Pin (P)">✦</div>
+                <div class="iconbtn" data-act="lens" title="Lens (Enter)">⤢</div>
+                <div class="iconbtn" data-act="jump" title="Jump (J)">↧</div>
+              </div>
+            `;
+
+            row.addEventListener('click', (e) => {
+              const act = e.target?.dataset?.act;
+              state.focusedIndex = i;
+
+              if (act === 'pin') {
+                e.preventDefault();
+                togglePin(i);
+                return;
+              }
+              if (act === 'lens') {
+                e.preventDefault();
+                toggleLens(i);
+                return;
+              }
+              if (act === 'jump') {
+                e.preventDefault();
+                jumpToLive();
+                return;
+              }
+
+              // Click focuses row. Double click toggles lens.
+              if (e.detail === 2) toggleLens(i);
+              render();
+              scrollFocusIntoView();
+            });
+
+            rowsEl.appendChild(row);
+
+            if (state.lensIndex === i) {
+              const lens = document.createElement('div');
+              lens.className = 'lens';
+              lens.innerHTML = `
+                <div class="lensTop">
+                  <strong>Focus Lens</strong>
+                  <span>Line ${i + 1} · ${escapeHTML(sp.name)}</span>
+                </div>
+                <div class="chips">
+                  <div class="chip good" data-chip="decision">Decision</div>
+                  <div class="chip warn" data-chip="tradeoff">Trade-off</div>
+                  <div class="chip" data-chip="entities">Entities</div>
+                  <div class="chip bad" data-chip="risk">Risk</div>
+                  <div class="chip" data-chip="openSummary">Open Summary</div>
+                  <div class="chip" data-chip="openActions">Open Actions</div>
+                  <div class="chip" data-chip="openPins">Open Pins</div>
+                </div>
+              `;
+              lens.addEventListener('click', (e) => {
+                const c = e.target?.dataset?.chip;
+                if (!c) return;
+
+                if (c === 'openSummary') openOverlay('summary');
+                else if (c === 'openActions') openOverlay('actions');
+                else if (c === 'openPins') openOverlay('pins');
+                else {
+                  // demo tags: in real app these annotate the line
+                  toast(`Tagged: ${c}`);
+                }
+              });
+
+              rowsEl.appendChild(lens);
+            }
+          });
+        }
+
+        function renderBottom() {
+          followState.textContent = `Follow: ${state.followLive ? 'ON' : 'OFF'}`;
+          followState.style.borderColor = state.followLive
+            ? 'rgba(52,211,153,.35)'
+            : 'rgba(251,191,36,.35)';
+          followState.style.background = state.followLive
+            ? 'rgba(52,211,153,.10)'
+            : 'rgba(251,191,36,.10)';
+          followState.style.color = 'rgba(255,255,255,.92)';
+
+          filterState.textContent = 'Filter: none';
+          pinState.textContent = `Pins: ${state.pins.size}`;
+          modeState.textContent = 'Mode: Live';
+
+          jumpLiveBtn.classList.toggle('show', !state.followLive);
+        }
+
+        function renderOverlay() {
+          overlay.classList.toggle('show', state.overlayOpen);
+          if (!state.overlayOpen) return;
+
+          overlayTitle.textContent =
+            surfaceLabels[state.overlaySurface] || 'Surface';
+          overlayBody.innerHTML = '';
+
+          if (state.overlaySurface === 'pins') {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `<h4>Pins <span>${state.pins.size}</span></h4>`;
+
+            if (state.pins.size === 0) {
+              const empty = document.createElement('div');
+              empty.style.color = 'var(--muted)';
+              empty.style.fontSize = '12px';
+              empty.textContent = 'No pins yet. Focus a line and press P.';
+              card.appendChild(empty);
+            } else {
+              const row = document.createElement('div');
+              row.className = 'pillRow';
+              [...state.pins].slice(0, 16).forEach((idx) => {
+                const p = document.createElement('div');
+                p.className = 'pillMini';
+                p.textContent = shorten(state.lines[idx]?.text || '', 52);
+                p.title = 'Jump to line';
+                p.addEventListener('click', () => {
+                  state.focusedIndex = idx;
+                  state.lensIndex = idx;
+                  state.overlayOpen = false;
+                  render();
+                  scrollFocusIntoView(true);
+                });
+                row.appendChild(p);
+              });
+              card.appendChild(row);
+            }
+            overlayBody.appendChild(card);
+            return;
+          }
+
+          if (state.overlaySurface === 'raw') {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `<h4>Raw Transcript <span>verbatim</span></h4>`;
+
+            const pre = document.createElement('pre');
+            pre.style.margin = '0';
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.style.wordBreak = 'break-word';
+            pre.style.fontSize = '12px';
+            pre.style.lineHeight = '1.45';
+            pre.style.color = 'rgba(255,255,255,.86)';
+            pre.style.background = 'rgba(255,255,255,.03)';
+            pre.style.border = '1px solid rgba(255,255,255,.10)';
+            pre.style.borderRadius = '14px';
+            pre.style.padding = '10px';
+            pre.textContent = state.lines
+              .map((ln) => {
+                const sp = speakerById(ln.s);
+                return `[${ln.t}] ${sp.name}: ${ln.text}`;
+              })
+              .join('\n');
+
+            const row = document.createElement('div');
+            row.className = 'pillRow';
+
+            const copy = document.createElement('div');
+            copy.className = 'pillMini';
+            copy.textContent = 'Copy';
+            copy.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(pre.textContent);
+                toast('Copied');
+              } catch {
+                toast('Copy failed');
+              }
+            });
+
+            row.appendChild(copy);
+            card.appendChild(row);
+            card.appendChild(pre);
+            overlayBody.appendChild(card);
+            return;
+          }
+
+          const arr = surfaceData[state.overlaySurface] || [];
+          arr.forEach((x) => {
+            const it = document.createElement('div');
+            it.className = 'item';
+            it.innerHTML = `
+              <div class="tag">${escapeHTML(x.tag || '')}</div>
+              <div class="body">
+                <div class="headline">${escapeHTML(x.headline || '')}</div>
+                <div class="sub">${escapeHTML(x.sub || '')}</div>
+              </div>
+            `;
+            overlayBody.appendChild(it);
+          });
+        }
+
+        /* -------------------------
+           Behaviors
+        ------------------------- */
+        function shorten(s, n) {
+          const str = String(s);
+          if (str.length <= n) return str;
+          return str.slice(0, n - 1) + '…';
+        }
+
+        function scrollFocusIntoView(center = false) {
+          const el = [...rowsEl.children].find(
+            (x) => x?.dataset?.index === String(state.focusedIndex),
+          );
+          if (!el) return;
+          el.scrollIntoView({
+            behavior: 'smooth',
+            block: center ? 'center' : 'nearest',
+          });
+        }
+
+        function setFollow(on) {
+          state.followLive = !!on;
+          if (state.followLive) {
+            // When follow is on, cursor tracks latest unless user is explicitly in a lens.
+            if (state.lensIndex === -1)
+              state.focusedIndex = state.lines.length - 1;
+            setTimeout(() => scrollToBottom(), 0);
+          }
+          render();
+        }
+
+        function scrollToBottom() {
+          // Anchor to bottom of paper
+          scrollEl.scrollTop = scrollEl.scrollHeight;
+        }
+
+        function jumpToLive() {
+          setFollow(true);
+          state.lensIndex = -1;
+          state.focusedIndex = state.lines.length - 1;
+          render();
+          scrollToBottom();
+        }
+
+        function toggleLens(i) {
+          state.lensIndex = state.lensIndex === i ? -1 : i;
+          render();
+          scrollFocusIntoView(true);
+        }
+
+        function togglePin(i) {
+          if (state.pins.has(i)) state.pins.delete(i);
+          else state.pins.add(i);
+          render();
+          toast(state.pins.has(i) ? 'Pinned' : 'Unpinned');
+        }
+
+        function openOverlay(which) {
+          state.overlaySurface = which;
+          state.overlayOpen = true;
+          render();
+        }
+
+        function closeOverlayFn() {
+          state.overlayOpen = false;
+          render();
+        }
+
+        /* -------------------------
+           Keyboard model
+        ------------------------- */
+        function onKeyDown(e) {
+          const k = e.key;
+
+          // Help
+          if (k === '?' || (e.shiftKey && k === '/')) {
+            e.preventDefault();
+            toggleHelp();
+            return;
+          }
+
+          // Escape closes in layers: help -> overlay -> lens -> nothing
+          if (k === 'Escape') {
+            if (kbdOverlay.classList.contains('show')) {
+              toggleHelp(false);
+              return;
+            }
+            if (state.overlayOpen) {
+              closeOverlayFn();
+              return;
+            }
+            if (state.lensIndex !== -1) {
+              state.lensIndex = -1;
+              render();
+              return;
+            }
+            return;
+          }
+
+          // If overlay is open, left/right cycles surfaces, up/down scrolls within overlay naturally.
+          if (state.overlayOpen) {
+            if (k === 'ArrowRight' || k === 'ArrowLeft') {
+              e.preventDefault();
+              cycleSurface(k === 'ArrowRight' ? 1 : -1);
+              return;
+            }
+            return;
+          }
+
+          // Normal layer: arrows always move cursor
+          if (k === 'ArrowDown' || k === 'ArrowUp') {
+            e.preventDefault();
+            const dir = k === 'ArrowDown' ? 1 : -1;
+            state.focusedIndex = Math.max(
+              0,
+              Math.min(state.lines.length - 1, state.focusedIndex + dir),
+            );
+            // Any manual navigation breaks follow
+            if (state.followLive) setFollow(false);
+            render();
+            scrollFocusIntoView();
+            return;
+          }
+
+          if (k === 'Enter') {
+            e.preventDefault();
+            toggleLens(state.focusedIndex);
+            return;
+          }
+
+          if (k === 'p' || k === 'P') {
+            e.preventDefault();
+            togglePin(state.focusedIndex);
+            return;
+          }
+
+          if (k === ' ' || k === 'Spacebar') {
+            e.preventDefault();
+            setFollow(!state.followLive);
+            toast(state.followLive ? 'Follow ON' : 'Follow OFF');
+            return;
+          }
+
+          if (k === 'j' || k === 'J') {
+            e.preventDefault();
+            jumpToLive();
+            toast('Live');
+            return;
+          }
+
+          if (k === 'ArrowRight' || k === 'ArrowLeft') {
+            // Arrow left/right opens overlay and cycles surfaces.
+            e.preventDefault();
+            if (!state.overlayOpen) {
+              state.overlayOpen = true;
+              state.overlaySurface = 'summary';
+              render();
+              return;
+            }
+          }
+        }
+
+        function cycleSurface(delta) {
+          const idx = surfaces.indexOf(state.overlaySurface);
+          const next = (idx + delta + surfaces.length) % surfaces.length;
+          state.overlaySurface = surfaces[next];
+          render();
+        }
+
+        /* -------------------------
+           Demo live stream (stub)
+        ------------------------- */
+        function startStream() {
+          stopStream();
+          state.streamTimer = setInterval(() => {
+            if (!state.recording) return;
+
+            // Append a new line every ~1.2s (demo)
+            state.tick += 1;
+            const sp = speakers[state.tick % speakers.length];
+            const t = fakeTime();
+            const text = synthText(state.tick);
+            state.lines.push({ t, s: sp.id, text });
+
+            // Also update raw surface data quickly
+            surfaceData.raw = []; // (renderRaw builds from lines anyway)
+
+            // Keep focus at bottom only when following and no lens open
+            if (state.followLive && state.lensIndex === -1) {
+              state.focusedIndex = state.lines.length - 1;
+            }
+
+            render();
+
+            if (state.followLive) {
+              // Debounce a bit so it feels calm, not jittery
+              requestAnimationFrame(() => {
+                scrollToBottom();
+              });
+            }
+          }, 1200);
+        }
+
+        function stopStream() {
+          if (state.streamTimer) clearInterval(state.streamTimer);
+          state.streamTimer = null;
+        }
+
+        function fakeTime() {
+          // Cheap, stable demo: increments minutes occasionally
+          const baseH = 7;
+          const baseM = 12;
+          const m = baseM + Math.floor(state.lines.length / 4);
+          const hh = String(baseH + Math.floor(m / 60)).padStart(2, '0');
+          const mm = String(m % 60).padStart(2, '0');
+          const ss = String((state.lines.length * 6) % 60).padStart(2, '0');
+          return `${hh}:${mm}:${ss}`;
+        }
+
+        function synthText(n) {
+          const pool = [
+            'We should treat auto-follow as explicit state, not a side effect.',
+            'Lens should be contextual. No permanent clutter.',
+            'Keep the compact view transcript-first and predictable.',
+            'RAG snippets must have citations or they feel like magic tricks.',
+            'Actions need owner + due date extraction, but verification is mandatory.',
+            'Make the UI feel like a tool, not a theme.',
+            'Keyboard model has to be consistent across layers.',
+            'Pins should become the living brief, not a dumping ground.',
+          ];
+          return pool[n % pool.length];
+        }
+
+        /* -------------------------
+           Scroll breaks follow-live
+        ------------------------- */
+        function hookScrollBreaksFollow() {
+          // Any deliberate scroll up disables follow.
+          // Heuristic: if not near bottom, follow=false.
+          scrollEl.addEventListener(
+            'scroll',
+            () => {
+              const nearBottom =
+                scrollEl.scrollTop + scrollEl.clientHeight >=
+                scrollEl.scrollHeight - 40;
+              if (!nearBottom && state.followLive) {
+                setFollow(false);
+              }
+            },
+            { passive: true },
+          );
+        }
+
+        /* -------------------------
+           Open full view + messaging
+        ------------------------- */
+        function openFullView() {
+          const idx = state.focusedIndex;
+          const w = window.open(
+            'echopanel.html',
+            'EchoPanelFull',
+            'width=1240,height=860',
+          );
+          if (!w) {
+            toast('Popup blocked');
+            return;
+          }
+
+          // Try to jump to the focused line once the window loads.
+          // Best-effort: post a few times.
+          let tries = 0;
+          const timer = setInterval(() => {
+            tries += 1;
+            try {
+              w.postMessage({ type: 'EP_JUMP_TO_LINE', index: idx }, '*');
+            } catch {}
+            if (tries >= 8) clearInterval(timer);
+          }, 180);
+        }
+
+        /* -------------------------
+           Tiny toast (minimal, non-annoying)
+        ------------------------- */
+        let toastTimer = null;
+        function toast(msg) {
+          const elId = 'ep_toast';
+          let el = document.getElementById(elId);
+          if (!el) {
+            el = document.createElement('div');
+            el.id = elId;
+            el.style.position = 'fixed';
+            el.style.left = '50%';
+            el.style.bottom = '18px';
+            el.style.transform = 'translateX(-50%)';
+            el.style.zIndex = '40';
+            el.style.borderRadius = '999px';
+            el.style.border = '1px solid rgba(255,255,255,.14)';
+            el.style.background = 'rgba(15,17,23,.72)';
+            el.style.backdropFilter = 'blur(14px) saturate(150%)';
+            el.style.webkitBackdropFilter = 'blur(14px) saturate(150%)';
+            el.style.color = 'rgba(255,255,255,.90)';
+            el.style.fontSize = '12px';
+            el.style.padding = '8px 10px';
+            el.style.boxShadow = '0 12px 28px rgba(0,0,0,.32)';
+            el.style.opacity = '0';
+            el.style.transition = 'opacity 140ms ease, transform 140ms ease';
+            document.body.appendChild(el);
+          }
+          el.textContent = msg;
+          el.style.opacity = '1';
+          el.style.transform = 'translateX(-50%) translateY(-2px)';
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateX(-50%) translateY(0px)';
+          }, 750);
+        }
+
+        /* -------------------------
+           Help overlay
+        ------------------------- */
+        function toggleHelp(force) {
+          const show =
+            typeof force === 'boolean'
+              ? force
+              : !kbdOverlay.classList.contains('show');
+          kbdOverlay.classList.toggle('show', show);
+        }
+
+        /* -------------------------
+           Hooks
+        ------------------------- */
+        function hookButtons() {
+          recPill.addEventListener('click', () => {
+            state.recording = !state.recording;
+            toast(state.recording ? 'Listening' : 'Paused');
+            render();
+          });
+
+          jumpLiveBtn.addEventListener('click', () => jumpToLive());
+          fullBtn.addEventListener('click', () => openFullView());
+          helpBtn.addEventListener('click', () => toggleHelp());
+
+          closeOverlay.addEventListener('click', () => closeOverlayFn());
+          kbdOverlay.addEventListener('click', (e) => {
+            if (e.target === kbdOverlay) toggleHelp(false);
+          });
+        }
+
+        function hookOverlayCycleMouse() {
+          overlay.addEventListener(
+            'wheel',
+            (e) => {
+              // Optional: trackpad horizontal scroll to cycle surfaces lightly
+              if (!state.overlayOpen) return;
+              if (
+                Math.abs(e.deltaX) > Math.abs(e.deltaY) &&
+                Math.abs(e.deltaX) > 18
+              ) {
+                cycleSurface(e.deltaX > 0 ? 1 : -1);
+              }
+            },
+            { passive: true },
+          );
+        }
+
+        /* -------------------------
+           Init
+        ------------------------- */
+        function init() {
+          render();
+          hookButtons();
+          hookScrollBreaksFollow();
+          hookOverlayCycleMouse();
+          window.addEventListener('keydown', onKeyDown);
+
+          // Start focused near latest at load
+          state.focusedIndex = state.lines.length - 1;
+          setTimeout(() => scrollToBottom(), 0);
+
+          // Demo stream on
+          startStream();
+        }
+
+        init();
+      })();
+    </script>
+  </body>
+</html>

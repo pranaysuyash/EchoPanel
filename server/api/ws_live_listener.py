@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -17,13 +18,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 QUEUE_MAX = int(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX", "48"))
+DEBUG_AUDIO_DUMP = os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP", "0") == "1"
+DEBUG_AUDIO_DUMP_DIR = Path(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_DIR", "/tmp/echopanel_audio_dump"))
 
 
 @dataclass
 class SessionState:
     session_id: Optional[str] = None
     started: bool = False
-    tasks: list[asyncio.Task] = field(default_factory=list)
+    tasks: list[asyncio.Task] = field(default_factory=list)  # General tasks (for future use)
     asr_tasks: list[asyncio.Task] = field(default_factory=list)
     analysis_tasks: list[asyncio.Task] = field(default_factory=list)
     transcript: list[dict] = field(default_factory=list)
@@ -40,6 +43,10 @@ class SessionState:
     dropped_frames: int = 0
     started_sources: Set[str] = field(default_factory=set)
     closed: bool = False
+    # P1 fix: track if backpressure warning was sent
+    backpressure_warned: bool = False
+    # P2-13: Audio debug dump file handles
+    debug_dump_files: Dict[str, Any] = field(default_factory=dict)
 
 
 async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> None:
@@ -54,6 +61,52 @@ async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> Non
             state.closed = True
 
 
+def _init_audio_dump(state: SessionState, source: str) -> None:
+    """Initialize audio dump file for a source (P2-13)."""
+    if not DEBUG_AUDIO_DUMP or source in state.debug_dump_files:
+        return
+    
+    try:
+        DEBUG_AUDIO_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = int(time.time())
+        session_id = state.session_id or "unknown"
+        filename = f"{session_id}_{source}_{timestamp}.pcm"
+        filepath = DEBUG_AUDIO_DUMP_DIR / filename
+        
+        file_handle = open(filepath, "wb")
+        state.debug_dump_files[source] = file_handle
+        logger.info(f"Audio dump enabled for {source}: {filepath}")
+    except Exception as e:
+        logger.error(f"Failed to initialize audio dump for {source}: {e}")
+
+
+def _write_audio_dump(state: SessionState, source: str, chunk: bytes) -> None:
+    """Write audio chunk to dump file (P2-13)."""
+    if not DEBUG_AUDIO_DUMP or source not in state.debug_dump_files:
+        return
+    
+    try:
+        state.debug_dump_files[source].write(chunk)
+        state.debug_dump_files[source].flush()
+    except Exception as e:
+        logger.error(f"Failed to write audio dump for {source}: {e}")
+
+
+def _close_audio_dumps(state: SessionState) -> None:
+    """Close all audio dump files (P2-13)."""
+    if not DEBUG_AUDIO_DUMP:
+        return
+    
+    for source, file_handle in state.debug_dump_files.items():
+        try:
+            file_handle.close()
+            logger.info(f"Closed audio dump for {source}")
+        except Exception as e:
+            logger.error(f"Failed to close audio dump for {source}: {e}")
+    
+    state.debug_dump_files.clear()
+
+
 def get_queue(state: SessionState, source: str) -> asyncio.Queue:
     if source not in state.queues:
         state.queues[source] = asyncio.Queue(maxsize=QUEUE_MAX)
@@ -61,8 +114,17 @@ def get_queue(state: SessionState, source: str) -> asyncio.Queue:
     return state.queues[source]
 
 
-async def put_audio(q: asyncio.Queue, chunk: bytes, state: Optional["SessionState"] = None, source: str = "") -> None:
-    """Enqueue audio chunk, dropping oldest if queue is full."""
+async def put_audio(
+    q: asyncio.Queue,
+    chunk: bytes,
+    state: Optional["SessionState"] = None,
+    source: str = "",
+    websocket: Optional[WebSocket] = None,
+) -> None:
+    """Enqueue audio chunk, dropping oldest if queue is full.
+    
+    P1 fix (BP-1): Now logs drops and can send backpressure warning to client.
+    """
     if not chunk:
         return
     try:
@@ -73,8 +135,17 @@ async def put_audio(q: asyncio.Queue, chunk: bytes, state: Optional["SessionStat
         q.put_nowait(chunk)
         if state is not None:
             state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-            if DEBUG:
-                print(f"ws_live_listener: dropped frame for {source}, total={state.dropped_frames}")
+            # Always log drops (not just DEBUG) for observability
+            logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
+            # P1 fix: Send backpressure warning to client (throttled)
+            if websocket is not None and not state.backpressure_warned:
+                state.backpressure_warned = True
+                asyncio.create_task(ws_send(state, websocket, {
+                    "type": "status",
+                    "state": "backpressure",
+                    "message": f"Audio queue full, dropping frames (source={source})",
+                    "dropped_frames": state.dropped_frames,
+                }))
 
 
 async def _pcm_stream(queue: asyncio.Queue) -> AsyncIterator[bytes]:
@@ -191,11 +262,16 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             q = get_queue(state, source)
                             if source not in state.started_sources:
                                 state.started_sources.add(source)
+                                # P2-13: Initialize audio dump for new source
+                                _init_audio_dump(state, source)
                                 if DEBUG:
                                     print(f"ws_live_listener: starting ASR task for source={source}")
                                 state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                             
-                            await put_audio(q, chunk, state=state, source=source)
+                            # P2-13: Write audio to dump file
+                            _write_audio_dump(state, source, chunk)
+                            
+                            await put_audio(q, chunk, state=state, source=source, websocket=websocket)
                             
                             if state.diarization_enabled:
                                 state.pcm_buffer.extend(chunk)
@@ -221,8 +297,13 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 timeout=float(os.getenv("ECHOPANEL_ASR_FLUSH_TIMEOUT", "8")),
                             )
                         except asyncio.TimeoutError:
-                            if DEBUG:
-                                print("ws_live_listener: ASR flush timed out")
+                            # P1 fix (SF-1): Surface timeout as warning to user
+                            logger.warning("ASR flush timed out, transcript may be incomplete")
+                            await ws_send(state, websocket, {
+                                "type": "status",
+                                "state": "warning",
+                                "message": "ASR processing timed out, some speech may be missing",
+                            })
                         
                         # THEN stop analysis tasks
                         for t in state.analysis_tasks:
@@ -238,7 +319,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         
                         # Snapshot transcript once for deterministic finalization
                         # (prevents race if any late events append during to_thread calls)
-                        transcript_snapshot = list(state.transcript)
+                        # P1 fix (TO-1): Sort by timestamp for deterministic ordering across sources
+                        transcript_snapshot = sorted(state.transcript, key=lambda s: s.get("t0", 0.0))
                         
                         # Merge transcript with speaker labels (run off event loop if non-trivial)
                         labeled_transcript = await asyncio.to_thread(
@@ -288,7 +370,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         print(f"ws_live_listener: starting ASR task for source={source}")
                     state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                 
-                await put_audio(q, chunk, state=state, source=source)
+                await put_audio(q, chunk, state=state, source=source, websocket=websocket)
                 
                 if state.diarization_enabled:
                     state.pcm_buffer.extend(chunk)
@@ -309,9 +391,15 @@ async def ws_live_listener(websocket: WebSocket) -> None:
             print("ws_live_listener: disconnect")
         return
     finally:
+        # P2-13: Close audio dump files
+        _close_audio_dumps(state)
+        
         for q in state.queues.values():
             await q.put(None)
         all_tasks = state.tasks + state.asr_tasks + state.analysis_tasks
         for task in all_tasks:
             task.cancel()
         await asyncio.gather(*all_tasks, return_exceptions=True)
+        # Log session metrics for observability
+        if state.dropped_frames > 0:
+            logger.info(f"Session {state.session_id} complete: dropped_frames={state.dropped_frames}")

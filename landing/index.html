@@ -3,12 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="EchoPanel is a macOS menu bar app that turns any system audio into live meeting notes with actions, decisions, risks, and entities." />
+    <meta
+      name="description"
+      content="EchoPanel is a macOS menu bar app that turns any system audio into live meeting notes with actions, decisions, risks, and entities."
+    />
     <title>EchoPanel — Live meeting notes from any Mac audio</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231f6feb' d='M32 6c14.36 0 26 11.64 26 26S46.36 58 32 58 6 46.36 6 32 17.64 6 32 6Zm-7 17a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V26a3 3 0 0 0-3-3Zm14-8a3 3 0 0 0-3 3v28a3 3 0 0 0 6 0V18a3 3 0 0 0-3-3Zm-7 14a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0v-8a3 3 0 0 0-3-3Z'/%3E%3C/svg%3E" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231f6feb' d='M32 6c14.36 0 26 11.64 26 26S46.36 58 32 58 6 46.36 6 32 17.64 6 32 6Zm-7 17a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V26a3 3 0 0 0-3-3Zm14-8a3 3 0 0 0-3 3v28a3 3 0 0 0 6 0V18a3 3 0 0 0-3-3Zm-7 14a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0v-8a3 3 0 0 0-3-3Z'/%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -29,12 +38,19 @@
             <div class="tag">macOS menu bar app</div>
             <h1>Live meeting notes from any Mac audio.</h1>
             <p>
-              Start listening with one click. EchoPanel streams system audio to produce a live transcript plus
-              Actions, Decisions, Risks, and Entities. Processed locally on your Mac.
+              Start listening with one click. EchoPanel streams system audio
+              into a portrait side panel with a POS-style rolling transcript and
+              tabbed views for Decisions, Timeline, and Documents (coming soon).
+              Processed locally on your Mac.
             </p>
             <ul class="hero-bullets">
-              <li>Works with Meet, Zoom, Teams, video playback, and in person audio</li>
-              <li>No calendar or meeting integrations required</li>
+              <li>
+                Works with Meet, Zoom, Teams, video playback, and in person
+                audio
+              </li>
+              <li>
+                Arrow-key tabs: Transcript, Decisions, Timeline, Documents (coming soon)
+              </li>
               <li>Clear permission prompts and visible listening indicator</li>
             </ul>
             <div class="hero-form" id="waitlist">
@@ -44,17 +60,32 @@
                 <div class="form-row">
                   <label>
                     Name
-                    <input type="text" name="name" placeholder="Avery Chen" autocomplete="name" />
+                    <input
+                      type="text"
+                      name="name"
+                      placeholder="Avery Chen"
+                      autocomplete="name"
+                    />
                   </label>
                   <label>
                     Email
-                    <input type="email" name="email" placeholder="you@email.com" autocomplete="email" required />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="you@email.com"
+                      autocomplete="email"
+                      required
+                    />
                   </label>
                 </div>
                 <div class="form-row">
                   <label>
                     Role
-                    <input type="text" name="role" placeholder="Founder, PM, Recruiter" />
+                    <input
+                      type="text"
+                      name="role"
+                      placeholder="Founder, PM, Recruiter"
+                    />
                   </label>
                   <label>
                     Company
@@ -62,8 +93,15 @@
                   </label>
                 </div>
                 <input type="hidden" name="source" value="landing" />
-                <button type="submit" class="btn-primary">Request access</button>
-                <div class="form-status" data-form-status aria-live="polite" role="status"></div>
+                <button type="submit" class="btn-primary">
+                  Request access
+                </button>
+                <div
+                  class="form-status"
+                  data-form-status
+                  aria-live="polite"
+                  role="status"
+                ></div>
               </form>
             </div>
           </div>
@@ -77,7 +115,7 @@
               <div class="menu-dot listening"></div>
               <span>EchoPanel · 12:34</span>
             </div>
-            <div class="panel" data-hero-panel>
+            <div class="panel portrait" data-hero-panel>
               <div class="panel-header">
                 <div>
                   <div class="panel-title">Live Meeting Listener</div>
@@ -85,54 +123,42 @@
                 </div>
                 <div class="panel-timer">12:34</div>
               </div>
-              <div class="panel-grid">
-                <div class="panel-column">
-                  <h4>Transcript</h4>
-                  <div class="panel-card">
-                    <div class="line">
-                      <span class="time">12:31</span>
-                      <span>We should ship by Friday.</span>
-                    </div>
-                    <div class="line faint">
-                      <span class="time">12:33</span>
-                      <span>I'll send the proposal tomorrow.</span>
-                    </div>
-                    <div class="line faint">
-                      <span class="time">12:34</span>
-                      <span>Let's keep the scope focused.</span>
-                    </div>
+              <div class="panel-tabs">
+                <button class="tab active">Transcript</button>
+                <button class="tab">Decisions</button>
+                <button class="tab">Timeline</button>
+                <button class="tab">Documents (coming soon)</button>
+              </div>
+              <div class="panel-body">
+                <div class="panel-card transcript-card">
+                  <div class="line">
+                    <span class="time">12:31</span>
+                    <span>We should ship by Friday.</span>
+                  </div>
+                  <div class="line faint">
+                    <span class="time">12:33</span>
+                    <span>I'll send the proposal tomorrow.</span>
+                  </div>
+                  <div class="line faint">
+                    <span class="time">12:34</span>
+                    <span>Let's keep the scope focused.</span>
+                  </div>
+                  <div class="line faint">
+                    <span class="time">12:35</span>
+                    <span
+                      ><span class="pill">Decision</span> Ship v0.2 on
+                      Friday.</span
+                    >
                   </div>
                 </div>
-                <div class="panel-column">
-                  <h4>Actions</h4>
-                  <div class="panel-card">
-                    <div>Send revised proposal</div>
-                    <div class="meta">Owner: Pranay · Due: Tue · 82%</div>
+                <div class="panel-card docs-card">
+                  <div class="doc-row">
+                    <span>Spec-v0.2.pdf</span>
+                    <span class="meta">Indexed</span>
                   </div>
-                  <h4>Decisions</h4>
-                  <div class="panel-card">
-                    <div>Ship v0.2 on Friday</div>
-                    <div class="meta">74%</div>
-                  </div>
-                  <h4>Risks</h4>
-                  <div class="panel-card">
-                    <div>Audio quality during screen share</div>
-                    <div class="meta">61%</div>
-                  </div>
-                </div>
-                <div class="panel-column">
-                  <h4>Entities</h4>
-                  <div class="panel-card">
-                    <div>EchoPanel · org</div>
-                    <div class="meta">Last seen 12:31 · 88%</div>
-                  </div>
-                  <div class="panel-card">
-                    <div>Friday · date</div>
-                    <div class="meta">Last seen 12:31 · 71%</div>
-                  </div>
-                  <div class="panel-card">
-                    <div>ScreenCaptureKit · topic</div>
-                    <div class="meta">Last seen 12:33 · 74%</div>
+                  <div class="doc-row">
+                    <span>Launch-plan.md</span>
+                    <span class="meta">Queued</span>
                   </div>
                 </div>
               </div>
@@ -149,20 +175,23 @@
       <section class="section">
         <div class="section-header">
           <h2>Everything you need without integrations.</h2>
-          <p>EchoPanel captures what is already playing on your Mac. No bots. Offline processing. Zero friction.</p>
+          <p>
+            EchoPanel captures what is already playing on your Mac. No bots.
+            Offline processing. Zero friction.
+          </p>
         </div>
         <div class="value-grid">
           <div class="value-card">
-            <h3>Live transcript</h3>
-            <p>Stable, timestamped segments that replace partials cleanly.</p>
+            <h3>Rolling transcript</h3>
+            <p>POS-style window with stable, timestamped segments.</p>
           </div>
           <div class="value-card">
-            <h3>Actions, Decisions, Risks</h3>
-            <p>Structured cards with confidence and evidence.</p>
+            <h3>Decisions & timeline</h3>
+            <p>Find outcomes fast with dedicated tabs and timestamps.</p>
           </div>
           <div class="value-card">
-            <h3>Entities</h3>
-            <p>People, orgs, projects, and dates with last seen time.</p>
+            <h3>Docs for context</h3>
+            <p>Documents tab is coming soon for reference uploads.</p>
           </div>
         </div>
       </section>
@@ -177,14 +206,20 @@
             <span class="step-number">01</span>
             <div>
               <h3>Start listening</h3>
-              <p>Click the menu bar toggle. EchoPanel requests Screen Recording permission once.</p>
+              <p>
+                Click the menu bar toggle. EchoPanel requests Screen Recording
+                permission once.
+              </p>
             </div>
           </li>
           <li>
             <span class="step-number">02</span>
             <div>
               <h3>Stream system audio</h3>
-              <p>Audio is captured locally and streamed for live ASR and analysis.</p>
+              <p>
+                Audio is captured locally and streamed for live ASR and
+                analysis.
+              </p>
             </div>
           </li>
           <li>
@@ -206,19 +241,29 @@
         <div class="flow-cards">
           <div class="flow-card active" data-flow-card>
             <h3>Start in the menu bar</h3>
-            <p>One click triggers permission checks and opens the side panel.</p>
+            <p>
+              One click triggers permission checks and opens the side panel.
+            </p>
           </div>
           <div class="flow-card" data-flow-card>
             <h3>Stream system audio</h3>
-            <p>Audio is captured locally and streamed as PCM16 for low latency.</p>
+            <p>
+              Audio is captured locally and streamed as PCM16 for low latency.
+            </p>
           </div>
           <div class="flow-card" data-flow-card>
             <h3>Transcript arrives live</h3>
-            <p>Partials appear quickly and resolve into final segments with timestamps.</p>
+            <p>
+              Partials appear quickly and resolve into final segments with
+              timestamps.
+            </p>
           </div>
           <div class="flow-card" data-flow-card>
             <h3>Actions & entities update</h3>
-            <p>Cards refresh on cadence while entities track people, orgs, and projects.</p>
+            <p>
+              Cards refresh on cadence while entities track people, orgs, and
+              projects.
+            </p>
           </div>
           <div class="flow-card" data-flow-card>
             <h3>Export instantly</h3>
@@ -230,7 +275,10 @@
       <section class="section trust" id="trust">
         <div class="section-header">
           <h2>Built for trust and transparency</h2>
-          <p>We only listen when you click Start, with visible indicators and clear permissions.</p>
+          <p>
+            We only listen when you click Start, with visible indicators and
+            clear permissions.
+          </p>
         </div>
         <div class="trust-grid">
           <div class="trust-card">
@@ -251,18 +299,30 @@
       <section class="section waitlist">
         <div class="section-header">
           <h2>Get early access</h2>
-          <p>We are onboarding a small number of people for the v0.2 private beta.</p>
+          <p>
+            We are onboarding a small number of people for the v0.2 private
+            beta.
+          </p>
         </div>
         <div class="waitlist-card">
           <form class="waitlist-form" data-waitlist>
             <div class="form-row">
               <label>
                 Email
-                <input type="email" name="email" placeholder="you@email.com" required />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="you@email.com"
+                  required
+                />
               </label>
               <label>
                 Role
-                <input type="text" name="role" placeholder="Founder, PM, Recruiter" />
+                <input
+                  type="text"
+                  name="role"
+                  placeholder="Founder, PM, Recruiter"
+                />
               </label>
             </div>
             <input type="hidden" name="source" value="footer" />
@@ -284,16 +344,25 @@
       <section class="section" id="privacy">
         <div class="section-header">
           <h2>Privacy</h2>
-          <p>EchoPanel only listens when you click Start. You export what you choose to keep.</p>
+          <p>
+            EchoPanel only listens when you click Start. You export what you
+            choose to keep.
+          </p>
         </div>
         <div class="trust-grid">
           <div class="trust-card">
             <h3>Local capture</h3>
-            <p>Audio capture happens on your Mac via ScreenCaptureKit and optional microphone input.</p>
+            <p>
+              Audio capture happens on your Mac via ScreenCaptureKit and
+              optional microphone input.
+            </p>
           </div>
           <div class="trust-card">
             <h3>Transparent status</h3>
-            <p>Streaming and audio quality indicators are always visible while listening.</p>
+            <p>
+              Streaming and audio quality indicators are always visible while
+              listening.
+            </p>
           </div>
           <div class="trust-card">
             <h3>Your exports</h3>

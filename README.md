@@ -116,3 +116,11 @@ If the app says “Port 8000 is already in use”, that’s expected when you’
 ## More troubleshooting
 
 - `docs/TROUBLESHOOTING.md`
+
+## Local quality gate
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+This enables a pre-commit hook that runs `./scripts/verify.sh` (`swift build` + `swift test`, including SidePanel visual snapshot tests).

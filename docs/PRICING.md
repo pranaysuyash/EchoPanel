@@ -1,21 +1,40 @@
-# Pricing (v0.1)
+# Pricing (v0.2 draft)
 
 ## Goals
-- Clear, simple pricing with a fast path to purchase
-- Align with productivity tools for solo founders and small teams
+
+- Clear, simple pricing with a fast path to purchase.
+- Align with productivity tools for solo founders and small teams.
+- Keep beta access frictionless while validating demand.
 
 ## Proposed tiers
-### Free waitlist / beta
-- Limited sessions per month
-- Basic transcript + cards
-- Export Markdown + JSON
 
-### Pro (suggested)
-- Unlimited sessions
-- Faster processing and higher limits
-- Priority support
+### Free Beta (Invite-only)
+
+- Limited sessions per month (suggested: 10–20). **Inferred**
+- Basic transcript + cards (Actions/Decisions/Risks/Entities). **Observed**: current features in `docs/FEATURES.md`
+- Export Markdown + JSON. **Observed**: `docs/FEATURES.md`
+- Local-only processing by default. **Observed**: distribution plan emphasizes local bundle (`docs/DISTRIBUTION_PLAN_v0.2.md`)
+
+### Pro (Paid)
+
+- Unlimited sessions.
+- Higher limits (longer sessions, more frequent updates). **Inferred**
+- Priority support.
+- Optional cloud summary/analysis add-on (if introduced). **Inferred**
+
+## Pricing recommendation (needs confirmation)
+
+- **Feb beta default**: Free beta only (invite-only). **Inferred**
+- **Pro range (post-beta)**: $12–$20 per device / month. **Inferred** (benchmark vs productivity tools)
+- **Alternate**: $99/year per device with early adopter discount. **Inferred**
+
+## Licensing & access
+
+- **Private beta**: invite-only access with email gating. **Observed**: `docs/LAUNCH_PLANNING.md`
+- **Paid access**: Gumroad license keys and email fulfillment. **Observed**: `docs/DISTRIBUTION_PLAN_v0.2.md`
 
 ## Open questions
-- Should pricing be per-seat or per-device?
-- Should longer sessions be metered?
 
+- Per-seat vs per-device licensing.
+- Metering for longer sessions.
+- Whether cloud features are included or sold as add-on.

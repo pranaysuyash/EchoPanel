@@ -47,7 +47,7 @@ final class BackendManager: ObservableObject {
 
         // If something is already serving on the configured host/port, adopt it (or
         // surface a clear "port in use" error) instead of failing with bind errors.
-        switch probeExistingBackend(timeout: 0.6) {
+        switch probeExistingBackend(timeout: 0.25) {
         case .healthy(let detail):
             usingExternalBackend = true
             isServerReady = true
@@ -133,7 +133,11 @@ final class BackendManager: ObservableObject {
                     self?.serverStatus = code == 0 ? .stopped : .error
                 }
                 self?.isServerReady = false
-                self?.healthDetail = code == 0 ? "" : "Server exited (code \(code))"
+                if self?.stopRequested == true {
+                    self?.healthDetail = ""
+                } else {
+                    self?.healthDetail = code == 0 ? "" : "Server exited (code \(code))"
+                }
                 self?.serverProcess = nil
             }
         }
@@ -152,12 +156,14 @@ final class BackendManager: ObservableObject {
         healthCheckTimer?.invalidate()
         healthCheckTimer = nil
         
-        guard let process = serverProcess, process.isRunning else { return }
+        guard let process = serverProcess, process.isRunning else {
+            serverProcess = nil
+            return
+        }
         
         NSLog("BackendManager: Stopping server")
         stopRequested = true
         process.terminate()
-        serverProcess = nil
         serverStatus = .stopped
         isServerReady = false
     }
@@ -286,12 +292,18 @@ final class BackendManager: ObservableObject {
 
     private func sanitizeWhisperModel(_ value: String?) -> String {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return "base"
+            return "base.en"
         }
         // faster-whisper supports Whisper model family names. Keep this conservative.
-        let allowed: Set<String> = ["tiny", "base", "small", "medium", "large-v2", "large-v3", "large"]
+        let allowed: Set<String> = [
+            "tiny", "tiny.en",
+            "base", "base.en",
+            "small", "small.en",
+            "medium", "medium.en",
+            "large-v2", "large-v3", "large-v3-turbo", "large"
+        ]
         if allowed.contains(value) { return value }
-        return "base"
+        return "base.en"
     }
     
     // MARK: - Path Discovery

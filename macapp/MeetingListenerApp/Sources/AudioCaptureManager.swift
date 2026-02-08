@@ -25,6 +25,7 @@ final class AudioCaptureManager: NSObject {
     private var lastDebugLog: TimeInterval = 0
     private var totalSamples: Int = 0
     private var screenFrames: Int = 0
+    private let statsLock = NSLock()
 
     override init() {
         super.init()
@@ -33,10 +34,13 @@ final class AudioCaptureManager: NSObject {
         }
         sampleHandler.onScreenSampleBuffer = { [weak self] _ in
             guard let self else { return }
+            self.statsLock.lock()
             self.screenFrames += 1
-            self.onScreenFrameCount?(self.screenFrames)
-            if self.debugEnabled && self.screenFrames % 60 == 0 {
-                NSLog("AudioCaptureManager: received %d screen frames", self.screenFrames)
+            let currentFrames = self.screenFrames
+            self.statsLock.unlock()
+            self.onScreenFrameCount?(currentFrames)
+            if self.debugEnabled && currentFrames % 60 == 0 {
+                NSLog("AudioCaptureManager: received %d screen frames", currentFrames)
             }
         }
     }
@@ -171,21 +175,23 @@ final class AudioCaptureManager: NSObject {
         }
         let samples = channelData[0]
         let frameCount = Int(outputBuffer.frameLength)
+        statsLock.lock()
         totalSamples += frameCount
+        let currentTotal = totalSamples
+        statsLock.unlock()
         
-        // Log success periodically (debug mode only)
-        if debugEnabled && (totalSamples <= 1000 || totalSamples % 16000 == 0) {
-            NSLog("✅ processAudio: Processed %d samples, total: %d, emitting PCM frames", frameCount, totalSamples)
+        if debugEnabled && (currentTotal <= 1000 || currentTotal % 16000 == 0) {
+            NSLog("✅ processAudio: Processed %d samples, total: %d, emitting PCM frames", frameCount, currentTotal)
         }
         
         if debugEnabled {
             let now = CACurrentMediaTime()
             if now - lastDebugLog > 2 {
                 lastDebugLog = now
-                NSLog("AudioCaptureManager: received %d samples", totalSamples)
+                NSLog("AudioCaptureManager: received %d samples", currentTotal)
             }
         }
-        onSampleCount?(totalSamples)
+        onSampleCount?(currentTotal)
 
         updateAudioQuality(samples: samples, count: frameCount)
         emitPCMFrames(samples: samples, count: frameCount)
@@ -271,20 +277,27 @@ final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
     var onScreenSampleBuffer: ((CMSampleBuffer) -> Void)?
     private var audioCallCount = 0
     private var screenCallCount = 0
+    private let counterLock = NSLock()
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         switch type {
         case .audio:
+            counterLock.lock()
             audioCallCount += 1
-            if audioCallCount <= 5 || audioCallCount % 100 == 0 {
+            let count = audioCallCount
+            counterLock.unlock()
+            if count <= 5 || count % 100 == 0 {
                 let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
-                NSLog("🎤 AudioSampleHandler: Received audio buffer #%d with %d samples", audioCallCount, numSamples)
+                NSLog("🎤 AudioSampleHandler: Received audio buffer #%d with %d samples", count, numSamples)
             }
             onAudioSampleBuffer?(sampleBuffer)
         case .screen:
+            counterLock.lock()
             screenCallCount += 1
-            if screenCallCount <= 3 || screenCallCount % 60 == 0 {
-                NSLog("🖥️ AudioSampleHandler: Received screen buffer #%d", screenCallCount)
+            let count = screenCallCount
+            counterLock.unlock()
+            if count <= 3 || count % 60 == 0 {
+                NSLog("🖥️ AudioSampleHandler: Received screen buffer #%d", count)
             }
             onScreenSampleBuffer?(sampleBuffer)
         default:

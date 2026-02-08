@@ -44,7 +44,7 @@ struct MeetingListenerApp: App {
                 Button("Copy Markdown") {
                     appState.copyMarkdownToClipboard()
                 }
-                .keyboardShortcut("c", modifiers: [.command])
+                .keyboardShortcut("c", modifiers: [.command, .shift])
 
                 Button("Export JSON") {
                     appState.exportJSON()
@@ -326,9 +326,10 @@ struct SettingsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var backendManager: BackendManager
     
-    @AppStorage("whisperModel") private var whisperModel = "base"
+    @AppStorage("whisperModel") private var whisperModel = "base.en"
     @AppStorage("backendHost") private var backendHost = "127.0.0.1"
     @AppStorage("backendPort") private var backendPort = 8000
+    private let modelRecommendation = ASRModelRecommendation.forCurrentMac()
     
     var body: some View {
         Form {
@@ -342,10 +343,26 @@ struct SettingsView: View {
             
             Section("ASR Model") {
                 Picker("Whisper Model", selection: $whisperModel) {
-                    Text("Base (Fast)").tag("base")
+                    Text("Base English (Recommended)").tag("base.en")
+                    Text("Base (Multilingual)").tag("base")
                     Text("Small").tag("small")
                     Text("Medium").tag("medium")
                     Text("Large v3 Turbo (Best)").tag("large-v3-turbo")
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recommended for this Mac: \(modelRecommendation.displayName)")
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                    Text("\(modelRecommendation.hardwareSummary) · \(modelRecommendation.reason)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    if whisperModel != modelRecommendation.modelKey {
+                        Button("Use Recommended") {
+                            whisperModel = modelRecommendation.modelKey
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
                 }
                 Text("Changes take effect after restarting the server.")
                     .font(.caption)
@@ -394,7 +411,44 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 360)
+        .frame(width: 420, height: 430)
+    }
+}
+
+private struct ASRModelRecommendation {
+    let modelKey: String
+    let displayName: String
+    let hardwareSummary: String
+    let reason: String
+
+    static func forCurrentMac() -> ASRModelRecommendation {
+        let ramGiB = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
+        let cpuCount = ProcessInfo.processInfo.activeProcessorCount
+        let siliconLabel: String = {
+#if arch(arm64)
+            return "Apple Silicon"
+#else
+            return "Intel"
+#endif
+        }()
+
+        let summary = "\(siliconLabel), \(ramGiB) GB RAM, \(cpuCount) cores"
+
+        if siliconLabel == "Apple Silicon" && ramGiB >= 24 {
+            return ASRModelRecommendation(
+                modelKey: "large-v3-turbo",
+                displayName: "Large v3 Turbo",
+                hardwareSummary: summary,
+                reason: "high-memory profile supports better quality model"
+            )
+        }
+
+        return ASRModelRecommendation(
+            modelKey: "base.en",
+            displayName: "Base English",
+            hardwareSummary: summary,
+            reason: "fastest stable baseline for local real-time meetings"
+        )
     }
 }
 

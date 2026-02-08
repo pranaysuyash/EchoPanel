@@ -214,6 +214,7 @@ private var modelDownloadStep: some View {
 - Enrolled in Apple Developer Program ($99/year)
 - Developer ID Application certificate in Keychain
 - App-specific password for notarization
+- App ID / Bundle ID reserved (e.g., `com.echopanel.app`)
 
 **Steps**:
 
@@ -305,7 +306,21 @@ create-dmg \
 - Use for invite-only beta
 - Free, but public by default
 
+**Option D: S3 or Google Drive (Private sharing)**
+
+- Host DMG on S3 with signed URLs or a private Drive link
+- Useful for small invite-only waves
+- Requires manual access control
+
 **Recommendation**: Start with **Option A** (Vercel static download) for invite-only wave, then move to **Option B** (Gumroad) for wider release.
+
+---
+
+## Licensing (Feb launch)
+
+- **Private beta**: invite-only download with email gating.
+- **Paid (optional)**: Gumroad license keys + email fulfillment; lightweight in-app entry.
+- **No hard enforcement** in v0.2 to keep onboarding friction low.
 
 #### Step 3.2: Update Landing Page
 

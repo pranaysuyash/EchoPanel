@@ -28,13 +28,32 @@ This repo starts with manual verification. Add automated tests once the core pip
 Optional local ASR:
 
 - `uv pip install -e ".[asr]"`
-- `export ECHOPANEL_WHISPER_MODEL=base`
-- `export ECHOPANEL_WHISPER_DEVICE=metal`
-- `export ECHOPANEL_WHISPER_COMPUTE=int8_float16`
+- `export ECHOPANEL_WHISPER_MODEL=base.en`
+- `export ECHOPANEL_WHISPER_DEVICE=cpu`
+- `export ECHOPANEL_WHISPER_COMPUTE=int8`
 
 ### macOS app build (if present)
 
 - `cd macapp/MeetingListenerApp && swift build`
+- `cd macapp/MeetingListenerApp && swift test`
+
+### Automated visual regression (macOS SidePanel)
+
+- Baseline comparison (default): `cd macapp/MeetingListenerApp && swift test`
+- Re-record snapshots after intentional UI changes:
+  - `cd macapp/MeetingListenerApp && RECORD_SNAPSHOTS=1 swift test` (writes snapshot files and exits non-zero by design)
+  - `cd macapp/MeetingListenerApp && swift test` (must pass with new baselines)
+- Snapshot files:
+  - `macapp/MeetingListenerApp/Tests/__Snapshots__/SidePanelVisualSnapshotTests/*.png`
+
+### Always-run local verification (pre-commit)
+
+- Install hooks once per clone:
+  - `./scripts/install-git-hooks.sh`
+- Pre-commit hook runs:
+  - `./scripts/verify.sh`
+- Verify command currently includes:
+  - `cd macapp/MeetingListenerApp && swift build && swift test`
 
 ### Stable dev build (avoid repeated permission prompts)
 
@@ -111,6 +130,40 @@ See `docs/VISUAL_TESTING.md`.
    - Timer matches the transcript time progression.
    - Mic (“You”) and System lines both appear and don’t overwrite each other.
 4. End Session → Summary opens and exports work.
+
+## Manual smoke test (Three-cut side panel)
+
+1. Start Listening and confirm default mode is `Roll`.
+2. Switch `Roll -> Compact -> Full` in the mode segmented control and verify panel resizes appropriately.
+3. In each mode (`Roll`, `Compact`, `Full`), verify capture controls are collapsed by default and transcript remains the largest area.
+4. Expand `Audio setup`, verify controls are available, then collapse again.
+5. In each mode, verify shared keyboard contract:
+   - `↑ / ↓` moves focused transcript line
+   - `Enter` toggles Focus Lens for focused line
+   - `P` pins/unpins focused line
+   - `Space` toggles follow-live
+   - `J` jumps to live
+   - `Esc` closes one layer (help -> surfaces -> lens)
+   - `?` toggles keyboard help
+   - In `Full`, `Cmd/Ctrl + K` focuses the search box
+6. In `Roll` and `Compact`, press `← / →` to open/cycle overlay surfaces (`Summary`, `Actions`, `Pins`, `Entities`, `Raw`).
+7. In `Full`, verify:
+   - Session rail appears on the left and selecting rows updates the header title.
+   - Work mode segmented control (`Live`, `Review`, `Brief`) is visible.
+   - Persistent insight tabs include `Context`.
+   - Timeline scrub bar moves focus cursor through transcript lines.
+8. Open `System Settings -> Accessibility -> Display -> Reduce motion`, repeat steps 1-7, and verify transitions remain functional without animated jitter.
+9. Resize window to each mode minimum size and verify no clipped controls:
+   - `Roll` around `390x620`
+   - `Compact` around `320x560`
+   - `Full` around `920x640`
+10. In narrow `Compact`, verify footer still exposes copy/export/end actions (via icon/menu fallback) without truncation.
+11. In capture controls, verify source diagnostics chips appear for selected source(s):
+   - `In <age>` reflects live input-frame freshness per source (`System` / `Mic`).
+   - `ASR <age>` reflects transcript event freshness per source.
+12. With `Audio Good` but no transcript, verify troubleshooting text appears under diagnostics.
+13. Verify status chip uses plain language (`Ready`, `Preparing`, `Permission needed`, `Setup needed`) and avoids ambiguous `Not ready`.
+14. In narrow `Compact` and `Roll`, verify the highlights segmented control does not show a wrapped/vertical `Highlights` label artifact.
 
 ## Test data
 

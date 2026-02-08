@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EchoPanel – Compact</title>
+    <style>
+      :root {
+        --bg0: #0b0c10;
+        --bg1: #0f1117;
+        --panel: rgba(255, 255, 255, 0.06);
+        --stroke: rgba(255, 255, 255, 0.12);
+        --stroke2: rgba(255, 255, 255, 0.16);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.62);
+        --muted2: rgba(255, 255, 255, 0.44);
+        --accent: #7dd3fc;
+        --accent2: #a78bfa;
+        --good: #34d399;
+        --warn: #fbbf24;
+        --bad: #fb7185;
+
+        --r14: 14px;
+        --r18: 18px;
+        --r22: 22px;
+
+        --shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'SF Pro Text',
+          'SF Pro Display',
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial;
+        color: var(--text);
+        background:
+          radial-gradient(
+            800px 480px at 20% 10%,
+            rgba(167, 139, 250, 0.18),
+            transparent 60%
+          ),
+          radial-gradient(
+            700px 420px at 85% 22%,
+            rgba(125, 211, 252, 0.16),
+            transparent 60%
+          ),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+        overflow: hidden;
+      }
+
+      body:before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.14'/%3E%3C/svg%3E");
+        mix-blend-mode: overlay;
+        pointer-events: none;
+        opacity: 0.28;
+      }
+
+      .frame {
+        height: 100%;
+        padding: 12px;
+        box-sizing: border-box;
+        display: grid;
+        grid-template-rows: 44px 1fr 44px;
+        gap: 10px;
+      }
+
+      .glass {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: var(--r22);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+      }
+
+      .title {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.05;
+        min-width: 0;
+      }
+      .title strong {
+        font-size: 12px;
+        letter-spacing: 0.22px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .title span {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chipBtn {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+        color: rgba(255, 255, 255, 0.88);
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        cursor: pointer;
+        user-select: none;
+        transition:
+          transform 0.15s ease,
+          background 0.15s ease,
+          border-color 0.15s ease;
+      }
+      .chipBtn:hover {
+        transform: translateY(-1px);
+        border-color: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .roll {
+        position: relative;
+        padding: 10px;
+        overflow: auto;
+        border-radius: var(--r22);
+      }
+
+      /* Receipt feel: subtle off-white paper layer inside dark glass */
+      .paper {
+        border-radius: var(--r18);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.06),
+            rgba(255, 255, 255, 0.03)
+          ),
+          radial-gradient(
+            900px 220px at 50% 0%,
+            rgba(125, 211, 252, 0.08),
+            transparent 65%
+          );
+        padding: 10px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .paper:before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 42px;
+        height: 1px;
+        background: repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.14) 0px,
+          rgba(255, 255, 255, 0.14) 6px,
+          transparent 6px,
+          transparent 12px
+        );
+        opacity: 0.22;
+        pointer-events: none;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 52px 22px 1fr;
+        gap: 10px;
+        padding: 8px 8px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.12);
+        margin-top: 8px;
+        transition:
+          transform 0.15s ease,
+          border-color 0.15s ease,
+          background 0.15s ease;
+        cursor: pointer;
+        user-select: none;
+      }
+      .row:hover {
+        transform: translateY(-1px);
+        border-color: rgba(255, 255, 255, 0.16);
+        background: rgba(0, 0, 0, 0.18);
+      }
+      .row.focused {
+        border-color: rgba(125, 211, 252, 0.45);
+        box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.08);
+      }
+      .row.lens {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.18);
+      }
+
+      .ts {
+        font-size: 11px;
+        color: var(--muted2);
+        font-variant-numeric: tabular-nums;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 999px;
+        padding: 4px 8px;
+        width: fit-content;
+      }
+
+      .sp {
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .txt {
+        font-size: 13px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.92);
+        overflow-wrap: anywhere;
+      }
+
+      .micro {
+        display: none;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .row.focused .micro {
+        display: flex;
+      }
+
+      .microBtn {
+        font-size: 11px;
+        padding: 5px 9px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        color: rgba(255, 255, 255, 0.86);
+        cursor: pointer;
+      }
+
+      .lensPanel {
+        margin-top: 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 10px;
+      }
+      .lensPanel .hdr {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .lensPanel strong {
+        font-size: 11px;
+        letter-spacing: 0.2px;
+      }
+      .lensPanel .mini {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .liveChip {
+        position: sticky;
+        bottom: 10px;
+        align-self: flex-end;
+        display: none;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(125, 211, 252, 0.35);
+        background: rgba(125, 211, 252, 0.12);
+        color: rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+        user-select: none;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        margin-top: 10px;
+      }
+      .liveChip.show {
+        display: inline-flex;
+      }
+      .liveChip .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(52, 211, 153, 0.9);
+        box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.12);
+      }
+      .liveChip .hint {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      .bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        gap: 10px;
+      }
+      .state {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+      }
+      .pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.82);
+        user-select: none;
+        white-space: nowrap;
+      }
+
+      /* Surfaces overlay */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        background: rgba(0, 0, 0, 0.26);
+        align-items: flex-end;
+        justify-content: center;
+        padding: 10px;
+      }
+      .overlay.show {
+        display: flex;
+      }
+      .sheet {
+        width: 100%;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(20, 22, 30, 0.62);
+        backdrop-filter: blur(16px) saturate(140%);
+        -webkit-backdrop-filter: blur(16px) saturate(140%);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+      .sheetHead {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .sheetHead strong {
+        font-size: 12px;
+        letter-spacing: 0.2px;
+      }
+      .sheetBody {
+        max-height: 48vh;
+        overflow: auto;
+        padding: 10px 12px;
+      }
+      .item {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 14px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .item .tag {
+        display: inline-flex;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .item .h {
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .item .s {
+        margin-top: 3px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.64);
+      }
+
+      .kbdOverlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 999;
+      }
+      .kbdOverlay.show {
+        display: flex;
+      }
+      .kbdCard {
+        width: min(520px, 92vw);
+        border-radius: 22px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(20, 22, 30, 0.62);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+        padding: 14px;
+      }
+      .kbdCard h3 {
+        margin: 0 0 10px 0;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.92);
+        letter-spacing: 0.2px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .kbdGrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .kbdRow {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 16px;
+        padding: 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+      }
+      .kbdKey {
+        font-variant-numeric: tabular-nums;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 4px 8px;
+        border-radius: 10px;
+        color: rgba(255, 255, 255, 0.88);
+        white-space: nowrap;
+      }
+
+      .roll::-webkit-scrollbar,
+      .sheetBody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .roll::-webkit-scrollbar-thumb,
+      .sheetBody::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        border: 3px solid rgba(0, 0, 0, 0);
+        background-clip: padding-box;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="kbdOverlay" id="kbdOverlay" role="dialog" aria-modal="true">
+      <div class="kbdCard">
+        <h3>
+          <span>Keyboard</span>
+          <span style="font-size: 11px; color: rgba(255, 255, 255, 0.55)"
+            >Esc to close</span
+          >
+        </h3>
+        <div class="kbdGrid">
+          <div class="kbdRow">
+            <span>Move focus</span><span class="kbdKey">↑ / ↓</span>
+          </div>
+          <div class="kbdRow">
+            <span>Toggle Lens</span><span class="kbdKey">Enter</span>
+          </div>
+          <div class="kbdRow">
+            <span>Pin</span><span class="kbdKey">P</span>
+          </div>
+          <div class="kbdRow">
+            <span>Jump Live</span><span class="kbdKey">J</span>
+          </div>
+          <div class="kbdRow">
+            <span>Follow Live</span><span class="kbdKey">Space</span>
+          </div>
+          <div class="kbdRow">
+            <span>Surfaces</span><span class="kbdKey">← / →</span>
+          </div>
+          <div class="kbdRow">
+            <span>Close overlay</span><span class="kbdKey">Esc</span>
+          </div>
+          <div class="kbdRow">
+            <span>Help</span><span class="kbdKey">?</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="glass top">
+        <div class="title">
+          <strong id="sessionName">Design Sync</strong>
+          <span id="statusLine">Listening · Follow Live</span>
+        </div>
+        <button class="chipBtn" id="fullBtn" title="Open full view">
+          Full
+        </button>
+      </div>
+
+      <div class="glass roll" id="roll">
+        <div class="paper" id="paper">
+          <!-- rows injected -->
+          <div class="liveChip" id="liveChip" title="Jump to live (J)">
+            <span class="dot"></span>
+            <span>LIVE</span>
+            <span class="hint">J</span>
+          </div>
+        </div>
+
+        <div class="overlay" id="overlay">
+          <div class="sheet">
+            <div class="sheetHead">
+              <strong id="sheetTitle">Summary</strong>
+              <span style="font-size: 11px; color: rgba(255, 255, 255, 0.55)"
+                >←/→ cycle · Esc close</span
+              >
+            </div>
+            <div class="sheetBody" id="sheetBody"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass bottom">
+        <div class="state">
+          <div class="pill" id="pillFollow">Follow: on</div>
+          <div class="pill" id="pillFocus">Focus: 1</div>
+        </div>
+        <button class="chipBtn" id="helpBtn" title="Keyboard (?)">?</button>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        const speakers = [
+          {
+            id: 'A',
+            name: 'Pranay',
+            short: 'P',
+            color: 'rgba(125,211,252,0.9)',
+          },
+          {
+            id: 'B',
+            name: 'Diksha',
+            short: 'D',
+            color: 'rgba(167,139,250,0.9)',
+          },
+          { id: 'C', name: 'Ravi', short: 'R', color: 'rgba(251,191,36,0.92)' },
+          { id: 'D', name: 'Nina', short: 'N', color: 'rgba(52,211,153,0.92)' },
+        ];
+
+        let lines = [
+          {
+            t: '06:58',
+            s: 'A',
+            text: 'If EchoPanel feels like a dashboard, people will abandon it. It has to feel like an instrument panel.',
+          },
+          {
+            t: '07:04',
+            s: 'B',
+            text: 'Also it has to look native on macOS. Not “web app but with blur”. The blur must feel like material.',
+          },
+          {
+            t: '07:10',
+            s: 'C',
+            text: 'What’s the one interaction that makes it obviously EchoPanel? Like Figma has the canvas.',
+          },
+          {
+            t: '07:18',
+            s: 'A',
+            text: 'A Focus Lens on any line. It expands in place with entities, decisions, and actions.',
+          },
+          {
+            t: '07:26',
+            s: 'D',
+            text: 'And pins as a running brief. Drag a line into pins, then it auto-updates as the meeting evolves.',
+          },
+          {
+            t: '07:35',
+            s: 'B',
+            text: 'Make the timeline show decision beads. Scrubbing should snap to those beads.',
+          },
+          {
+            t: '07:44',
+            s: 'A',
+            text: 'Yes. Also, speakers as orbits. Active speaker subtly pulls the transcript field.',
+          },
+        ];
+
+        const surfaces = [
+          { key: 'summary', title: 'Summary' },
+          { key: 'actions', title: 'Actions' },
+          { key: 'pins', title: 'Pins' },
+          { key: 'entities', title: 'Entities' },
+          { key: 'raw', title: 'Raw' },
+        ];
+
+        const model = {
+          summary: [
+            {
+              tag: 'Now',
+              h: 'Tension: ship vs polish',
+              s: 'Users forgive missing features, not ugly UX.',
+            },
+            {
+              tag: 'Idea',
+              h: 'Focus Lens for any line',
+              s: 'Expand in place: entities, actions, context.',
+            },
+          ],
+          actions: [
+            {
+              tag: 'A1',
+              h: 'Define interaction spec',
+              s: 'Lens + Pins + Follow Live behavior.',
+            },
+            {
+              tag: 'A2',
+              h: 'RAG context discipline',
+              s: 'Local index, streaming snippets, zero UI jank.',
+            },
+          ],
+          pins: [],
+          entities: [
+            {
+              tag: 'People',
+              h: 'Pranay, Diksha, Ravi, Nina',
+              s: 'Click in full view to filter.',
+            },
+            {
+              tag: 'Topic',
+              h: 'Focus Lens, Pins, Decision beads',
+              s: 'Surfaceable as chips.',
+            },
+          ],
+          raw: [],
+        };
+
+        let focusedIndex = 0;
+        let lensIndex = -1;
+        let followLive = true;
+        let surfaceIndex = -1; // -1 means no overlay
+        let fullWin = null;
+
+        const roll = document.getElementById('roll');
+        const paper = document.getElementById('paper');
+        const liveChip = document.getElementById('liveChip');
+        const statusLine = document.getElementById('statusLine');
+        const pillFollow = document.getElementById('pillFollow');
+        const pillFocus = document.getElementById('pillFocus');
+        const overlay = document.getElementById('overlay');
+        const sheetTitle = document.getElementById('sheetTitle');
+        const sheetBody = document.getElementById('sheetBody');
+        const kbdOverlay = document.getElementById('kbdOverlay');
+
+        function escapeHTML(s) {
+          return String(s).replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+              })[c],
+          );
+        }
+
+        function atBottom(container) {
+          const threshold = 26;
+          return (
+            container.scrollHeight -
+              container.scrollTop -
+              container.clientHeight <
+            threshold
+          );
+        }
+
+        function updateFollowUI() {
+          pillFollow.textContent = 'Follow: ' + (followLive ? 'on' : 'off');
+          statusLine.textContent =
+            'Listening · ' + (followLive ? 'Follow Live' : 'Exploring');
+          liveChip.classList.toggle('show', !followLive);
+        }
+
+        function scrollToRow(i, behavior = 'smooth') {
+          const el = paper.querySelector(`[data-idx="${i}"]`);
+          if (!el) return;
+          el.scrollIntoView({ behavior, block: 'center' });
+        }
+
+        function jumpToLive() {
+          followLive = true;
+          updateFollowUI();
+          focusedIndex = Math.max(0, lines.length - 1);
+          lensIndex = -1;
+          render();
+          const last = Math.max(0, lines.length - 1);
+          scrollToRow(last, 'smooth');
+        }
+
+        function openFullAndSync() {
+          if (!fullWin || fullWin.closed) {
+            fullWin = window.open(
+              'echopanel.html',
+              'EchoPanelFull',
+              'width=1200,height=900',
+            );
+          } else {
+            fullWin.focus();
+          }
+
+          // Send focus and jump after a short delay to allow load
+          setTimeout(() => {
+            try {
+              fullWin.postMessage({ type: 'EP_FOCUS_FULL' }, '*');
+              fullWin.postMessage(
+                { type: 'EP_JUMP_TO_LINE', index: focusedIndex },
+                '*',
+              );
+            } catch {}
+          }, 220);
+        }
+
+        function sendJumpToFull(i) {
+          if (!fullWin || fullWin.closed) return;
+          try {
+            fullWin.postMessage({ type: 'EP_JUMP_TO_LINE', index: i }, '*');
+            fullWin.postMessage({ type: 'EP_FOCUS_FULL' }, '*');
+          } catch {}
+        }
+
+        function renderSurface() {
+          if (surfaceIndex < 0) {
+            overlay.classList.remove('show');
+            return;
+          }
+          overlay.classList.add('show');
+          const s = surfaces[surfaceIndex];
+          sheetTitle.textContent = s.title;
+          sheetBody.innerHTML = '';
+
+          if (s.key === 'raw') {
+            const pre = document.createElement('pre');
+            pre.style.margin = '0';
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.style.wordBreak = 'break-word';
+            pre.style.fontSize = '11px';
+            pre.style.lineHeight = '1.45';
+            pre.style.color = 'rgba(255,255,255,.86)';
+            pre.textContent = lines
+              .map((ln) => {
+                const sp = speakers.find((x) => x.id === ln.s);
+                return `[${ln.t}] ${sp?.name || ln.s}: ${ln.text}`;
+              })
+              .join('\n');
+            sheetBody.appendChild(pre);
+            return;
+          }
+
+          if (s.key === 'pins') {
+            if (model.pins.length === 0) {
+              const it = document.createElement('div');
+              it.className = 'item';
+              it.innerHTML = `<div class="tag">Pins</div><div class="h">No pins yet</div><div class="s">Press P on a focused line.</div>`;
+              sheetBody.appendChild(it);
+              return;
+            }
+
+            model.pins.forEach((p) => {
+              const it = document.createElement('div');
+              it.className = 'item';
+              it.innerHTML = `<div class="tag">Pin</div><div class="h">${escapeHTML(p)}</div><div class="s">Pinned moment</div>`;
+              sheetBody.appendChild(it);
+            });
+            return;
+          }
+
+          const arr = model[s.key] || [];
+          arr.forEach((x) => {
+            const it = document.createElement('div');
+            it.className = 'item';
+            it.innerHTML = `<div class="tag">${escapeHTML(x.tag)}</div><div class="h">${escapeHTML(x.h)}</div><div class="s">${escapeHTML(x.s)}</div>`;
+            sheetBody.appendChild(it);
+          });
+        }
+
+        function togglePin(i) {
+          const txt = lines[i]?.text ? lines[i].text : '';
+          const short = txt.length > 56 ? txt.slice(0, 55) + '…' : txt;
+          const idx = model.pins.indexOf(short);
+          if (idx === -1) model.pins.unshift(short);
+          else model.pins.splice(idx, 1);
+        }
+
+        function render() {
+          // preserve liveChip node
+          const chip = liveChip;
+          paper.innerHTML = '';
+          paper.appendChild(chip);
+
+          lines.forEach((ln, i) => {
+            const sp = speakers.find((x) => x.id === ln.s) || speakers[0];
+            const el = document.createElement('div');
+            el.className =
+              'row' +
+              (i === focusedIndex ? ' focused' : '') +
+              (i === lensIndex ? ' lens' : '');
+            el.dataset.idx = String(i);
+
+            el.innerHTML = `
+              <div class="ts">${escapeHTML(ln.t)}</div>
+              <div class="sp" style="border-color:${sp.color}; box-shadow:0 0 0 4px rgba(255,255,255,0.02)">${escapeHTML(sp.short)}</div>
+              <div>
+                <div class="txt">${escapeHTML(ln.text)}</div>
+                <div class="micro">
+                  <button class="microBtn" data-act="pin">Pin</button>
+                  <button class="microBtn" data-act="lens">Lens</button>
+                  <button class="microBtn" data-act="full">Full</button>
+                </div>
+                ${
+                  i === lensIndex
+                    ? `
+                  <div class="lensPanel">
+                    <div class="hdr">
+                      <strong>Focus Lens</strong>
+                      <span style="font-size:11px;color:rgba(255,255,255,0.55)">Enter toggles · Esc closes</span>
+                    </div>
+                    <div class="mini">
+                      <button class="microBtn" data-surf="summary">Summary</button>
+                      <button class="microBtn" data-surf="actions">Actions</button>
+                      <button class="microBtn" data-surf="pins">Pins</button>
+                      <button class="microBtn" data-surf="entities">Entities</button>
+                      <button class="microBtn" data-surf="raw">Raw</button>
+                    </div>
+                  </div>
+                `
+                    : ''
+                }
+              </div>
+            `;
+
+            el.addEventListener('click', (e) => {
+              const act = e.target?.dataset?.act;
+              const surf = e.target?.dataset?.surf;
+
+              if (act === 'pin') {
+                e.stopPropagation();
+                togglePin(i);
+                renderSurface();
+                return;
+              }
+              if (act === 'lens') {
+                e.stopPropagation();
+                lensIndex = lensIndex === i ? -1 : i;
+                followLive = false;
+                updateFollowUI();
+                render();
+                return;
+              }
+              if (act === 'full') {
+                e.stopPropagation();
+                openFullAndSync();
+                return;
+              }
+
+              if (surf) {
+                e.stopPropagation();
+                const idx = surfaces.findIndex((x) => x.key === surf);
+                surfaceIndex = idx;
+                renderSurface();
+                return;
+              }
+
+              focusedIndex = i;
+              followLive = false;
+              updateFollowUI();
+              render();
+              scrollToRow(i);
+              sendJumpToFull(i);
+            });
+
+            paper.appendChild(el);
+          });
+
+          pillFocus.textContent = 'Focus: ' + (focusedIndex + 1);
+
+          updateFollowUI();
+
+          if (followLive) {
+            const last = Math.max(0, lines.length - 1);
+            requestAnimationFrame(() => scrollToRow(last, 'auto'));
+          }
+        }
+
+        function hookScrollFollow() {
+          roll.addEventListener(
+            'scroll',
+            () => {
+              if (followLive && !atBottom(roll)) {
+                followLive = false;
+                updateFollowUI();
+              }
+            },
+            { passive: true },
+          );
+
+          liveChip.addEventListener('click', () => jumpToLive());
+        }
+
+        function hookKeyboard() {
+          window.addEventListener('keydown', (e) => {
+            if (e.key === '?') {
+              e.preventDefault();
+              kbdOverlay.classList.toggle('show');
+              return;
+            }
+
+            if (e.key === 'Escape') {
+              if (kbdOverlay.classList.contains('show')) {
+                kbdOverlay.classList.remove('show');
+                return;
+              }
+              if (surfaceIndex >= 0) {
+                surfaceIndex = -1;
+                renderSurface();
+                return;
+              }
+              if (lensIndex !== -1) {
+                lensIndex = -1;
+                render();
+                return;
+              }
+              return;
+            }
+
+            // arrows should do one thing. Here: focus unless overlay open. Overlay uses same arrows to cycle.
+            if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              if (surfaceIndex < 0) surfaceIndex = 0;
+              else surfaceIndex = (surfaceIndex + 1) % surfaces.length;
+              renderSurface();
+              return;
+            }
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              if (surfaceIndex < 0) surfaceIndex = surfaces.length - 1;
+              else
+                surfaceIndex =
+                  (surfaceIndex - 1 + surfaces.length) % surfaces.length;
+              renderSurface();
+              return;
+            }
+
+            if (surfaceIndex >= 0) {
+              // while overlay open, keep arrows reserved for overlay cycling only
+              return;
+            }
+
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              focusedIndex = Math.min(lines.length - 1, focusedIndex + 1);
+              followLive = false;
+              updateFollowUI();
+              render();
+              scrollToRow(focusedIndex);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              focusedIndex = Math.max(0, focusedIndex - 1);
+              followLive = false;
+              updateFollowUI();
+              render();
+              scrollToRow(focusedIndex);
+              return;
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              lensIndex = lensIndex === focusedIndex ? -1 : focusedIndex;
+              followLive = false;
+              updateFollowUI();
+              render();
+              scrollToRow(focusedIndex);
+              return;
+            }
+            if (e.key === 'p' || e.key === 'P') {
+              e.preventDefault();
+              togglePin(focusedIndex);
+              return;
+            }
+            if (e.key === 'j' || e.key === 'J') {
+              e.preventDefault();
+              jumpToLive();
+              return;
+            }
+            if (e.key === ' ') {
+              e.preventDefault();
+              followLive = !followLive;
+              updateFollowUI();
+              if (followLive) jumpToLive();
+              return;
+            }
+          });
+
+          kbdOverlay.addEventListener('click', (e) => {
+            if (e.target === kbdOverlay) kbdOverlay.classList.remove('show');
+          });
+        }
+
+        function hookButtons() {
+          document
+            .getElementById('fullBtn')
+            .addEventListener('click', () => openFullAndSync());
+          document
+            .getElementById('helpBtn')
+            .addEventListener('click', () =>
+              kbdOverlay.classList.toggle('show'),
+            );
+        }
+
+        function simulateLiveInserts() {
+          setInterval(() => {
+            const sp = speakers[Math.floor(Math.random() * speakers.length)];
+            const lastT = lines[lines.length - 1]?.t || '07:44';
+            const mm = Number(lastT.split(':')[1] || 44);
+            const next = (mm + 6) % 60;
+            const t = '07:' + String(next).padStart(2, '0');
+
+            const demoText = [
+              'Receipt physics: one axis, local actions, no cockpit UI.',
+              'Follow-live is a mode, not a side effect.',
+              'Lens should route surfaces without breaking context.',
+              'If it jitters, it feels untrustworthy.',
+            ][Math.floor(Math.random() * 4)];
+
+            lines = lines.concat([{ t, s: sp.id, text: demoText }]);
+            if (followLive) focusedIndex = lines.length - 1;
+            render();
+          }, 6000);
+        }
+
+        // Init
+        render();
+        renderSurface();
+        hookScrollFollow();
+        hookKeyboard();
+        hookButtons();
+        simulateLiveInserts();
+      })();
+    </script>
+  </body>
+</html>

@@ -7,11 +7,14 @@ Defines the abstract interface for ASR providers, enabling swappable backends
 
 from __future__ import annotations
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncIterator, Optional, List, cast
+
+logger = logging.getLogger(__name__)
 
 
 class AudioSource(Enum):
@@ -88,8 +91,7 @@ class ASRProvider(ABC):
 
     def log(self, msg: str) -> None:
         """Debug logging helper."""
-        if self._debug:
-            print(f"[{self.name}] {msg}")
+        logger.debug(f"[{self.name}] {msg}")
 
 
 class ASRProviderRegistry:
@@ -97,6 +99,15 @@ class ASRProviderRegistry:
 
     _providers: dict[str, type[ASRProvider]] = {}
     _instances: dict[str, ASRProvider] = {}
+    _lock: "threading.Lock | None" = None  # Lazy init to avoid import at module level
+
+    @classmethod
+    def _get_lock(cls) -> "threading.Lock":
+        """Get or create the registry lock (thread-safe lazy init)."""
+        if cls._lock is None:
+            import threading
+            cls._lock = threading.Lock()
+        return cls._lock
 
     @classmethod
     def register(cls, name: str, provider_class: type[ASRProvider]) -> None:
@@ -109,7 +120,7 @@ class ASRProviderRegistry:
 
     @classmethod
     def get_provider(cls, name: Optional[str] = None, config: Optional[ASRConfig] = None) -> Optional[ASRProvider]:
-        """Get or create a provider instance."""
+        """Get or create a provider instance (thread-safe)."""
         if name is None:
             name = os.getenv("ECHOPANEL_ASR_PROVIDER", "faster_whisper")
         
@@ -119,10 +130,11 @@ class ASRProviderRegistry:
         cfg = config or ASRConfig()
         key = cls._cfg_key(name, cfg)
 
-        if key not in cls._instances:
-            cls._instances[key] = cls._providers[name](cfg)
-        
-        return cls._instances[key]
+        # Thread-safe instance creation (P0 fix: RC-1)
+        with cls._get_lock():
+            if key not in cls._instances:
+                cls._instances[key] = cls._providers[name](cfg)
+            return cls._instances[key]
 
     @classmethod
     def available_providers(cls) -> List[str]:

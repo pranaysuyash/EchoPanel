@@ -21,6 +21,33 @@ final class AppState: ObservableObject {
         case both = "Both"
     }
 
+    struct SourceProbe: Identifiable {
+        let id: String
+        let label: String
+        let inputAgeSeconds: Int?
+        let asrAgeSeconds: Int?
+
+        var inputIsFresh: Bool {
+            guard let inputAgeSeconds else { return false }
+            return inputAgeSeconds <= 3
+        }
+
+        var asrIsFresh: Bool {
+            guard let asrAgeSeconds else { return false }
+            return asrAgeSeconds <= 8
+        }
+
+        var inputAgeText: String {
+            guard let inputAgeSeconds else { return "none" }
+            return inputAgeSeconds <= 1 ? "live" : "\(inputAgeSeconds)s"
+        }
+
+        var asrAgeText: String {
+            guard let asrAgeSeconds else { return "none" }
+            return asrAgeSeconds <= 1 ? "live" : "\(asrAgeSeconds)s"
+        }
+    }
+
     @Published var sessionState: SessionState = .idle
     @Published var elapsedSeconds: Int = 0
     @Published var audioQuality: AudioQuality = .unknown
@@ -42,6 +69,9 @@ final class AppState: ObservableObject {
     
     // Diagnostics (v0.2)
     @Published var lastMessageDate: Date?
+    @Published var inputLastSeenBySource: [String: Date] = [:]
+    @Published var asrLastSeenBySource: [String: Date] = [:]
+    @Published var asrEventCount: Int = 0
     
     // Gap 2 fix: Silence detection
     @Published var noAudioDetected: Bool = false
@@ -90,7 +120,7 @@ final class AppState: ObservableObject {
     private var autoSaveCancellable: AnyCancellable?
 
     init() {
-        streamer = WebSocketStreamer(url: BackendConfig.webSocketURL)
+        streamer = WebSocketStreamer()
         refreshPermissionStatuses()
         permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
@@ -116,38 +146,38 @@ final class AppState: ObservableObject {
             Task { @MainActor in self?.systemAudioLevel = level }
         }
         audioCapture.onPCMFrame = { [weak self] frame, source in
-            NSLog("🔊 onPCMFrame callback triggered: %d bytes, source: %@", frame.count, source)
-            if let self {
+            guard let self else { return }
+            Task { @MainActor in
                 self.debugBytes += frame.count
                 if self.debugEnabled {
-                    Task { @MainActor in self.updateDebugLine() }
+                    self.updateDebugLine()
                 }
-                // Gap 2 fix: Track audio activity
-                Task { @MainActor in
-                    self.lastAudioTimestamp = Date()
-                    if self.noAudioDetected {
-                        self.noAudioDetected = false
-                        self.silenceMessage = ""
-                    }
+                self.markInputFrame(source: source)
+                self.lastAudioTimestamp = Date()
+                if self.noAudioDetected {
+                    self.noAudioDetected = false
+                    self.silenceMessage = ""
                 }
             }
-            self?.streamer.sendPCMFrame(frame, source: source)
+            self.streamer.sendPCMFrame(frame, source: source)
         }
         
         // Mic capture callbacks (v0.2)
         micCapture.onPCMFrame = { [weak self] frame, source in
-            if let self {
+            guard let self else { return }
+            Task { @MainActor in
                 self.debugBytes += frame.count
-                // Gap 2 fix: Track audio activity
-                Task { @MainActor in
-                    self.lastAudioTimestamp = Date()
-                    if self.noAudioDetected {
-                        self.noAudioDetected = false
-                        self.silenceMessage = ""
-                    }
+                if self.debugEnabled {
+                    self.updateDebugLine()
+                }
+                self.markInputFrame(source: source)
+                self.lastAudioTimestamp = Date()
+                if self.noAudioDetected {
+                    self.noAudioDetected = false
+                    self.silenceMessage = ""
                 }
             }
-            self?.streamer.sendPCMFrame(frame, source: source)
+            self.streamer.sendPCMFrame(frame, source: source)
         }
         micCapture.onAudioLevelUpdate = { [weak self] level in
             Task { @MainActor in self?.microphoneAudioLevel = level }
@@ -162,12 +192,14 @@ final class AppState: ObservableObject {
         streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
             Task { @MainActor in 
                 self?.lastMessageDate = Date()
+                self?.markASREvent(source: source)
                 self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
             }
         }
         streamer.onASRFinal = { [weak self] text, t0, t1, confidence, source in
             Task { @MainActor in 
                 self?.lastMessageDate = Date()
+                self?.markASREvent(source: source)
                 self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
             }
         }
@@ -222,20 +254,85 @@ final class AppState: ObservableObject {
     }
 
     var statusLine: String {
+        if sessionState == .idle && streamStatus != .error {
+            return isServerReady ? "Ready" : "Preparing backend"
+        }
         let base: String
         switch streamStatus {
         case .streaming: base = "Streaming"
         case .reconnecting: base = "Reconnecting"
-        case .error: base = "Not ready"
+        case .error: base = "Setup needed"
         }
         if statusMessage.isEmpty { return base }
         return "\(base) - \(statusMessage)"
     }
 
     var timerText: String {
-        let minutes = elapsedSeconds / 60
-        let seconds = elapsedSeconds % 60
+        let displaySeconds = effectiveElapsedSeconds
+        let minutes = displaySeconds / 60
+        let seconds = displaySeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    var activeSourceProbes: [SourceProbe] {
+        let now = Date()
+        let sourceIDs: [String]
+        switch audioSource {
+        case .system:
+            sourceIDs = ["system"]
+        case .microphone:
+            sourceIDs = ["mic"]
+        case .both:
+            sourceIDs = ["system", "mic"]
+        }
+
+        return sourceIDs.map { sourceID in
+            let label = sourceID == "system" ? "System" : "Mic"
+            let inputAge = inputLastSeenBySource[sourceID].map { max(0, Int(now.timeIntervalSince($0))) }
+            let asrAge = asrLastSeenBySource[sourceID].map { max(0, Int(now.timeIntervalSince($0))) }
+            return SourceProbe(id: sourceID, label: label, inputAgeSeconds: inputAge, asrAgeSeconds: asrAge)
+        }
+    }
+
+    var captureRouteDescription: String {
+        switch audioSource {
+        case .system:
+            return "System Audio captures output from apps/tabs (browser, Zoom, players)."
+        case .microphone:
+            return "Microphone captures your selected input device."
+        case .both:
+            return "Both captures app/tab output plus your microphone input."
+        }
+    }
+
+    var sourceTroubleshootingHint: String? {
+        guard sessionState == .listening else { return nil }
+        if streamStatus != .streaming {
+            let stateText: String
+            switch streamStatus {
+            case .streaming:
+                stateText = "streaming"
+            case .reconnecting:
+                stateText = "reconnecting"
+            case .error:
+                stateText = "error"
+            }
+            return "Backend is not fully streaming yet (\(stateText))."
+        }
+
+        let probes = activeSourceProbes
+        if probes.isEmpty { return nil }
+
+        let hasInput = probes.contains(where: { $0.inputIsFresh })
+        let hasASR = probes.contains(where: { $0.asrIsFresh })
+
+        if !hasInput {
+            return "No recent input frames from selected source(s). Check source selection and permissions."
+        }
+        if !hasASR && effectiveElapsedSeconds >= 6 {
+            return "Input audio is flowing, but ASR has not emitted text yet."
+        }
+        return nil
     }
 
     func startSession() {
@@ -382,6 +479,9 @@ final class AppState: ObservableObject {
         sessionStart = nil
         sessionEnd = nil
         lastPartialIndexBySource = [:]
+        inputLastSeenBySource = [:]
+        asrLastSeenBySource = [:]
+        asrEventCount = 0
     }
     
     /// Save current session snapshot for auto-save (v0.2)
@@ -632,6 +732,36 @@ final class AppState: ObservableObject {
 
     private func formatConfidence(_ value: Double) -> String {
         String(format: "%.0f%%", value * 100)
+    }
+
+    private var effectiveElapsedSeconds: Int {
+        guard (sessionState == .starting || sessionState == .listening), let sessionStart else {
+            return elapsedSeconds
+        }
+        let wallClockElapsed = max(0, Int(Date().timeIntervalSince(sessionStart)))
+        return max(elapsedSeconds, wallClockElapsed)
+    }
+
+    private func normalizedSource(_ source: String?) -> String {
+        let raw = (source ?? "system").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if raw == "mic" || raw == "microphone" {
+            return "mic"
+        }
+        if raw == "system" {
+            return "system"
+        }
+        return raw
+    }
+
+    private func markInputFrame(source: String) {
+        let key = normalizedSource(source)
+        inputLastSeenBySource[key] = Date()
+    }
+
+    private func markASREvent(source: String?) {
+        let key = normalizedSource(source)
+        asrLastSeenBySource[key] = Date()
+        asrEventCount += 1
     }
 
     private func startTimer() {

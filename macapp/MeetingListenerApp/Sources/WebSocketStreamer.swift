@@ -10,7 +10,7 @@ final class WebSocketStreamer: NSObject {
 
     private let session = URLSession(configuration: .default)
     private var task: URLSessionWebSocketTask?
-    private var url: URL
+    private var url: URL { BackendConfig.webSocketURL }
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var pingTimer: Timer?
 
@@ -19,8 +19,8 @@ final class WebSocketStreamer: NSObject {
     private let maxReconnectDelay: TimeInterval = 10
     private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
 
-    init(url: URL) {
-        self.url = url
+    override init() {
+        super.init()
     }
 
     func connect(sessionID: String) {
@@ -62,8 +62,8 @@ final class WebSocketStreamer: NSObject {
         let didReceive = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             self.finalSummaryWaiter = continuation
             self.sendStop()
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard let self else { return }
                 if let waiter = self.finalSummaryWaiter {
                     self.finalSummaryWaiter = nil
                     waiter.resume(returning: false)
@@ -71,7 +71,6 @@ final class WebSocketStreamer: NSObject {
             }
         }
 
-        // Ensure the socket is closed even on timeout.
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         sessionID = nil
