@@ -207,17 +207,17 @@ async def ws_live_listener(websocket: WebSocket) -> None:
 
     await ws_send(state, websocket, {"type": "status", "state": "streaming", "message": "Connected"})
     if DEBUG:
-        print("ws_live_listener: connected")
+        logger.debug("ws_live_listener: connected")
 
     try:
         while True:
             try:
                 message = await websocket.receive()
                 if DEBUG:
-                    print(f"ws_live_listener: received message: {message}")
+                    logger.debug(f"ws_live_listener: received message: {message}")
             except RuntimeError:
                 if DEBUG:
-                    print("ws_live_listener: RuntimeError in receive")
+                    logger.debug("ws_live_listener: RuntimeError in receive")
                 break
 
             # Handle Text (JSON) Messages
@@ -226,7 +226,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     payload: Dict[str, Any] = json.loads(message["text"])
                     msg_type = payload.get("type")
                     if DEBUG:
-                        print(f"ws_live_listener: processing message type: {msg_type}")
+                        logger.debug(f"ws_live_listener: processing message type: {msg_type}")
 
                     if msg_type == "start":
                         state.session_id = payload.get("session_id")
@@ -247,13 +247,13 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         state.started = True
                         await ws_send(state, websocket, {"type": "status", "state": "streaming", "message": "Streaming"})
                         if DEBUG:
-                            print(f"ws_live_listener: start session_id={state.session_id}")
+                            logger.debug(f"ws_live_listener: start session_id={state.session_id}")
                         state.analysis_tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
 
                     elif msg_type == "audio":
                         # B1 Fix: Handle source-tagged audio frames
                         if DEBUG:
-                            print(f"ws_live_listener: received audio, source={payload.get('source', 'system')}, data len={len(payload.get('data', ''))}")
+                            logger.debug(f"ws_live_listener: received audio, source={payload.get('source', 'system')}, data len={len(payload.get('data', ''))}")
                         if state.started:
                             b64_data = payload.get("data", "")
                             source = payload.get("source", "system")
@@ -265,7 +265,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 # P2-13: Initialize audio dump for new source
                                 _init_audio_dump(state, source)
                                 if DEBUG:
-                                    print(f"ws_live_listener: starting ASR task for source={source}")
+                                    logger.debug(f"ws_live_listener: starting ASR task for source={source}")
                                 state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                             
                             # P2-13: Write audio to dump file
@@ -286,7 +286,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             await q.put(None)
                             
                         if DEBUG:
-                            print("ws_live_listener: stop")
+                            logger.debug("ws_live_listener: stop")
                         
                         # Wait for ASR to flush finals FIRST (P1-2 fix)
                         # This ensures all transcriptions are in state.transcript
@@ -305,10 +305,16 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 "message": "ASR processing timed out, some speech may be missing",
                             })
                         
-                        # THEN stop analysis tasks
+                        # THEN stop analysis tasks (P1 fix: add timeout to prevent hanging)
                         for t in state.analysis_tasks:
                             t.cancel()
-                        await asyncio.gather(*state.analysis_tasks, return_exceptions=True)
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.gather(*state.analysis_tasks, return_exceptions=True),
+                                timeout=5.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("Analysis task cancellation timed out, some tasks may be orphaned")
                         
                         # Run diarization if enabled (disabled for now due to multi-source issues)
                         diarization_segments: list[dict] = []
@@ -356,7 +362,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
 
                 except json.JSONDecodeError:
                     if DEBUG:
-                        print("ws_live_listener: invalid JSON in text message")
+                        logger.debug("ws_live_listener: invalid JSON in text message")
 
             # Handle Binary Messages (Legacy/Fallback)
             if "bytes" in message and message["bytes"] is not None and state.started:
@@ -367,7 +373,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                 if source not in state.started_sources:
                     state.started_sources.add(source)
                     if DEBUG:
-                        print(f"ws_live_listener: starting ASR task for source={source}")
+                        logger.debug(f"ws_live_listener: starting ASR task for source={source}")
                     state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                 
                 await put_audio(q, chunk, state=state, source=source, websocket=websocket)
@@ -384,11 +390,11 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     now = time.time()
                     if now - state.last_log > 2:
                         state.last_log = now
-                        print(f"ws_live_listener: received {state.bytes_received} bytes (binary)")
+                        logger.debug(f"ws_live_listener: received {state.bytes_received} bytes (binary)")
 
     except WebSocketDisconnect:
         if DEBUG:
-            print("ws_live_listener: disconnect")
+            logger.debug("ws_live_listener: disconnect")
         return
     finally:
         # P2-13: Close audio dump files

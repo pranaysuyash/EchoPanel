@@ -21,6 +21,15 @@ final class SidePanelVisualSnapshotTests: XCTestCase {
         )
     }
 
+    func testRollViewDark() {
+        assertPanelSnapshot(
+            mode: .roll,
+            size: CGSize(width: 430, height: 820),
+            colorScheme: .dark,
+            named: "roll-dark"
+        )
+    }
+
     func testCompactViewLight() {
         assertPanelSnapshot(
             mode: .compact,
@@ -30,12 +39,30 @@ final class SidePanelVisualSnapshotTests: XCTestCase {
         )
     }
 
+    func testCompactViewDark() {
+        assertPanelSnapshot(
+            mode: .compact,
+            size: CGSize(width: 390, height: 760),
+            colorScheme: .dark,
+            named: "compact-dark"
+        )
+    }
+
     func testFullViewLight() {
         assertPanelSnapshot(
             mode: .full,
             size: CGSize(width: 1180, height: 760),
             colorScheme: .light,
             named: "full-light"
+        )
+    }
+
+    func testFullViewDark() {
+        assertPanelSnapshot(
+            mode: .full,
+            size: CGSize(width: 1180, height: 760),
+            colorScheme: .dark,
+            named: "full-dark"
         )
     }
 

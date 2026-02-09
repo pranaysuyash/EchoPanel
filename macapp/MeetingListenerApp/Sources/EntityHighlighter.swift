@@ -196,6 +196,12 @@ struct EntityTextView: NSViewRepresentable {
         }
 
         nsView.textStorage?.setAttributedString(attributed)
+        if highlightsEnabled, matches.isEmpty == false {
+            let names = matches.map(\.entity.name).joined(separator: ", ")
+            nsView.setAccessibilityLabel("Transcript text with highlighted entities: \(names)")
+        } else {
+            nsView.setAccessibilityLabel(text)
+        }
     }
 
     func makeCoordinator() -> Coordinator {

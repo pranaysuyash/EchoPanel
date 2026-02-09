@@ -36,7 +36,9 @@ final class WebSocketStreamer: NSObject {
             self?.sendStart()
         }
         if debugEnabled {
-            NSLog("WebSocketStreamer: connect \(url.absoluteString)")
+            // Sanitize URL: only log scheme and host to avoid leaking tokens in query params
+            let sanitizedURL = "\(url.scheme ?? "ws")://\(url.host ?? "localhost"):\(url.port ?? 80)"
+            NSLog("WebSocketStreamer: connect \(sanitizedURL)")
         }
     }
 

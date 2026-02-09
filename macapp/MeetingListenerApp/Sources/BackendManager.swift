@@ -27,6 +27,13 @@ final class BackendManager: ObservableObject {
     private var serverHost: String { BackendConfig.host }
     private var healthCheckURL: URL { BackendConfig.healthURL }
     
+    // Crash recovery state
+    private var restartAttempts: Int = 0
+    private let maxRestartAttempts: Int = 3
+    private var restartDelay: TimeInterval = 1.0
+    private let maxRestartDelay: TimeInterval = 10.0
+    private var restartTimer: Timer?
+    
     private init() {
     }
     
@@ -44,6 +51,10 @@ final class BackendManager: ObservableObject {
         lastExitCode = nil
         stopRequested = false
         usingExternalBackend = false
+        
+        // Reset restart tracking on successful start attempt
+        restartAttempts = 0
+        restartDelay = 1.0
 
         // If something is already serving on the configured host/port, adopt it (or
         // surface a clear "port in use" error) instead of failing with bind errors.
@@ -84,7 +95,7 @@ final class BackendManager: ObservableObject {
             return
         }
         
-        NSLog("BackendManager: Starting server at \(serverPath) with Python \(pythonPath)")
+        NSLog("BackendManager: Starting server")
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: pythonPath)
@@ -95,7 +106,11 @@ final class BackendManager: ObservableObject {
         var env = ProcessInfo.processInfo.environment
         env["ECHOPANEL_DEBUG"] = "1"
         env["ECHOPANEL_WHISPER_MODEL"] = sanitizeWhisperModel(UserDefaults.standard.string(forKey: "whisperModel"))
-        if let hfToken = UserDefaults.standard.string(forKey: "hfToken"), !hfToken.isEmpty {
+        
+        // Ensure token is migrated from UserDefaults to Keychain
+        _ = KeychainHelper.migrateFromUserDefaults()
+        
+        if let hfToken = KeychainHelper.loadHFToken(), !hfToken.isEmpty {
             env["ECHOPANEL_HF_TOKEN"] = hfToken
             env["ECHOPANEL_DIARIZATION"] = "1"
         }
@@ -114,7 +129,10 @@ final class BackendManager: ObservableObject {
             process.standardOutput = fileHandle
             process.standardError = fileHandle
             
-            NSLog("BackendManager: Redirecting server output to \(logURL.path)")
+            // Log file is in temporary directory, path may contain PII (username)
+            // Only log the filename, not the full path
+            let sanitizedPath = logURL.lastPathComponent
+            NSLog("BackendManager: Redirecting server output to tmp/\(sanitizedPath)")
         } catch {
             NSLog("BackendManager: Failed to create log file handle: \(error)")
             // Fallback to pipes/dev null if needed, but for now just log it
@@ -127,18 +145,25 @@ final class BackendManager: ObservableObject {
                 NSLog("BackendManager: Server terminated with code \(code)")
                 self?.healthCheckTimer?.invalidate()
                 self?.healthCheckTimer = nil
-                if self?.stopRequested == true {
-                    self?.serverStatus = .stopped
-                } else {
-                    self?.serverStatus = code == 0 ? .stopped : .error
-                }
-                self?.isServerReady = false
-                if self?.stopRequested == true {
-                    self?.healthDetail = ""
-                } else {
-                    self?.healthDetail = code == 0 ? "" : "Server exited (code \(code))"
-                }
                 self?.serverProcess = nil
+                self?.isServerReady = false
+                
+                if self?.stopRequested == true {
+                    // User-initiated stop
+                    self?.serverStatus = .stopped
+                    self?.healthDetail = ""
+                    self?.restartAttempts = 0
+                    self?.restartDelay = 1.0
+                } else {
+                    // Unexpected termination - attempt restart if not maxed out
+                    let wasError = code != 0
+                    if wasError && (self?.restartAttempts ?? 0) < (self?.maxRestartAttempts ?? 3) {
+                        self?.attemptRestart()
+                    } else {
+                        self?.serverStatus = wasError ? .error : .stopped
+                        self?.healthDetail = wasError ? "Server exited (code \(code))" : ""
+                    }
+                }
             }
         }
         
@@ -155,6 +180,8 @@ final class BackendManager: ObservableObject {
     func stopServer() {
         healthCheckTimer?.invalidate()
         healthCheckTimer = nil
+        restartTimer?.invalidate()
+        restartTimer = nil
         
         guard let process = serverProcess, process.isRunning else {
             serverProcess = nil
@@ -163,9 +190,56 @@ final class BackendManager: ObservableObject {
         
         NSLog("BackendManager: Stopping server")
         stopRequested = true
-        process.terminate()
+        terminateGracefully(process: process)
         serverStatus = .stopped
         isServerReady = false
+    }
+    
+    /// Terminates a process gracefully with SIGTERM, then SIGKILL if needed.
+    /// Prevents zombie processes by ensuring the process actually exits.
+    private func terminateGracefully(process: Process, timeout: TimeInterval = 2.0) {
+        process.terminate() // SIGTERM
+        
+        // Schedule force kill if process doesn't exit gracefully
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard self != nil else { return }
+            if process.isRunning {
+                NSLog("BackendManager: Process did not terminate gracefully, forcing kill")
+                process.interrupt() // SIGINT first (gentler than SIGKILL)
+                
+                // Final SIGKILL after additional delay if still running
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if process.isRunning {
+                        kill(pid_t(process.processIdentifier), SIGKILL)
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Attempts to restart the server after an unexpected termination.
+    /// Uses exponential backoff and limits total restart attempts.
+    private func attemptRestart() {
+        guard restartAttempts < maxRestartAttempts else {
+            NSLog("BackendManager: Max restart attempts reached, giving up")
+            serverStatus = .error
+            healthDetail = "Server failed to start after \(maxRestartAttempts) attempts"
+            restartAttempts = 0
+            restartDelay = 1.0
+            return
+        }
+        
+        restartAttempts += 1
+        let delay = min(restartDelay, maxRestartDelay)
+        restartDelay *= 2 // Exponential backoff
+        
+        NSLog("BackendManager: Attempting restart #\(restartAttempts) in \(delay)s")
+        serverStatus = .starting
+        healthDetail = "Restarting (attempt \(restartAttempts)/\(maxRestartAttempts))..."
+        
+        restartTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.startServer()
+        }
     }
     
     // MARK: - Health Check
@@ -326,11 +400,13 @@ final class BackendManager: ObservableObject {
             return serverDir
         }
         
-        // Priority 3: Hardcoded development path
+        // Priority 3: Hardcoded development path (DEBUG builds only)
+        #if DEBUG
         let hardcodedPath = "/Users/pranay/Projects/EchoPanel/server"
         if FileManager.default.fileExists(atPath: hardcodedPath) {
             return hardcodedPath
         }
+        #endif
         
         return nil
     }

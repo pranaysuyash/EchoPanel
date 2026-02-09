@@ -5,6 +5,7 @@ import SwiftUI
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
     @State private var currentStep: OnboardingStep = .welcome
+    @State private var hfToken: String = ""
     @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
     let onStartListening: () -> Void
@@ -79,6 +80,12 @@ struct OnboardingView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             appState.refreshPermissionStatuses()
+            // Load HF token from Keychain (with migration from UserDefaults if needed)
+            _ = KeychainHelper.migrateFromUserDefaults()
+            hfToken = KeychainHelper.loadHFToken() ?? ""
+        }
+        .onChange(of: hfToken) { newToken in
+            _ = KeychainHelper.saveHFToken(newToken)
         }
         .onDisappear {
             // If the user closes the window, keep the app consistent.
@@ -124,6 +131,9 @@ struct OnboardingView: View {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                             NSWorkspace.shared.open(url)
                         }
+                    },
+                    onRefresh: {
+                        appState.refreshPermissionStatuses()
                     }
                 )
                 
@@ -138,6 +148,9 @@ struct OnboardingView: View {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                             NSWorkspace.shared.open(url)
                         }
+                    },
+                    onRefresh: {
+                        appState.refreshPermissionStatuses()
                     }
                 )
             }
@@ -200,10 +213,7 @@ struct OnboardingView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                 
-                SecureField("hf_...", text: Binding(
-                    get: { UserDefaults.standard.string(forKey: "hfToken") ?? "" },
-                    set: { UserDefaults.standard.set($0, forKey: "hfToken") }
-                ))
+                SecureField("hf_...", text: $hfToken)
                 .textFieldStyle(.roundedBorder)
                 
                 Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
@@ -250,13 +260,30 @@ struct OnboardingView: View {
             
             // H9 Fix: Server Status Feedback
             if appState.serverStatus == .error {
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     Label("Backend Error", systemImage: "exclamationmark.triangle.fill")
                         .font(.headline)
                         .foregroundColor(.red)
                     Text("The python server failed to start. Check if Python 3.10+ is installed.")
                         .font(.caption)
                         .multilineTextAlignment(.center)
+                    
+                    HStack(spacing: 12) {
+                        Button("Retry") {
+                            BackendManager.shared.stopServer()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                BackendManager.shared.startServer()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        
+                        Button("Collect Diagnostics") {
+                            appState.exportDebugBundle()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
                 .padding()
                 .background(Color.red.opacity(0.1))
@@ -303,6 +330,7 @@ private struct PermissionRow: View {
     let description: String
     let status: PermissionStatus
     let action: () -> Void
+    let onRefresh: () -> Void
     
     enum PermissionStatus {
         case granted, notGranted, optional, denied
@@ -328,14 +356,30 @@ private struct PermissionRow: View {
                 Text(description)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                if status == .denied {
+                    Text("Enable in System Settings → Privacy & Security")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                }
             }
             
             if status != .granted {
-                Button("Open Settings") {
-                    action()
+                VStack(spacing: 6) {
+                    Button("Open Settings") {
+                        action()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button("Check Again") {
+                        onRefresh()
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .font(.caption)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
         .padding(12)
