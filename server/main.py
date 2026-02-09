@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
+from server.api.documents import router as documents_router
 from server.api.ws_live_listener import router as ws_router
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(ws_router)
+app.include_router(documents_router)
 
 
 @app.get("/")

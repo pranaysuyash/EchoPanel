@@ -60,3 +60,25 @@ struct EntityItem: Identifiable, Equatable {
     let lastSeen: TimeInterval
     let confidence: Double
 }
+
+struct ContextDocument: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let source: String
+    let indexedAt: String
+    let preview: String
+    let chunkCount: Int
+}
+
+struct ContextQueryResult: Identifiable, Equatable {
+    let documentID: String
+    let title: String
+    let source: String
+    let chunkIndex: Int
+    let snippet: String
+    let score: Double
+
+    var id: String {
+        "\(documentID)-\(chunkIndex)-\(score)"
+    }
+}

@@ -167,6 +167,60 @@ class TestDiarizationMerge:
         assert result[0]["speaker"] == "Speaker 1"
 
 
+class TestSourceAwareDiarization:
+    """Tests for source-aware diarization merge in ws handler."""
+
+    def test_source_merge_labels_only_matching_source(self):
+        from server.api.ws_live_listener import _merge_transcript_with_source_diarization
+
+        transcript = [
+            {"t0": 1.0, "t1": 2.0, "text": "system line", "source": "system"},
+            {"t0": 1.0, "t1": 2.0, "text": "mic line", "source": "mic"},
+        ]
+        diarization_by_source = {
+            "mic": [{"t0": 0.0, "t1": 3.0, "speaker": "Speaker 1"}]
+        }
+
+        merged = _merge_transcript_with_source_diarization(transcript, diarization_by_source)
+
+        assert "speaker" not in merged[0]
+        assert merged[1]["speaker"] == "Speaker 1"
+
+    def test_source_merge_normalizes_microphone_alias(self):
+        from server.api.ws_live_listener import _merge_transcript_with_source_diarization
+
+        transcript = [
+            {"t0": 1.0, "t1": 2.0, "text": "mic alias", "source": "microphone"},
+        ]
+        diarization_by_source = {
+            "mic": [{"t0": 0.0, "t1": 3.0, "speaker": "Speaker 2"}]
+        }
+
+        merged = _merge_transcript_with_source_diarization(transcript, diarization_by_source)
+
+        assert merged[0]["speaker"] == "Speaker 2"
+
+    @pytest.mark.asyncio
+    async def test_run_diarization_per_source_invokes_each_buffer(self):
+        from server.api.ws_live_listener import SessionState, _run_diarization_per_source
+
+        state = SessionState(diarization_enabled=True, sample_rate=16000)
+        state.pcm_buffers_by_source = {
+            "system": bytearray(b"\x00\x00" * 4),
+            "mic": bytearray(b"\x00\x00" * 4),
+        }
+
+        def fake_diarize_pcm(pcm_bytes, sample_rate):
+            assert sample_rate == 16000
+            return [{"t0": 0.0, "t1": 1.0, "speaker": "Speaker 1"}]
+
+        with patch("server.api.ws_live_listener.diarize_pcm", side_effect=fake_diarize_pcm):
+            result = await _run_diarization_per_source(state)
+
+        assert set(result.keys()) == {"system", "mic"}
+        assert result["system"][0]["speaker"] == "Speaker 1"
+
+
 class TestQueueConfig:
     """Tests for queue configuration."""
 

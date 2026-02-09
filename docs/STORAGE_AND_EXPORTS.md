@@ -1,33 +1,61 @@
-# Storage and Exports (v0.1)
+# Storage and Exports (current)
 
-## Local storage
-v0.1 minimal storage is local-only in the app sandbox.
+## Local session storage (Observed)
+Session persistence is local-only on disk via `SessionStore`.
 
-Persist per session:
-- raw transcript segments (partial optional, finals required)
-- latest cards and entities snapshots
-- final summary markdown and JSON
-- basic metadata (session_id, timestamps, app version)
+Base path:
+- `~/Library/Application Support/<bundle-id>/sessions/`
 
-Suggested layout (informational, not binding):
-- `Sessions/<session_id>/session.json`
-- `Sessions/<session_id>/summary.md`
+Per-session files:
+- `sessions/<session_id>/metadata.json`
+  - session id, start timestamp, selected audio source, app version
+- `sessions/<session_id>/transcript.jsonl`
+  - append-only finalized transcript events
+- `sessions/<session_id>/snapshot.json`
+  - periodic autosave snapshot
+- `sessions/<session_id>/final_snapshot.json`
+  - final snapshot on session end
 
-## Export actions
+Recovery marker:
+- `sessions/recovery.json`
+  - tracks unfinished session for crash recovery prompt
+
+Session history management:
+- app supports listing stored sessions and deleting individual session folders.
+
+## Local context/RAG storage (Observed)
+Document retrieval store persists to:
+- default: `~/.echopanel/rag_store.json`
+- override: `ECHOPANEL_DOC_STORE_PATH`
+
+Stored content:
+- document metadata (`document_id`, title, source, indexed timestamp, preview)
+- chunked text with tokenized chunks for lexical scoring
+
+## Secrets storage (Observed)
+Sensitive tokens are stored in macOS Keychain via `KeychainHelper`:
+- HuggingFace token
+- backend auth token (`ECHOPANEL_WS_AUTH_TOKEN` value source)
+
+## Export actions (Observed)
 ### Copy Markdown
 - Copies final summary markdown if available.
-- If final summary is not available, copies a live markdown view composed from:
-  - current transcript
-  - current actions/decisions/risks/entities
+- Otherwise copies a generated live markdown view from current transcript/cards/entities state.
 
 ### Export JSON
-- Writes a single JSON file containing:
+- Writes a JSON file containing:
   - session metadata
-  - transcript segments
-  - cards and entities
-  - final summary payload (if available)
+  - transcript entries (including source/speaker when present)
+  - actions/decisions/risks/entities
+  - final summary markdown/json object
 
-## Retention
-- v0.1 default: retain sessions locally until the user deletes the app data.
-- Optional future: UI to delete sessions and clear storage.
+### Export Markdown
+- Writes notes markdown to a file (`echopanel-notes.md` default filename).
 
+### Export Debug Bundle
+- Bundles current session payload and backend log into a zip archive.
+
+## Retention and privacy notes
+- Session and document data persist locally until deleted.
+- No automatic cloud sync is implemented in the current app/backend.
+- Users can remove individual sessions from history; there is no global “delete all” UI yet.

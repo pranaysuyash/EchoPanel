@@ -332,6 +332,7 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var whisperModel = "base.en"
     @AppStorage("backendHost") private var backendHost = "127.0.0.1"
     @AppStorage("backendPort") private var backendPort = 8000
+    @State private var backendToken: String = ""
     private let modelRecommendation = ASRModelRecommendation.forCurrentMac()
     
     var body: some View {
@@ -378,6 +379,11 @@ struct SettingsView: View {
                 Stepper(value: $backendPort, in: 1024...65535) {
                     Text("Port: \(backendPort)")
                 }
+                SecureField("Optional WS auth token", text: $backendToken)
+                    .textFieldStyle(.roundedBorder)
+                Text(BackendConfig.isLocalHost ? "Local backend uses ws/http." : "Remote backend defaults to wss/https.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 Text("Backend changes take effect after restarting the server.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -415,6 +421,13 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420, height: 430)
+        .onAppear {
+            _ = KeychainHelper.migrateFromUserDefaults()
+            backendToken = KeychainHelper.loadBackendToken() ?? ""
+        }
+        .onChange(of: backendToken) { token in
+            _ = KeychainHelper.saveBackendToken(token)
+        }
     }
 }
 

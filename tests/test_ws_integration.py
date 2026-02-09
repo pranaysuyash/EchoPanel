@@ -3,6 +3,7 @@ import json
 import base64
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from server.main import app
 
 # Usage: pytest tests/test_ws_integration.py
@@ -56,3 +57,69 @@ async def test_source_tagged_audio_flow():
                 break
         
         assert final_seen, "Expected final_summary but did not receive it"
+
+
+def test_session_end_diarization_emits_source_segments(monkeypatch):
+    """
+    Verifies the stop/finalization path runs diarization when enabled and
+    includes source-tagged diarization output in final_summary.
+    """
+    from server.api import ws_live_listener as ws_module
+
+    monkeypatch.setenv("ECHOPANEL_DIARIZATION", "1")
+
+    def fake_diarize_pcm(_pcm_bytes, _sample_rate=16000):
+        return [{"t0": 0.0, "t1": 1.0, "speaker": "Speaker 1"}]
+
+    monkeypatch.setattr(ws_module, "diarize_pcm", fake_diarize_pcm)
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/live-listener") as websocket:
+        connected = websocket.receive_json()
+        assert connected["type"] == "status"
+
+        websocket.send_json({"type": "start", "session_id": "test_diarization"})
+        started = websocket.receive_json()
+        assert started["type"] == "status"
+
+        silent_frame = bytes(640)
+        payload = {
+            "type": "audio",
+            "source": "mic",
+            "data": base64.b64encode(silent_frame).decode("utf-8"),
+        }
+        websocket.send_json(payload)
+        websocket.send_json({"type": "stop", "session_id": "test_diarization"})
+
+        final_summary = None
+        for _ in range(12):
+            msg = websocket.receive_json()
+            if msg.get("type") == "final_summary":
+                final_summary = msg
+                break
+
+        assert final_summary is not None, "Expected final_summary event"
+        diarization = final_summary["json"].get("diarization", [])
+        assert diarization, "Expected non-empty diarization output"
+        assert diarization[0]["source"] == "mic"
+
+
+def test_ws_auth_rejects_missing_token(monkeypatch):
+    monkeypatch.setenv("ECHOPANEL_WS_AUTH_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-listener") as websocket:
+        first = websocket.receive_json()
+        assert first["state"] == "error"
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
+
+
+def test_ws_auth_accepts_query_token(monkeypatch):
+    monkeypatch.setenv("ECHOPANEL_WS_AUTH_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-listener?token=secret-token") as websocket:
+        data = websocket.receive_json()
+        assert data["type"] == "status"
+        assert data["state"] == "streaming"

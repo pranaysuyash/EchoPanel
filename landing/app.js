@@ -13,7 +13,7 @@ async function submitWaitlist(form) {
   const submitButton = form.querySelector('button[type="submit"]');
 
   if (submitButton) submitButton.disabled = true;
-  status.textContent = 'Submitting…';
+  if (status) status.textContent = 'Submitting…';
 
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
@@ -31,10 +31,10 @@ async function submitWaitlist(form) {
       throw new Error(`Request failed: ${response.status}`);
     }
 
-    status.textContent = 'You are on the list. Check your inbox soon.';
+    if (status) status.textContent = 'You are on the list. Check your inbox soon.';
     form.reset();
   } catch (error) {
-    status.textContent = 'Something went wrong. Please try again.';
+    if (status) status.textContent = 'Something went wrong. Please try again.';
     console.error(error);
   } finally {
     if (submitButton) submitButton.disabled = false;
@@ -60,7 +60,7 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
-      targets: '.panel, .menu-bar',
+      targets: '.panel, .menu-bar, .preview-card',
       translateY: [20, 0],
       opacity: [0, 1],
       delay: 300,
@@ -91,7 +91,7 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
-      targets: '.value-card, .trust-card, .steps li',
+      targets: '.value-card, .design-card, .role-card, .trust-card, .faq-card, .steps li',
       opacity: [0, 1],
       translateY: [12, 0],
       delay: anime.stagger(90, { start: 400 }),

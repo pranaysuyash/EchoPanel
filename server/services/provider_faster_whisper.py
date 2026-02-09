@@ -56,19 +56,18 @@ class FasterWhisperProvider(ASRProvider):
             model_name = os.getenv("ECHOPANEL_WHISPER_MODEL", self.config.model_name)
             device = os.getenv("ECHOPANEL_WHISPER_DEVICE", self.config.device)
             
-            # CTranslate2 does not support MPS. On macOS, fallback to CPU which uses Accelerate.
-            # (Validated in model-lab/harness/registry.py#L538-543)
+            # CTranslate2 does not support MPS/Metal. On macOS, fallback to CPU.
             if device == "auto" and platform.system() == "Darwin":
                 device = "cpu"
-            elif device == "mps":
-                device = "cpu"  # faster-whisper doesn't support MPS directly
+            elif device in {"mps", "metal"}:
+                device = "cpu"
             
             compute_type = os.getenv("ECHOPANEL_WHISPER_COMPUTE", self.config.compute_type)
             
-            # float16 is not supported on CPU, force int8 (model-lab/harness/registry.py#L546-548)
-            if device == "cpu" and compute_type == "float16":
+            # float16 variants are not supported on CPU, force int8.
+            if device == "cpu" and "float16" in compute_type:
                 compute_type = "int8"
-                self.log("Forced compute_type='int8' for CPU execution (float16 unsupported)")
+                self.log("Forced compute_type='int8' for CPU execution (float16 variant unsupported)")
             
             self.log(f"Loading model={model_name} device={device} compute={compute_type}")
             

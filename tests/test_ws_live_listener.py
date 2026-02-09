@@ -34,7 +34,11 @@ class UvicornTestServer:
 
 
 @pytest.mark.asyncio
-async def test_ws_live_listener_start_stop() -> None:
+async def test_ws_live_listener_start_stop(monkeypatch) -> None:
+    # Keep this integration test deterministic even if local ASR is installed.
+    monkeypatch.setenv("ECHOPANEL_ASR_FLUSH_TIMEOUT", "1")
+    monkeypatch.setenv("ECHOPANEL_DIARIZATION", "0")
+
     server = UvicornTestServer()
     server.start()
 
@@ -59,8 +63,8 @@ async def test_ws_live_listener_start_stop() -> None:
             await ws.send(json.dumps({"type": "stop", "session_id": session_id}))
 
             final_seen = False
-            for _ in range(5):
-                msg = await asyncio.wait_for(ws.recv(), timeout=2)
+            for _ in range(8):
+                msg = await asyncio.wait_for(ws.recv(), timeout=3)
                 payload = json.loads(msg)
                 if payload.get("type") == "final_summary":
                     final_seen = True
@@ -68,4 +72,3 @@ async def test_ws_live_listener_start_stop() -> None:
             assert final_seen
     finally:
         server.stop()
-

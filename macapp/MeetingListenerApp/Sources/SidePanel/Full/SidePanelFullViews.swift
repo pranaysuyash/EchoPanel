@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension SidePanelView {
     func fullRenderer(panelWidth: CGFloat) -> some View {
@@ -325,18 +326,133 @@ extension SidePanelView {
     var fullContextPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                surfaceItemCard(tag: "Context", title: "Local context library", subtitle: "RAG-ready slot for documents and snippet references.")
+                surfaceItemCard(
+                    tag: "Context",
+                    title: "Local context library",
+                    subtitle: "Index documents, query snippets, and keep retrieval local."
+                )
 
-                ForEach(fullContextDocuments, id: \.self) { doc in
-                    surfaceItemCard(tag: "Doc", title: doc, subtitle: "Indexed · local")
+                HStack(spacing: 8) {
+                    TextField("Query local context", text: $appState.contextQuery)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            appState.queryContextDocuments()
+                        }
+
+                    Button("Search") {
+                        appState.queryContextDocuments()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(appState.contextBusy)
                 }
 
-                surfaceItemCard(
-                    tag: "Snippet",
-                    title: "Instrument panel framing appears in current transcript.",
-                    subtitle: "Derived from live transcript + actions/decisions context."
-                )
+                HStack(spacing: 8) {
+                    Button("Upload Document...") {
+                        pickContextFileForIndexing()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appState.contextBusy)
+
+                    Button("Refresh") {
+                        appState.refreshContextDocuments(force: true)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appState.contextBusy)
+
+                    if appState.contextBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if !appState.contextStatusMessage.isEmpty {
+                    Text(appState.contextStatusMessage)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if appState.contextDocuments.isEmpty {
+                    surfaceEmptyState(text: "No indexed documents yet. Upload a local text/markdown/json/csv file.")
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Indexed Documents")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+
+                        ForEach(appState.contextDocuments) { doc in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(alignment: .top, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(doc.title)
+                                            .font(.footnote)
+                                        Text("\(doc.chunkCount) chunks · \(doc.source)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Button(role: .destructive) {
+                                        appState.deleteContextDocument(documentID: doc.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Delete document")
+                                }
+                                if !doc.preview.isEmpty {
+                                    Text(doc.preview)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(3)
+                                }
+                            }
+                            .padding(10)
+                            .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.35 : 0.56))
+                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        }
+                    }
+                }
+
+                if !appState.contextQueryResults.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Matches")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+
+                        ForEach(appState.contextQueryResults) { result in
+                            surfaceItemCard(
+                                tag: String(format: "Score %.2f", result.score),
+                                title: "\(result.title) · chunk \(result.chunkIndex + 1)",
+                                subtitle: result.snippet
+                            )
+                        }
+                    }
+                }
             }
+        }
+        .onAppear {
+            appState.refreshContextDocuments()
+        }
+    }
+
+    private func pickContextFileForIndexing() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [
+            .plainText,
+            .utf8PlainText,
+            .text,
+            .commaSeparatedText,
+            .json,
+            .sourceCode,
+        ]
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            appState.indexContextDocument(from: url)
         }
     }
 

@@ -6,6 +6,7 @@ final class SidePanelController: NSObject, NSWindowDelegate {
     private var hostingController: NSHostingController<SidePanelView>?
     private var onEndSession: (() -> Void)?
     private var currentMode: SidePanelView.ViewMode = .roll
+    private var savedFrameByMode: [SidePanelView.ViewMode: NSRect] = [:]
 
     func show(appState: AppState, onEndSession: @escaping () -> Void) {
         self.onEndSession = onEndSession
@@ -33,7 +34,7 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 panel.minSize = NSSize(width: 390, height: 620)
                 self.panel = panel
 
-                self.applyWindowLayout(for: self.currentMode, animated: false)
+                self.applyWindowLayout(for: self.currentMode, animated: false, forceTarget: true)
             } else if let hostingController = self.hostingController {
                 hostingController.rootView = self.makeRootView(appState: appState, onEndSession: onEndSession)
             }
@@ -58,6 +59,11 @@ final class SidePanelController: NSObject, NSWindowDelegate {
         self.onEndSession?()
     }
 
+    func windowDidResize(_ notification: Notification) {
+        guard let panel, panel.isVisible else { return }
+        savedFrameByMode[currentMode] = panel.frame
+    }
+
     private func makeRootView(appState: AppState, onEndSession: @escaping () -> Void) -> SidePanelView {
         SidePanelView(
             appState: appState,
@@ -68,8 +74,9 @@ final class SidePanelController: NSObject, NSWindowDelegate {
         )
     }
 
-    private func applyWindowLayout(for mode: SidePanelView.ViewMode, animated: Bool) {
+    private func applyWindowLayout(for mode: SidePanelView.ViewMode, animated: Bool, forceTarget: Bool = false) {
         guard let panel else { return }
+        savedFrameByMode[currentMode] = panel.frame
         currentMode = mode
 
         let targetSize: NSSize
@@ -83,17 +90,36 @@ final class SidePanelController: NSObject, NSWindowDelegate {
             minSize = NSSize(width: 320, height: 560)
         case .full:
             targetSize = NSSize(width: 1120, height: 780)
-            minSize = NSSize(width: 920, height: 640)
+            minSize = NSSize(width: 720, height: 580)
         }
 
         panel.minSize = minSize
 
+        let screenFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        let preferredFrame = forceTarget ? nil : savedFrameByMode[mode]
+
+        let desiredSize: NSSize = {
+            let source = preferredFrame?.size ?? targetSize
+            var width = max(source.width, minSize.width)
+            var height = max(source.height, minSize.height)
+            if let screenFrame {
+                width = min(width, screenFrame.width)
+                height = min(height, screenFrame.height)
+            }
+            return NSSize(width: width, height: height)
+        }()
+
         let oldFrame = panel.frame
-        let centeredOrigin = NSPoint(
-            x: oldFrame.midX - (targetSize.width / 2),
-            y: oldFrame.midY - (targetSize.height / 2)
+        var centeredOrigin = NSPoint(
+            x: oldFrame.midX - (desiredSize.width / 2),
+            y: oldFrame.midY - (desiredSize.height / 2)
         )
-        let newFrame = NSRect(origin: centeredOrigin, size: targetSize)
+        if let screenFrame {
+            centeredOrigin.x = max(screenFrame.minX, min(centeredOrigin.x, screenFrame.maxX - desiredSize.width))
+            centeredOrigin.y = max(screenFrame.minY, min(centeredOrigin.y, screenFrame.maxY - desiredSize.height))
+        }
+        let newFrame = NSRect(origin: centeredOrigin, size: desiredSize)
         panel.setFrame(newFrame, display: true, animate: animated)
+        savedFrameByMode[mode] = panel.frame
     }
 }

@@ -23,6 +23,11 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+# Generated test and tool output
+/output/
+playwright-report/
+# Playwright artifacts
+output/playwright/
 *.swp
 *.swo
 *~

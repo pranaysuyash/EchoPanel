@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hmac
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 QUEUE_MAX = int(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX", "48"))
 DEBUG_AUDIO_DUMP = os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP", "0") == "1"
 DEBUG_AUDIO_DUMP_DIR = Path(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_DIR", "/tmp/echopanel_audio_dump"))
+WS_AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
 
 
 @dataclass
@@ -30,7 +32,8 @@ class SessionState:
     asr_tasks: list[asyncio.Task] = field(default_factory=list)
     analysis_tasks: list[asyncio.Task] = field(default_factory=list)
     transcript: list[dict] = field(default_factory=list)
-    pcm_buffer: bytearray = field(default_factory=bytearray)
+    # Source-aware PCM buffers used for session-end diarization.
+    pcm_buffers_by_source: Dict[str, bytearray] = field(default_factory=dict)
     diarization_enabled: bool = False
     diarization_max_bytes: int = 0
     bytes_received: int = 0
@@ -47,6 +50,116 @@ class SessionState:
     backpressure_warned: bool = False
     # P2-13: Audio debug dump file handles
     debug_dump_files: Dict[str, Any] = field(default_factory=dict)
+
+
+def _normalize_source(source: Optional[str]) -> str:
+    raw = (source or "system").strip().lower()
+    if raw in {"mic", "microphone"}:
+        return "mic"
+    if raw == "system":
+        return "system"
+    return raw or "system"
+
+
+def _append_diarization_audio(state: SessionState, source: str, chunk: bytes) -> None:
+    if not state.diarization_enabled or not chunk:
+        return
+
+    source_key = _normalize_source(source)
+    pcm_buffer = state.pcm_buffers_by_source.setdefault(source_key, bytearray())
+    pcm_buffer.extend(chunk)
+
+    if state.diarization_max_bytes > 0 and len(pcm_buffer) > state.diarization_max_bytes:
+        overflow = len(pcm_buffer) - state.diarization_max_bytes
+        if overflow > 0:
+            del pcm_buffer[:overflow]
+
+
+async def _run_diarization_per_source(state: SessionState) -> Dict[str, list[dict]]:
+    if not state.diarization_enabled:
+        return {}
+
+    sources_with_audio = [
+        (source, bytes(pcm_buffer))
+        for source, pcm_buffer in state.pcm_buffers_by_source.items()
+        if pcm_buffer
+    ]
+    if not sources_with_audio:
+        return {}
+
+    async def _run_one(source: str, pcm_bytes: bytes) -> tuple[str, list[dict]]:
+        segments = await asyncio.to_thread(diarize_pcm, pcm_bytes, state.sample_rate)
+        return source, segments
+
+    results = await asyncio.gather(
+        *(_run_one(source, pcm_bytes) for source, pcm_bytes in sources_with_audio),
+        return_exceptions=True,
+    )
+
+    diarization_by_source: Dict[str, list[dict]] = {}
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error("Diarization failed for a source: %s", result)
+            continue
+        source, segments = result
+        if segments:
+            diarization_by_source[source] = segments
+    return diarization_by_source
+
+
+def _merge_transcript_with_source_diarization(
+    transcript: list[dict], diarization_by_source: Dict[str, list[dict]]
+) -> list[dict]:
+    if not diarization_by_source:
+        return transcript
+
+    merged_transcript: list[dict] = []
+    for seg in transcript:
+        source_key = _normalize_source(seg.get("source"))
+        speaker_segments = diarization_by_source.get(source_key, [])
+        if not speaker_segments:
+            merged_transcript.append(dict(seg))
+            continue
+
+        labeled = merge_transcript_with_speakers([dict(seg)], speaker_segments)
+        merged_transcript.append(labeled[0] if labeled else dict(seg))
+    return merged_transcript
+
+
+def _flatten_diarization_segments(diarization_by_source: Dict[str, list[dict]]) -> list[dict]:
+    flattened: list[dict] = []
+    for source in sorted(diarization_by_source.keys()):
+        for segment in diarization_by_source[source]:
+            flattened.append({"source": source, **segment})
+    return flattened
+
+
+def _extract_ws_auth_token(websocket: WebSocket) -> str:
+    # Priority: query param -> custom header -> Authorization: Bearer <token>
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return query_token.strip()
+
+    header_token = websocket.headers.get("x-echopanel-token")
+    if header_token:
+        return header_token.strip()
+
+    auth_header = websocket.headers.get("authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return ""
+
+
+def _is_ws_authorized(websocket: WebSocket) -> bool:
+    required_token = os.getenv(WS_AUTH_TOKEN_ENV, "").strip()
+    if not required_token:
+        return True
+
+    provided_token = _extract_ws_auth_token(websocket)
+    if not provided_token:
+        return False
+
+    return hmac.compare_digest(provided_token, required_token)
 
 
 async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> None:
@@ -197,6 +310,16 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
 @router.websocket("/ws/live-listener")
 async def ws_live_listener(websocket: WebSocket) -> None:
     await websocket.accept()
+
+    if not _is_ws_authorized(websocket):
+        await websocket.send_text(json.dumps({
+            "type": "status",
+            "state": "error",
+            "message": "Unauthorized websocket connection",
+        }))
+        await websocket.close(code=1008)
+        return
+
     state = SessionState()
     # No single pcm_queue anymore, dynamic via state.queues
 
@@ -272,13 +395,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             _write_audio_dump(state, source, chunk)
                             
                             await put_audio(q, chunk, state=state, source=source, websocket=websocket)
-                            
-                            if state.diarization_enabled:
-                                state.pcm_buffer.extend(chunk)
-                                if state.diarization_max_bytes > 0 and len(state.pcm_buffer) > state.diarization_max_bytes:
-                                    overflow = len(state.pcm_buffer) - state.diarization_max_bytes
-                                    if overflow > 0:
-                                        del state.pcm_buffer[:overflow]
+                            _append_diarization_audio(state, source, chunk)
 
                     elif msg_type == "stop":
                         # Signal EOF to all queues
@@ -316,21 +433,18 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         except asyncio.TimeoutError:
                             logger.warning("Analysis task cancellation timed out, some tasks may be orphaned")
                         
-                        # Run diarization if enabled (disabled for now due to multi-source issues)
-                        diarization_segments: list[dict] = []
-                        # if state.diarization_enabled and state.pcm_buffer:
-                        #     diarization_segments = await asyncio.to_thread(
-                        #         diarize_pcm, bytes(state.pcm_buffer), 16000
-                        #     )
+                        # Run session-end diarization per source to avoid mixed-source corruption.
+                        diarization_by_source = await _run_diarization_per_source(state)
+                        diarization_segments = _flatten_diarization_segments(diarization_by_source)
                         
                         # Snapshot transcript once for deterministic finalization
                         # (prevents race if any late events append during to_thread calls)
                         # P1 fix (TO-1): Sort by timestamp for deterministic ordering across sources
                         transcript_snapshot = sorted(state.transcript, key=lambda s: s.get("t0", 0.0))
                         
-                        # Merge transcript with speaker labels (run off event loop if non-trivial)
+                        # Merge transcript with source-specific speaker labels.
                         labeled_transcript = await asyncio.to_thread(
-                            merge_transcript_with_speakers, transcript_snapshot, diarization_segments
+                            _merge_transcript_with_source_diarization, transcript_snapshot, diarization_by_source
                         )
                         
                         # Generate rolling summary as markdown (run off event loop)
@@ -377,13 +491,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                     state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                 
                 await put_audio(q, chunk, state=state, source=source, websocket=websocket)
-                
-                if state.diarization_enabled:
-                    state.pcm_buffer.extend(chunk)
-                    if state.diarization_max_bytes > 0 and len(state.pcm_buffer) > state.diarization_max_bytes:
-                        overflow = len(state.pcm_buffer) - state.diarization_max_bytes
-                        if overflow > 0:
-                            del state.pcm_buffer[:overflow]
+                _append_diarization_audio(state, source, chunk)
                 
                 if DEBUG:
                     state.bytes_received += len(chunk)

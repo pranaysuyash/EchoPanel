@@ -1,146 +1,166 @@
-# WebSocket Contract: Live Listener v0.2
+# WebSocket + Local Docs API Contract (v0.2)
 
-This document is the source of truth for the client/server WebSocket protocol between the macOS app and the backend for v0.1.
+This is the current source of truth for the live listener protocol implemented in:
+- `/Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py`
+- `/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`
 
-## Endpoint
-- WebSocket path: `/ws/live-listener`
-- Transport: WebSocket over TLS in production (`wss://`)
+## Transport and endpoint
+- WebSocket endpoint: `/ws/live-listener`
+- App URL policy:
+  - Localhost backends (`127.0.0.1`, `localhost`, `::1`) use `ws://` and `http://`.
+  - Non-local backends default to `wss://` and `https://`.
+  - Evidence: `/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/BackendConfig.swift`
 
-## Message types (overview)
-- Client to server:
-  - JSON control messages: `start`, `stop`
-  - Binary audio messages: PCM frames, `pcm_s16le`, mono, 16 kHz
-- Server to client:
-  - ASR events: `asr_partial`, `asr_final`
-  - Analysis events: `cards_update`, `entities_update`
-  - Status events: `status`
-  - Finalization: `final_summary`
+## Authentication
+- Controlled by env var: `ECHOPANEL_WS_AUTH_TOKEN`
+- When unset/empty:
+  - WebSocket and documents API are open (local-dev default).
+- When set:
+  - Accepted token inputs (priority order):
+    1) `?token=...` query parameter
+    2) `x-echopanel-token` header
+    3) `Authorization: Bearer ...` header
+- Unauthorized websocket behavior:
+  - Server sends `{"type":"status","state":"error","message":"Unauthorized websocket connection"}`
+  - Then closes with close code `1008`.
+- Unauthorized HTTP documents behavior:
+  - Returns `401 {"detail":"Unauthorized"}`.
 
-## Binary framing (client to server)
-- Each binary message is a single audio frame.
-- Encoding: PCM signed 16-bit little-endian (`pcm_s16le`)
-- Sample rate: 16000 Hz
-- Channels: 1 (mono)
-- Source tagging: Clients should ideally wrap audio in the JSON structure below, but raw binary is accepted as "system" source for backward compatibility.
-- v0.2 Preferred Framing (JSON):
-  ```json
-  {
-    "source": "system" | "mic",
-    "pcm_base64": "..."
-  }
-  ```
-  *(Note: The spec actually defines `audio_frame` as a JSON structure in the text below, but v0.1 used raw binary. v0.2 will support both or move to JSON for multi-source. For now, we document the raw frame behavior and note the v0.2 extension)*.
-
-Actual v0.2 Implementation Plan defines `audio_frame` as JSON. Let's align with the Plan:
-**Client to Server**:
-- **audio_frame**:
-  - `session_id`: string (UUID)
-  - `source`: "system" | "mic" (default: "system")
-  - `pcm16_base64`: string (Base64 encoded PCM16 data)
-  - `sample_rate`: number (default: 16000)
-  - `channels`: number (default: 1)
-- Timing:
-  - The backend should treat frame arrival order as the clock for streaming ASR.
-  - The client should send frames at approximately real time cadence.
-
-## JSON control messages (client to server)
-All JSON messages are UTF-8 text frames.
+## Client -> server messages
+All structured messages are UTF-8 JSON text frames.
 
 ### `start`
-Schema:
 ```json
 {
   "type": "start",
-  "session_id": "uuid",
+  "session_id": "uuid-string",
   "sample_rate": 16000,
   "format": "pcm_s16le",
   "channels": 1
 }
 ```
+- Server currently requires exactly `16000` / `pcm_s16le` / `1`.
+- On mismatch, server sends:
+  - `{"type":"error","message":"Unsupported audio format: ..."}`
+  - then closes connection.
 
-### `audio` (Client to Server)
-Schema:
+### `audio` (preferred)
 ```json
 {
   "type": "audio",
-  "source": "system" | "mic",
-  "data": "base64_encoded_pcm16_samples"
+  "source": "system | mic | microphone",
+  "data": "base64_pcm16_bytes"
 }
 ```
-*Note: Binary messages are still supported for backward compatibility (defaults to "system"), but JSON is preferred for multi-source.*
+- `source` defaults to `system` when omitted.
+- Multi-source streams create independent ASR queues/tasks per source.
+
+### Binary frame (legacy fallback)
+- Raw PCM16 bytes in binary websocket frames are still accepted.
+- Binary frames are treated as `source="system"`.
 
 ### `stop`
-Schema:
 ```json
 {
   "type": "stop",
-  "session_id": "uuid"
+  "session_id": "uuid-string"
 }
 ```
+- Server flushes ASR, cancels periodic analysis loop, runs finalization, emits `final_summary`, and closes the socket.
 
-## Server events (server to client)
+## Server -> client events
 
-### ASR: `asr_partial` / `asr_final`
-Schema:
-```json
-{
-  "type": "asr_partial" | "asr_final",
-  "t0": 123.4,
-  "t1": 126.2,
-  "text": "...",
-  "confidence": 0.95,
-  "source": "mic" | "system",
-  "speaker": "Speaker 1",
-  "stable": false
-}
-```
-
-### Analysis: `entities_update`
-Schema:
-```json
-{
-  "type": "entities_update",
-  "people": [{"name":"...","type":"person","count":5,"last_seen":123.4,"confidence":0.8}],
-  "orgs": [{"name":"...","type":"org","count":1,"last_seen":123.4,"confidence":0.8}],
-  ...
-}
-```
-
-### Status: `status`
-Schema:
+### `status`
 ```json
 {
   "type": "status",
-  "state": "streaming|reconnecting|error",
-  "message": "..."
+  "state": "streaming | warning | backpressure | error",
+  "message": "human-readable message",
+  "dropped_frames": 3
+}
+```
+- `dropped_frames` appears for backpressure warnings.
+
+### `asr_partial` / `asr_final`
+```json
+{
+  "type": "asr_partial | asr_final",
+  "text": "recognized text",
+  "t0": 12.3,
+  "t1": 14.0,
+  "confidence": 0.88,
+  "source": "system | mic"
+}
+```
+- The protocol supports both event types.
+- Current `faster-whisper` provider emits final segments only.
+
+### `entities_update`
+```json
+{
+  "type": "entities_update",
+  "people": [],
+  "orgs": [],
+  "dates": [],
+  "projects": [],
+  "topics": []
 }
 ```
 
-Examples:
+### `cards_update`
 ```json
-{"type":"status","state":"streaming","message":"Connected"}
+{
+  "type": "cards_update",
+  "actions": [],
+  "decisions": [],
+  "risks": [],
+  "window": { "t0": 0.0, "t1": 600.0 }
+}
 ```
 
-```json
-{"type":"status","state":"reconnecting","message":"Retrying in 2s"}
-```
-
-### Finalization: `final_summary`
-Schema:
+### `final_summary`
 ```json
 {
   "type": "final_summary",
-  "markdown": "...",
-  "json": {}
+  "markdown": "# Notes ...",
+  "json": {
+    "session_id": "uuid-string",
+    "transcript": [],
+    "actions": [],
+    "decisions": [],
+    "risks": [],
+    "entities": {},
+    "diarization": []
+  }
 }
 ```
+- `json.transcript` is speaker-labeled when diarization succeeds.
+- `json.diarization` includes flattened source-tagged diarization segments.
 
-Example:
-```json
-{"type":"final_summary","markdown":"# Summary\\n...","json":{"session_id":"2E3B2BC2-0F6D-46E0-8B7A-5D80A8B8BE68","actions":[],"decisions":[],"risks":[],"entities":{}}}
-```
+## Finalization behavior
+- Diarization is session-end only (not live), controlled by:
+  - `ECHOPANEL_DIARIZATION=1`
+  - optional `ECHOPANEL_DIARIZATION_MAX_SECONDS` cap.
+- NLP extraction (`cards`, `entities`, summary markdown) runs on transcript snapshot after ASR flush.
 
-## Error handling expectations
-- If the server cannot process audio, it sends a `status` with `state:"error"` and a human-readable `message`.
-- If the client disconnects unexpectedly, the server may terminate analysis for that session unless it supports resumption (not required in v0.1).
+## Local documents API (RAG MVP)
+All endpoints are included by `/Users/pranay/Projects/EchoPanel/server/main.py`.
 
+- `GET /documents`
+  - Returns indexed document summaries.
+- `POST /documents/index`
+  - Body:
+    ```json
+    { "title": "Doc", "text": "content", "source": "local", "document_id": "optional" }
+    ```
+- `POST /documents/query`
+  - Body:
+    ```json
+    { "query": "pricing auth", "top_k": 5 }
+    ```
+- `DELETE /documents/{document_id}`
+  - Deletes one indexed document.
+
+## Compatibility notes
+- JSON `audio` frames are the expected v0.2 path.
+- Binary frame support remains for backward compatibility only.

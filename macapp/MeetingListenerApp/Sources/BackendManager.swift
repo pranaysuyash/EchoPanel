@@ -127,6 +127,9 @@ final class BackendManager: ObservableObject {
             env["ECHOPANEL_HF_TOKEN"] = hfToken
             env["ECHOPANEL_DIARIZATION"] = "1"
         }
+        if let backendToken = KeychainHelper.loadBackendToken(), !backendToken.isEmpty {
+            env["ECHOPANEL_WS_AUTH_TOKEN"] = backendToken
+        }
         process.environment = env
         
         // Create log file

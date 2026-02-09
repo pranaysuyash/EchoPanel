@@ -47,3 +47,6 @@ Never present `Inferred` as `Observed`.
 ## No destructive cleanup by default
 Do not delete files or remove “unused” code unless explicitly requested or clearly required by the scoped ticket.
 
+## Staging policy
+- Default to staging all useful, non-breaking project changes with `git add -A`.
+- Only skip full staging when the user explicitly asks not to.

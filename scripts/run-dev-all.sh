@@ -32,8 +32,8 @@ if [[ "$ENABLE_ASR" -eq 1 ]]; then
   export ECHOPANEL_WHISPER_MODEL="${ECHOPANEL_WHISPER_MODEL:-base}"
   if [[ -z "${ECHOPANEL_WHISPER_DEVICE:-}" ]]; then
     if [[ "$(uname -s)" == "Darwin" ]]; then
-      export ECHOPANEL_WHISPER_DEVICE="metal"
-      export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8_float16}"
+      export ECHOPANEL_WHISPER_DEVICE="cpu"
+      export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8}"
     else
       export ECHOPANEL_WHISPER_DEVICE="auto"
       export ECHOPANEL_WHISPER_COMPUTE="${ECHOPANEL_WHISPER_COMPUTE:-int8}"

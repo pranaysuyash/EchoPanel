@@ -129,6 +129,11 @@ final class AppState: ObservableObject {
     @Published var decisions: [DecisionItem] = []
     @Published var risks: [RiskItem] = []
     @Published var entities: [EntityItem] = []
+    @Published var contextDocuments: [ContextDocument] = []
+    @Published var contextQueryResults: [ContextQueryResult] = []
+    @Published var contextQuery: String = ""
+    @Published var contextStatusMessage: String = ""
+    @Published var contextBusy: Bool = false
 
     // H9 Fix: Expose backend status
     var isServerReady: Bool { BackendManager.shared.isServerReady }
@@ -183,6 +188,7 @@ final class AppState: ObservableObject {
     private var debugBytes: Int = 0
     private var debugScreenFrames: Int = 0
     private var autoSaveCancellable: AnyCancellable?
+    private var lastContextRefreshAt: Date?
 
     init() {
         streamer = WebSocketStreamer()
@@ -614,6 +620,32 @@ final class AppState: ObservableObject {
         NSPasteboard.general.setString(markdown, forType: .string)
     }
 
+    // MARK: - Local Context / RAG
+
+    func refreshContextDocuments(force: Bool = false) {
+        Task {
+            await fetchContextDocuments(force: force)
+        }
+    }
+
+    func indexContextDocument(from fileURL: URL) {
+        Task {
+            await indexContextDocumentAsync(from: fileURL)
+        }
+    }
+
+    func queryContextDocuments(_ query: String? = nil) {
+        Task {
+            await queryContextDocumentsAsync(query ?? contextQuery)
+        }
+    }
+
+    func deleteContextDocument(documentID: String) {
+        Task {
+            await deleteContextDocumentAsync(documentID: documentID)
+        }
+    }
+
     func exportJSON() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType.json]
@@ -960,6 +992,177 @@ final class AppState: ObservableObject {
         debugLine = "Debug: \(debugSamples) samples · \(debugScreenFrames) screen frames · \(bytes) sent"
     }
 
+    private func fetchContextDocuments(force: Bool) async {
+        if !force, let lastContextRefreshAt, Date().timeIntervalSince(lastContextRefreshAt) < 2 {
+            return
+        }
+
+        contextBusy = true
+        defer { contextBusy = false }
+
+        do {
+            let request = makeAuthorizedRequest(url: BackendConfig.documentsListURL, method: "GET")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try ensureHTTPStatus(response, data: data)
+            let payload = try JSONDecoder().decode(ContextDocumentsResponse.self, from: data)
+            contextDocuments = payload.documents.map { $0.asContextDocument() }
+            lastContextRefreshAt = Date()
+
+            if contextDocuments.isEmpty {
+                contextStatusMessage = "No context documents indexed yet."
+            } else if contextStatusMessage.isEmpty {
+                contextStatusMessage = "\(contextDocuments.count) document(s) available."
+            }
+        } catch {
+            contextStatusMessage = "Context load failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func indexContextDocumentAsync(from fileURL: URL) async {
+        do {
+            let text = try loadTextFile(fileURL)
+            if text.count > 250_000 {
+                contextStatusMessage = "File too large (\(text.count) chars). Keep context files under 250k chars."
+                return
+            }
+
+            contextBusy = true
+            defer { contextBusy = false }
+            contextStatusMessage = "Indexing \(fileURL.lastPathComponent)..."
+
+            let payload: [String: Any] = [
+                "title": fileURL.lastPathComponent,
+                "source": fileURL.path,
+                "text": text,
+            ]
+            let body = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let request = makeAuthorizedRequest(url: BackendConfig.documentsIndexURL, method: "POST", body: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try ensureHTTPStatus(response, data: data)
+
+            _ = try JSONDecoder().decode(ContextIndexResponse.self, from: data)
+            contextStatusMessage = "Indexed \(fileURL.lastPathComponent)."
+            await fetchContextDocuments(force: true)
+        } catch {
+            contextStatusMessage = "Indexing failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func queryContextDocumentsAsync(_ rawQuery: String) async {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        contextQuery = query
+        guard !query.isEmpty else {
+            contextQueryResults = []
+            contextStatusMessage = contextDocuments.isEmpty
+                ? "No context documents indexed yet."
+                : "Enter a query to search local context."
+            return
+        }
+
+        contextBusy = true
+        defer { contextBusy = false }
+
+        do {
+            let payload: [String: Any] = ["query": query, "top_k": 8]
+            let body = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let request = makeAuthorizedRequest(url: BackendConfig.documentsQueryURL, method: "POST", body: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try ensureHTTPStatus(response, data: data)
+            let decoded = try JSONDecoder().decode(ContextQueryResponse.self, from: data)
+            contextQueryResults = decoded.results.map { $0.asContextQueryResult() }
+            if contextQueryResults.isEmpty {
+                contextStatusMessage = "No matches for \"\(query)\"."
+            } else {
+                contextStatusMessage = "\(contextQueryResults.count) match(es) for \"\(query)\"."
+            }
+        } catch {
+            contextStatusMessage = "Context query failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteContextDocumentAsync(documentID: String) async {
+        contextBusy = true
+        defer { contextBusy = false }
+
+        do {
+            let request = makeAuthorizedRequest(
+                url: BackendConfig.documentDeleteURL(documentID: documentID),
+                method: "DELETE"
+            )
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try ensureHTTPStatus(response, data: data)
+            contextDocuments.removeAll(where: { $0.id == documentID })
+            contextQueryResults.removeAll(where: { $0.documentID == documentID })
+            contextStatusMessage = "Document removed."
+        } catch {
+            contextStatusMessage = "Delete failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func makeAuthorizedRequest(url: URL, method: String, body: Data? = nil) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20.0
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        if let token = KeychainHelper.loadBackendToken(), !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "x-echopanel-token")
+        }
+        return request
+    }
+
+    private func ensureHTTPStatus(_ response: URLResponse, data: Data) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "EchoPanel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid backend response"])
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let detail = parseErrorDetail(from: data), !detail.isEmpty {
+                throw NSError(domain: "EchoPanel", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: detail])
+            }
+            throw NSError(
+                domain: "EchoPanel",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Backend request failed (\(httpResponse.statusCode))"]
+            )
+        }
+    }
+
+    private func parseErrorDetail(from data: Data) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+            return nil
+        }
+        if let detail = obj["detail"] as? String {
+            return detail
+        }
+        if let detailObj = obj["detail"] as? [String: Any],
+           let reason = detailObj["reason"] as? String {
+            return reason
+        }
+        if let message = obj["message"] as? String {
+            return message
+        }
+        return nil
+    }
+
+    private func loadTextFile(_ fileURL: URL) throws -> String {
+        let data = try Data(contentsOf: fileURL)
+        let encodings: [String.Encoding] = [.utf8, .unicode, .utf16, .utf16LittleEndian, .utf16BigEndian, .isoLatin1]
+        for encoding in encodings {
+            if let text = String(data: data, encoding: encoding),
+               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                return text
+            }
+        }
+        throw NSError(
+            domain: "EchoPanel",
+            code: -2,
+            userInfo: [NSLocalizedDescriptionKey: "Unsupported file encoding for \(fileURL.lastPathComponent)"]
+        )
+    }
+
     func seedDemoData() {
         sessionState = .listening
         streamStatus = .streaming
@@ -995,6 +1198,81 @@ final class AppState: ObservableObject {
     }
 
     // BackendConfig reads host/port from UserDefaults.
+}
+
+private extension AppState {
+    struct ContextDocumentsResponse: Decodable {
+        let documents: [ContextDocumentPayload]
+        let count: Int
+    }
+
+    struct ContextIndexResponse: Decodable {
+        let document: ContextDocumentPayload
+    }
+
+    struct ContextQueryResponse: Decodable {
+        let query: String
+        let results: [ContextQueryResultPayload]
+        let count: Int
+    }
+
+    struct ContextDocumentPayload: Decodable {
+        let documentID: String
+        let title: String
+        let source: String
+        let indexedAt: String
+        let preview: String
+        let chunkCount: Int
+
+        enum CodingKeys: String, CodingKey {
+            case documentID = "document_id"
+            case title
+            case source
+            case indexedAt = "indexed_at"
+            case preview
+            case chunkCount = "chunk_count"
+        }
+
+        func asContextDocument() -> ContextDocument {
+            ContextDocument(
+                id: documentID,
+                title: title,
+                source: source,
+                indexedAt: indexedAt,
+                preview: preview,
+                chunkCount: chunkCount
+            )
+        }
+    }
+
+    struct ContextQueryResultPayload: Decodable {
+        let documentID: String
+        let title: String
+        let source: String
+        let chunkIndex: Int
+        let snippet: String
+        let score: Double
+
+        enum CodingKeys: String, CodingKey {
+            case documentID = "document_id"
+            case title
+            case source
+            case chunkIndex = "chunk_index"
+            case snippet
+            case score
+        }
+
+        func asContextQueryResult() -> ContextQueryResult {
+            ContextQueryResult(
+                documentID: documentID,
+                title: title,
+                source: source,
+                chunkIndex: chunkIndex,
+                snippet: snippet,
+                score: score
+            )
+        }
+    }
 }
 
 private extension Date {

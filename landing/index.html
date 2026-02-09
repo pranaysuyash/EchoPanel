@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="EchoPanel is a macOS menu bar app that turns any system audio into live meeting notes with actions, decisions, risks, and entities."
+      content="EchoPanel is a Mac menu bar companion that turns meetings into clear notes, owners, and next steps."
     />
-    <title>EchoPanel — Live meeting notes from any Mac audio</title>
+    <title>EchoPanel — Turn every meeting into clear next steps</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231f6feb' d='M32 6c14.36 0 26 11.64 26 26S46.36 58 32 58 6 46.36 6 32 17.64 6 32 6Zm-7 17a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V26a3 3 0 0 0-3-3Zm14-8a3 3 0 0 0-3 3v28a3 3 0 0 0 6 0V18a3 3 0 0 0-3-3Zm-7 14a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0v-8a3 3 0 0 0-3-3Z'/%3E%3C/svg%3E"
@@ -15,19 +15,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div class="ambient" aria-hidden="true">
+      <span class="glow glow-one"></span>
+      <span class="glow glow-two"></span>
+      <span class="glow glow-three"></span>
+    </div>
+
     <div class="page">
       <header class="hero">
         <nav class="nav">
           <div class="logo">EchoPanel</div>
           <div class="nav-links">
+            <a href="#design">App design</a>
             <a href="#how">How it works</a>
-            <a href="#trust">Trust</a>
+            <a href="#roles">Who it helps</a>
             <a href="#waitlist">Waitlist</a>
             <a href="#privacy">Privacy</a>
           </div>
@@ -35,27 +42,21 @@
 
         <div class="hero-grid">
           <div class="hero-copy">
-            <div class="tag">macOS menu bar app</div>
-            <h1>Live meeting notes from any Mac audio.</h1>
+            <div class="tag">Built for back-to-back meetings</div>
+            <h1>Leave every call with clear next steps.</h1>
             <p>
-              Start listening with one click. EchoPanel streams system audio
-              into a portrait side panel with a POS-style rolling transcript and
-              tabbed views for Decisions, Timeline, and Documents (coming soon).
-              Processed locally on your Mac.
+              EchoPanel sits in your menu bar and keeps up while people talk.
+              You get live notes, owners, and decisions in one calm panel so you
+              can stay present in the conversation.
             </p>
             <ul class="hero-bullets">
-              <li>
-                Works with Meet, Zoom, Teams, video playback, and in person
-                audio
-              </li>
-              <li>
-                Arrow-key tabs: Transcript, Decisions, Timeline, Documents (coming soon)
-              </li>
-              <li>Clear permission prompts and visible listening indicator</li>
+              <li>Works with Zoom, Meet, Teams, browser videos, and in-room audio</li>
+              <li>One place for summary, actions, pins, people, and full notes</li>
+              <li>Share clean meeting output in seconds when the call ends</li>
             </ul>
             <div class="hero-form" id="waitlist">
-              <h3>Join the waitlist</h3>
-              <p>Be the first to try the v0.2 private beta.</p>
+              <h3>Get early access</h3>
+              <p>Join the v0.2 beta and help shape the launch experience.</p>
               <form class="waitlist-form" data-waitlist>
                 <div class="form-row">
                   <label>
@@ -89,13 +90,11 @@
                   </label>
                   <label>
                     Company
-                    <input type="text" name="company" placeholder="EchoPanel" />
+                    <input type="text" name="company" placeholder="Acme" />
                   </label>
                 </div>
                 <input type="hidden" name="source" value="landing" />
-                <button type="submit" class="btn-primary">
-                  Request access
-                </button>
+                <button type="submit" class="btn-primary">Request access</button>
                 <div
                   class="form-status"
                   data-form-status
@@ -105,60 +104,53 @@
               </form>
             </div>
           </div>
+
           <div class="hero-visual">
-            <div class="hero-mesh" aria-hidden="true">
-              <span class="mesh-orb orb-one"></span>
-              <span class="mesh-orb orb-two"></span>
-              <span class="mesh-orb orb-three"></span>
-            </div>
             <div class="menu-bar" data-hero-bar>
               <div class="menu-dot listening"></div>
-              <span>EchoPanel · 12:34</span>
+              <span>EchoPanel · Listening</span>
             </div>
+
             <div class="panel portrait" data-hero-panel>
               <div class="panel-header">
                 <div>
-                  <div class="panel-title">Live Meeting Listener</div>
-                  <div class="panel-subtitle">Streaming · Audio: Good</div>
+                  <div class="panel-title">Weekly Product Sync</div>
+                  <div class="panel-subtitle">Live notes · Audio clear</div>
                 </div>
                 <div class="panel-timer">12:34</div>
               </div>
               <div class="panel-tabs">
-                <button class="tab active">Transcript</button>
-                <button class="tab">Decisions</button>
-                <button class="tab">Timeline</button>
-                <button class="tab">Documents (coming soon)</button>
+                <button class="tab active">Summary</button>
+                <button class="tab">Actions</button>
+                <button class="tab">Pins</button>
+                <button class="tab">Entities</button>
+                <button class="tab">Raw</button>
               </div>
               <div class="panel-body">
                 <div class="panel-card transcript-card">
                   <div class="line">
                     <span class="time">12:31</span>
-                    <span>We should ship by Friday.</span>
+                    <span>We can launch the onboarding refresh this Friday.</span>
                   </div>
                   <div class="line faint">
                     <span class="time">12:33</span>
-                    <span>I'll send the proposal tomorrow.</span>
+                    <span>Priya owns QA signoff and final release notes.</span>
                   </div>
                   <div class="line faint">
                     <span class="time">12:34</span>
-                    <span>Let's keep the scope focused.</span>
-                  </div>
-                  <div class="line faint">
-                    <span class="time">12:35</span>
-                    <span
-                      ><span class="pill">Decision</span> Ship v0.2 on
-                      Friday.</span
-                    >
+                    <span>
+                      <span class="pill">Decision</span>Ship with scoped copy updates.
+                    </span>
                   </div>
                 </div>
                 <div class="panel-card docs-card">
                   <div class="doc-row">
-                    <span>Spec-v0.2.pdf</span>
-                    <span class="meta">Indexed</span>
+                    <span>4 next steps captured</span>
+                    <span class="meta">Live</span>
                   </div>
                   <div class="doc-row">
-                    <span>Launch-plan.md</span>
-                    <span class="meta">Queued</span>
+                    <span>2 decisions marked</span>
+                    <span class="meta">Updated</span>
                   </div>
                 </div>
               </div>
@@ -168,30 +160,75 @@
                 <button class="ghost danger">End session</button>
               </div>
             </div>
+
+            <div class="preview-stack" aria-label="Additional app previews">
+              <article class="preview-card">
+                <h3>During the meeting</h3>
+                <p>Live timeline keeps everyone aligned without alt-tabbing.</p>
+                <div class="preview-micro">Highlights update as the conversation moves.</div>
+              </article>
+              <article class="preview-card">
+                <h3>After the meeting</h3>
+                <p>Share recap with owners and due dates before context fades.</p>
+                <div class="preview-micro">No rewrite sprint after every call.</div>
+              </article>
+            </div>
           </div>
         </div>
       </header>
 
+      <section class="section" id="design">
+        <div class="section-header">
+          <h2>Updated app designs for real workflows</h2>
+          <p>
+            The interface is built around three moments: listening live,
+            spotting what matters, and shipping a recap people will actually use.
+          </p>
+        </div>
+        <div class="design-grid">
+          <article class="design-card">
+            <div class="design-kicker">View 01</div>
+            <h3>Live focus panel</h3>
+            <p>
+              A narrow side panel stays out of your way while the meeting keeps moving.
+            </p>
+          </article>
+          <article class="design-card">
+            <div class="design-kicker">View 02</div>
+            <h3>Action-first recap</h3>
+            <p>
+              Tasks, decisions, and pinned moments are organized for quick handoff.
+            </p>
+          </article>
+          <article class="design-card">
+            <div class="design-kicker">View 03</div>
+            <h3>Share-ready output</h3>
+            <p>
+              Copy Markdown or export JSON immediately when your session ends.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section class="section">
         <div class="section-header">
-          <h2>Everything you need without integrations.</h2>
+          <h2>What teams actually get</h2>
           <p>
-            EchoPanel captures what is already playing on your Mac. No bots.
-            Offline processing. Zero friction.
+            A clear source of truth from the conversation, without bots joining your calls.
           </p>
         </div>
         <div class="value-grid">
           <div class="value-card">
-            <h3>Rolling transcript</h3>
-            <p>POS-style window with stable, timestamped segments.</p>
+            <h3>Live timeline</h3>
+            <p>Follow key moments as they happen with timestamps that stay readable.</p>
           </div>
           <div class="value-card">
-            <h3>Decisions & timeline</h3>
-            <p>Find outcomes fast with dedicated tabs and timestamps.</p>
+            <h3>Clear ownership</h3>
+            <p>Action items are tied to people so follow-through is obvious.</p>
           </div>
           <div class="value-card">
-            <h3>Docs for context</h3>
-            <p>Documents tab is coming soon for reference uploads.</p>
+            <h3>Fast sharing</h3>
+            <p>Send recap notes instantly and keep momentum after every meeting.</p>
           </div>
         </div>
       </section>
@@ -199,34 +236,28 @@
       <section class="section" id="how">
         <div class="section-header">
           <h2>How it works</h2>
-          <p>Designed for quick setup and zero meeting friction.</p>
+          <p>Three simple steps from listening to follow-through.</p>
         </div>
         <ol class="steps">
           <li>
             <span class="step-number">01</span>
             <div>
-              <h3>Start listening</h3>
-              <p>
-                Click the menu bar toggle. EchoPanel requests Screen Recording
-                permission once.
-              </p>
+              <h3>Start from the menu bar</h3>
+              <p>Click Start once and keep your meeting window front and center.</p>
             </div>
           </li>
           <li>
             <span class="step-number">02</span>
             <div>
-              <h3>Stream system audio</h3>
-              <p>
-                Audio is captured locally and streamed for live ASR and
-                analysis.
-              </p>
+              <h3>Follow live notes</h3>
+              <p>Watch summary, actions, pins, entities, and raw notes update in real time.</p>
             </div>
           </li>
           <li>
             <span class="step-number">03</span>
             <div>
-              <h3>Export instantly</h3>
-              <p>Copy Markdown or export JSON the moment your meeting ends.</p>
+              <h3>Send the recap</h3>
+              <p>End session and share clean output before anyone leaves context behind.</p>
             </div>
           </li>
         </ol>
@@ -234,75 +265,80 @@
 
       <section class="section flow" id="flow">
         <div class="section-header">
-          <h2>Live flow, end to end</h2>
-          <p>See the whole loop from menu bar toggle to exportable outputs.</p>
+          <h2>From meeting to momentum</h2>
+          <p>A simple flow that keeps decisions visible and next steps moving.</p>
         </div>
 
         <div class="flow-cards">
           <div class="flow-card active" data-flow-card>
-            <h3>Start in the menu bar</h3>
-            <p>
-              One click triggers permission checks and opens the side panel.
-            </p>
+            <h3>Start listening</h3>
+            <p>Turn EchoPanel on from the menu bar at the start of your call.</p>
           </div>
           <div class="flow-card" data-flow-card>
-            <h3>Stream system audio</h3>
-            <p>
-              Audio is captured locally and streamed as PCM16 for low latency.
-            </p>
+            <h3>Capture the conversation</h3>
+            <p>Live notes track what happened without stealing your attention.</p>
           </div>
           <div class="flow-card" data-flow-card>
-            <h3>Transcript arrives live</h3>
-            <p>
-              Partials appear quickly and resolve into final segments with
-              timestamps.
-            </p>
+            <h3>Spot decisions quickly</h3>
+            <p>Important moments are easy to review while the meeting is still active.</p>
           </div>
           <div class="flow-card" data-flow-card>
-            <h3>Actions & entities update</h3>
-            <p>
-              Cards refresh on cadence while entities track people, orgs, and
-              projects.
-            </p>
+            <h3>Assign next steps</h3>
+            <p>Action items and owners are ready before the call wraps.</p>
           </div>
           <div class="flow-card" data-flow-card>
-            <h3>Export instantly</h3>
-            <p>Copy Markdown or export JSON the moment the meeting ends.</p>
+            <h3>Share and move on</h3>
+            <p>Export recap notes immediately and keep your team aligned.</p>
           </div>
+        </div>
+      </section>
+
+      <section class="section" id="roles">
+        <div class="section-header">
+          <h2>Made for teams that run on meetings</h2>
+          <p>Different roles, same outcome: fewer missed details and faster follow-through.</p>
+        </div>
+        <div class="role-grid">
+          <article class="role-card">
+            <h3>Product & engineering</h3>
+            <p>Track decisions, owners, and open questions across fast-moving syncs.</p>
+          </article>
+          <article class="role-card">
+            <h3>Customer-facing teams</h3>
+            <p>Capture call context and handoffs without scrambling after each conversation.</p>
+          </article>
+          <article class="role-card">
+            <h3>Founders & operators</h3>
+            <p>Turn every meeting into a reliable action list you can execute against.</p>
+          </article>
         </div>
       </section>
 
       <section class="section trust" id="trust">
         <div class="section-header">
           <h2>Built for trust and transparency</h2>
-          <p>
-            We only listen when you click Start, with visible indicators and
-            clear permissions.
-          </p>
+          <p>You control when listening starts and what gets shared.</p>
         </div>
         <div class="trust-grid">
           <div class="trust-card">
             <h3>Clear consent</h3>
-            <p>Screen Recording permission is required and explained.</p>
+            <p>EchoPanel starts only when you choose to start a session.</p>
           </div>
           <div class="trust-card">
             <h3>Visible status</h3>
-            <p>Streaming, reconnecting, and audio quality are always shown.</p>
+            <p>Listening and quality indicators stay visible while a session is running.</p>
           </div>
           <div class="trust-card">
-            <h3>Minimal data</h3>
-            <p>Store only session outputs you choose to keep.</p>
+            <h3>Control your data</h3>
+            <p>Session output stays manageable so you decide what to keep or remove.</p>
           </div>
         </div>
       </section>
 
       <section class="section waitlist">
         <div class="section-header">
-          <h2>Get early access</h2>
-          <p>
-            We are onboarding a small number of people for the v0.2 private
-            beta.
-          </p>
+          <h2>Request your beta invite</h2>
+          <p>We are onboarding a small group of teams for the next release wave.</p>
         </div>
         <div class="waitlist-card">
           <form class="waitlist-form" data-waitlist>
@@ -332,44 +368,35 @@
         </div>
       </section>
 
+      <section class="section faq" id="privacy">
+        <div class="section-header">
+          <h2>Privacy and common questions</h2>
+          <p>Short answers to what most teams ask before trying EchoPanel.</p>
+        </div>
+        <div class="faq-grid">
+          <article class="faq-card">
+            <h3>When does EchoPanel listen?</h3>
+            <p>Only during sessions you start from the menu bar.</p>
+          </article>
+          <article class="faq-card">
+            <h3>Do I need bots in every meeting?</h3>
+            <p>No. EchoPanel runs on your Mac and works with the audio already playing.</p>
+          </article>
+          <article class="faq-card">
+            <h3>How do I share notes?</h3>
+            <p>Use Copy Markdown or Export JSON as soon as the meeting ends.</p>
+          </article>
+        </div>
+      </section>
+
       <footer class="footer">
-        <div>EchoPanel · macOS Live Meeting Listener</div>
+        <div>EchoPanel · Meeting clarity for Mac teams</div>
         <div class="footer-links">
           <a href="https://echopanel.studio">echopanel.studio</a>
           <a href="mailto:hello@echopanel.studio">hello@echopanel.studio</a>
           <a href="#privacy">Privacy</a>
         </div>
       </footer>
-
-      <section class="section" id="privacy">
-        <div class="section-header">
-          <h2>Privacy</h2>
-          <p>
-            EchoPanel only listens when you click Start. You export what you
-            choose to keep.
-          </p>
-        </div>
-        <div class="trust-grid">
-          <div class="trust-card">
-            <h3>Local capture</h3>
-            <p>
-              Audio capture happens on your Mac via ScreenCaptureKit and
-              optional microphone input.
-            </p>
-          </div>
-          <div class="trust-card">
-            <h3>Transparent status</h3>
-            <p>
-              Streaming and audio quality indicators are always visible while
-              listening.
-            </p>
-          </div>
-          <div class="trust-card">
-            <h3>Your exports</h3>
-            <p>Session notes are saved only when you choose Copy or Export.</p>
-          </div>
-        </div>
-      </section>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
