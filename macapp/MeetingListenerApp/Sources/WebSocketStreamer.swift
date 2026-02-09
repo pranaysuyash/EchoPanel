@@ -164,7 +164,7 @@ final class WebSocketStreamer: NSObject {
             let state = (object["state"] as? String) ?? "error"
             let message = (object["message"] as? String) ?? ""
             DispatchQueue.main.async {
-                if state == "streaming" {
+                if state == "streaming" || state == "backpressure" || state == "warning" {
                     self.onStatus?(.streaming, message)
                 } else if state == "reconnecting" {
                     self.onStatus?(.reconnecting, message)
