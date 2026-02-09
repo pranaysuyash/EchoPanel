@@ -2713,3 +2713,95 @@ Next actions:
 1) ~~Create `docs/audit/ACCESSIBILITY_DEEP_PASS_2026-02-09.md` with audit findings and fix plan.~~ ✓
 2) ~~Implement scoped accessibility fixes in SidePanel files.~~ ✓
 3) ~~Validate with `cd macapp/MeetingListenerApp && swift build && swift test` and update ticket to DONE when complete.~~ ✓
+
+---
+
+### TCK-20260209-005 :: SidePanel Performance + Typed Error State (Use-Now Bundle)
+
+Type: IMPROVEMENT
+Owner: Pranay (agent: Codex)
+Created: 2026-02-09 13:00 (local time)
+Status: **DONE** ✅
+Priority: P1
+
+Description:
+Implement the agreed "use now" architecture improvements with low-risk scope: memoize SidePanel filtered transcript derivation, add typed backend/runtime error state, add performance tests, and add a small recovery UX transition integration test.
+
+Scope contract:
+- In-scope:
+  - Memoize `filteredSegments` derivation in SidePanel using explicit invalidation inputs.
+  - Add typed app/backend error model while preserving existing user-visible messaging flow.
+  - Add performance-focused tests for transcript filtering and panel render/layout path.
+  - Add integration-style test for backend restart/recovery UX state mapping.
+- Out-of-scope:
+  - Full TCA migration or architectural rewrite.
+  - AppKit transcript virtualization (NSTableView) rewrite.
+  - New feature modules/targets split.
+- Behavior change allowed: YES (internal state-model and performance improvements, stable UX intent)
+
+Targets:
+- Surfaces: macapp, docs
+- Files: `macapp/MeetingListenerApp/Sources/AppState.swift`, `macapp/MeetingListenerApp/Sources/BackendManager.swift`, `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift`, `macapp/MeetingListenerApp/Sources/OnboardingView.swift`, `macapp/MeetingListenerApp/Sources/SidePanelView.swift`, `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelStateLogic.swift`, `macapp/MeetingListenerApp/Tests/*`, `docs/WORKLOG_TICKETS.md`
+- Branch/PR: main
+- Range: HEAD
+
+Acceptance criteria:
+- [x] `filteredSegments` no longer recomputes on every view access (explicit cache + invalidation path exists).
+- [x] Typed runtime/backend error state exists and is wired into current start/recovery/error flows.
+- [x] Performance tests added for filtering and render/layout hot path.
+- [x] Recovery UX transition test added (preparing -> recovering -> failed -> ready mapping).
+- [x] `swift build`, `swift test`, and `./.venv/bin/python -m pytest -q tests` pass.
+
+Evidence log:
+- [2026-02-09 13:00] Ticket intake and scope lock | Evidence:
+  - Source: user direction to implement all "use now" items from architecture review.
+  - Interpretation: Observed — scoped remediation ticket opened with bounded changes.
+
+- [2026-02-09 15:45] Memoized SidePanel filtering implemented | Evidence:
+  - Files: `macapp/MeetingListenerApp/Sources/SidePanelView.swift`, `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelStateLogic.swift`, `macapp/MeetingListenerApp/Sources/AppState.swift`
+  - Implementation:
+    - Added `FilterCacheKey` + `filteredSegmentsCache` state in `SidePanelView`
+    - Added `transcriptRevision` invalidation token in `AppState`
+    - Added `refreshFilteredSegmentsCache()` and cache-keyed filtered derivation in `SidePanelStateLogic`
+  - Interpretation: Observed — filtered derivation now has explicit memoization/invalidation path.
+
+- [2026-02-09 15:46] Typed runtime/backend error state wired into flows | Evidence:
+  - Files: `macapp/MeetingListenerApp/Sources/AppState.swift`, `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift`, `macapp/MeetingListenerApp/Sources/OnboardingView.swift`, `macapp/MeetingListenerApp/Sources/BackendManager.swift`
+  - Implementation:
+    - Added `AppRuntimeErrorState` and `BackendUXState` in `AppState`
+    - Replaced string-only session error branches with typed `setSessionError(...)`
+    - Added `reportBackendNotReady(detail:)` and used it in session toggle flow
+    - Added backend `RecoveryPhase` and surfaced recovery messaging in onboarding
+  - Interpretation: Observed — runtime/backend errors are now represented by typed states while preserving user-facing messaging.
+
+- [2026-02-09 15:49] Performance + recovery transition tests added | Evidence:
+  - File: `macapp/MeetingListenerApp/Tests/SidePanelPerformanceAndRecoveryTests.swift`
+  - Tests:
+    - `testFilteringLargeTranscriptPerformance`
+    - `testFullModeRenderLayoutPerformance`
+    - `testBackendUXStateTransitions`
+  - Interpretation: Observed — new test coverage exists for filtering/render cost and recovery UX state mapping.
+
+- [2026-02-09 15:49] Build and test validation | Evidence:
+  - Command: `cd macapp/MeetingListenerApp && swift build && swift test`
+  - Output:
+    ```
+    Build complete!
+    Executed 14 tests, with 0 failures (0 unexpected)
+    ```
+  - Command: `cd /Users/pranay/Projects/EchoPanel && ./.venv/bin/python -m pytest -q tests`
+  - Output:
+    ```
+    13 passed, 3 warnings in 3.28s
+    ```
+  - Interpretation: Observed — macapp and server test suites pass after implementation changes.
+
+Status updates:
+- [2026-02-09 13:00] **IN_PROGRESS** 🟡 — implementing memoization + typed errors + tests
+- [2026-02-09 15:49] **DONE** ✅ — use-now bundle implemented and validated
+
+Next actions:
+1) ~~Implement SidePanel filtered-segment memoization with explicit invalidation.~~ ✓
+2) ~~Add typed runtime/backend error states and wire onboarding/toggle-session flow.~~ ✓
+3) ~~Add performance + recovery transition tests.~~ ✓
+4) ~~Validate and close ticket with evidence.~~ ✓

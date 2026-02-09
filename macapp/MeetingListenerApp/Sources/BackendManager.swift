@@ -11,6 +11,7 @@ final class BackendManager: ObservableObject {
     @Published var healthDetail: String = ""
     @Published var lastExitCode: Int?
     @Published var usingExternalBackend: Bool = false
+    @Published var recoveryPhase: RecoveryPhase = .idle
     
     enum ServerStatus: String {
         case stopped = "Stopped"
@@ -18,6 +19,12 @@ final class BackendManager: ObservableObject {
         case running = "Running"
         case runningNeedsSetup = "Running (Needs setup)"
         case error = "Error"
+    }
+
+    enum RecoveryPhase: Equatable {
+        case idle
+        case retryScheduled(attempt: Int, maxAttempts: Int, delay: TimeInterval)
+        case failed(attempts: Int, maxAttempts: Int)
     }
     
     private var serverProcess: Process?
@@ -39,7 +46,7 @@ final class BackendManager: ObservableObject {
     
     // MARK: - Server Lifecycle
     
-    func startServer() {
+    func startServer(isRecoveryAttempt: Bool = false) {
         guard serverProcess == nil else {
             NSLog("BackendManager: Server already running")
             return
@@ -51,10 +58,12 @@ final class BackendManager: ObservableObject {
         lastExitCode = nil
         stopRequested = false
         usingExternalBackend = false
-        
-        // Reset restart tracking on successful start attempt
-        restartAttempts = 0
-        restartDelay = 1.0
+
+        if !isRecoveryAttempt {
+            restartAttempts = 0
+            restartDelay = 1.0
+            recoveryPhase = .idle
+        }
 
         // If something is already serving on the configured host/port, adopt it (or
         // surface a clear "port in use" error) instead of failing with bind errors.
@@ -64,12 +73,14 @@ final class BackendManager: ObservableObject {
             isServerReady = true
             serverStatus = .running
             healthDetail = "Using existing backend · \(detail)"
+            recoveryPhase = .idle
             return
         case .needsSetup(let reason):
             usingExternalBackend = true
             isServerReady = false
             serverStatus = .runningNeedsSetup
             healthDetail = reason
+            recoveryPhase = .idle
             return
         case .portInUse:
             usingExternalBackend = false
@@ -85,6 +96,7 @@ final class BackendManager: ObservableObject {
         guard let serverPath = findServerPath() else {
             NSLog("BackendManager: Could not find server path")
             serverStatus = .error
+            recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
             return
         }
         
@@ -92,6 +104,7 @@ final class BackendManager: ObservableObject {
         guard let pythonPath = findPythonPath(serverDir: serverPath) else {
             NSLog("BackendManager: Could not find Python executable")
             serverStatus = .error
+            recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
             return
         }
         
@@ -154,6 +167,7 @@ final class BackendManager: ObservableObject {
                     self?.healthDetail = ""
                     self?.restartAttempts = 0
                     self?.restartDelay = 1.0
+                    self?.recoveryPhase = .idle
                 } else {
                     // Unexpected termination - attempt restart if not maxed out
                     let wasError = code != 0
@@ -162,6 +176,14 @@ final class BackendManager: ObservableObject {
                     } else {
                         self?.serverStatus = wasError ? .error : .stopped
                         self?.healthDetail = wasError ? "Server exited (code \(code))" : ""
+                        if wasError {
+                            self?.recoveryPhase = .failed(
+                                attempts: self?.restartAttempts ?? 0,
+                                maxAttempts: self?.maxRestartAttempts ?? 3
+                            )
+                        } else {
+                            self?.recoveryPhase = .idle
+                        }
                     }
                 }
             }
@@ -174,6 +196,7 @@ final class BackendManager: ObservableObject {
         } catch {
             NSLog("BackendManager: Failed to start server: \(error)")
             serverStatus = .error
+            recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
         }
     }
     
@@ -190,6 +213,7 @@ final class BackendManager: ObservableObject {
         
         NSLog("BackendManager: Stopping server")
         stopRequested = true
+        recoveryPhase = .idle
         terminateGracefully(process: process)
         serverStatus = .stopped
         isServerReady = false
@@ -224,6 +248,7 @@ final class BackendManager: ObservableObject {
             NSLog("BackendManager: Max restart attempts reached, giving up")
             serverStatus = .error
             healthDetail = "Server failed to start after \(maxRestartAttempts) attempts"
+            recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
             restartAttempts = 0
             restartDelay = 1.0
             return
@@ -236,9 +261,10 @@ final class BackendManager: ObservableObject {
         NSLog("BackendManager: Attempting restart #\(restartAttempts) in \(delay)s")
         serverStatus = .starting
         healthDetail = "Restarting (attempt \(restartAttempts)/\(maxRestartAttempts))..."
-        
+        recoveryPhase = .retryScheduled(attempt: restartAttempts, maxAttempts: maxRestartAttempts, delay: delay)
+
         restartTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            self?.startServer()
+            self?.startServer(isRecoveryAttempt: true)
         }
     }
     
@@ -283,6 +309,9 @@ final class BackendManager: ObservableObject {
                     self.isServerReady = true
                     self.healthDetail = "ASR: \(provider.isEmpty ? "ready" : provider) \(model.isEmpty ? "" : "(\(model))")"
                     self.serverStatus = .running
+                    self.recoveryPhase = .idle
+                    self.restartAttempts = 0
+                    self.restartDelay = 1.0
                     self.healthCheckTimer?.invalidate()
                     self.healthCheckTimer = nil
                     return
@@ -304,6 +333,20 @@ final class BackendManager: ObservableObject {
             }
         }.resume()
     }
+
+#if DEBUG
+    func _testSetState(
+        isServerReady: Bool,
+        serverStatus: ServerStatus,
+        healthDetail: String,
+        recoveryPhase: RecoveryPhase
+    ) {
+        self.isServerReady = isServerReady
+        self.serverStatus = serverStatus
+        self.healthDetail = healthDetail
+        self.recoveryPhase = recoveryPhase
+    }
+#endif
 
     private enum ProbeResult {
         case healthy(detail: String)

@@ -83,24 +83,18 @@ extension SidePanelView {
     }
 
     var filteredSegments: [TranscriptSegment] {
-        var base = appState.transcriptSegments
-        if let entityFilter {
-            base = base.filter { segment in
-                EntityHighlighter.matches(in: segment.text, entities: [entityFilter], mode: .extracted).isEmpty == false
-            }
+        let key = currentFilterCacheKey
+        if filteredCacheKey == key {
+            return filteredSegmentsCache
         }
 
-        let query = fullSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if viewMode == .full && !query.isEmpty {
-            let lowered = query.lowercased()
-            base = base.filter { segment in
-                let speaker = speakerLabel(for: segment).lowercased()
-                let stamp = formatTime(segment.t0)
-                return segment.text.lowercased().contains(lowered) || speaker.contains(lowered) || stamp.contains(lowered)
-            }
-        }
-
-        return base
+        // First render can happen before .onAppear seeds cache.
+        return Self.filterTranscriptSegments(
+            appState.transcriptSegments,
+            entityFilter: entityFilter,
+            normalizedFullQuery: key.normalizedFullQuery,
+            viewMode: viewMode
+        )
     }
 
     var visibleTranscriptSegments: [TranscriptSegment] {
@@ -192,6 +186,38 @@ extension SidePanelView {
     var fullSessionMeta: String {
         let speakers = Set(visibleTranscriptSegments.map { speakerLabel(for: $0) }).count
         return "\(speakers) speakers · \(appState.timerText) · \(fullWorkMode.rawValue) mode"
+    }
+
+    func refreshFilteredSegmentsCache(force: Bool = false) {
+        let nextKey = currentFilterCacheKey
+
+        if !force, filteredCacheKey == nextKey {
+            return
+        }
+
+        filteredSegmentsCache = Self.filterTranscriptSegments(
+            appState.transcriptSegments,
+            entityFilter: entityFilter,
+            normalizedFullQuery: nextKey.normalizedFullQuery,
+            viewMode: viewMode
+        )
+        filteredCacheKey = nextKey
+    }
+
+    var currentFilterCacheKey: FilterCacheKey {
+        FilterCacheKey(
+            transcriptRevision: appState.transcriptRevision,
+            entityFilterID: entityFilter?.id,
+            normalizedFullQuery: normalizedFullSearchQuery,
+            viewMode: viewMode
+        )
+    }
+
+    var normalizedFullSearchQuery: String {
+        if viewMode != .full {
+            return ""
+        }
+        return fullSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     var speakerChips: [SpeakerChipItem] {
@@ -611,14 +637,7 @@ extension SidePanelView {
     }
 
     func speakerLabel(for segment: TranscriptSegment) -> String {
-        if let speaker = segment.speaker, !speaker.isEmpty {
-            return speaker
-        }
-        if let source = segment.source {
-            let isMic = source == "microphone" || source == "mic"
-            return isMic ? "You" : "System"
-        }
-        return "Speaker"
+        Self.defaultSpeakerLabel(for: segment)
     }
 
     func qualityColor(_ quality: AudioQuality) -> Color {
@@ -667,5 +686,48 @@ extension SidePanelView {
     func decisionMeta(_ item: DecisionItem) -> String {
         let timestamp = decisionFirstSeen[item.id] ?? TimeInterval(appState.elapsedSeconds)
         return "\(formatTime(timestamp)) · \(confidenceMeta(item.confidence))"
+    }
+
+    static func filterTranscriptSegments(
+        _ segments: [TranscriptSegment],
+        entityFilter: EntityItem?,
+        normalizedFullQuery: String,
+        viewMode: ViewMode
+    ) -> [TranscriptSegment] {
+        var base = segments
+        if let entityFilter {
+            base = base.filter { segment in
+                EntityHighlighter.matches(in: segment.text, entities: [entityFilter], mode: .extracted).isEmpty == false
+            }
+        }
+
+        if viewMode == .full && !normalizedFullQuery.isEmpty {
+            base = base.filter { segment in
+                let speaker = defaultSpeakerLabel(for: segment).lowercased()
+                let stamp = formattedTimeForSearch(segment.t0)
+                return segment.text.lowercased().contains(normalizedFullQuery) ||
+                    speaker.contains(normalizedFullQuery) ||
+                    stamp.contains(normalizedFullQuery)
+            }
+        }
+
+        return base
+    }
+
+    static func defaultSpeakerLabel(for segment: TranscriptSegment) -> String {
+        if let speaker = segment.speaker, !speaker.isEmpty {
+            return speaker
+        }
+        if let source = segment.source {
+            let isMic = source == "microphone" || source == "mic"
+            return isMic ? "You" : "System"
+        }
+        return "Speaker"
+    }
+
+    static func formattedTimeForSearch(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%02d:%02d", minutes, secs)
     }
 }

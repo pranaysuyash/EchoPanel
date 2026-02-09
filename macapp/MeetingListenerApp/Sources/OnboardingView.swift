@@ -4,6 +4,7 @@ import SwiftUI
 /// Guides users through permissions and setup before first session.
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var backendManager = BackendManager.shared
     @State private var currentStep: OnboardingStep = .welcome
     @State private var hfToken: String = ""
     @Binding var isPresented: Bool
@@ -289,14 +290,35 @@ struct OnboardingView: View {
                 .background(Color.red.opacity(0.1))
                 .cornerRadius(8)
             } else if !appState.isServerReady {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Starting server...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(backendStatusText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if !backendManager.healthDetail.isEmpty {
+                        Text(backendManager.healthDetail)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
+        }
+    }
+
+    private var backendStatusText: String {
+        switch appState.backendUXState {
+        case .ready:
+            return "Server ready."
+        case .preparing:
+            return "Starting server..."
+        case .recovering(let attempt, let maxAttempts):
+            return "Recovering backend (attempt \(attempt)/\(maxAttempts))..."
+        case .failed:
+            return "Backend unavailable."
         }
     }
     

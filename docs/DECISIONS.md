@@ -65,3 +65,30 @@ This is a lightweight decision log. Prefer short entries that explain why.
 
 **Details**: See `docs/audit/GAPS_ANALYSIS_2026-02.md`
 
+### ASR Provider Strategy — Voxtral Transcribe 2 (researched 2026-02-08)
+
+**Decision**: Try Voxtral Realtime (4B, open-source) locally as alternative ASR provider. Keep pyannote for diarization. Voxtral Mini Transcribe V2 (paid API) is optional/future — only pursue if paid plan is justified.
+
+**Why**: Voxtral Realtime is Apache 2.0 open weights — can self-host for free with no API key. 4B params is feasible on Apple Silicon. Better accuracy than Whisper large-v3 at sub-200ms latency. Diarization stays with pyannote since V2 (the only Voxtral model with native diarization) is API-only and paid.
+
+**What we're doing**:
+
+| Component | Now | Future (if paid justified) |
+|-----------|-----|---------------------------|
+| Live transcription | Faster-Whisper (default) + Voxtral Realtime local (try out) | Voxtral Realtime API ($0.006/min) |
+| Diarization | pyannote (keep as-is) | Voxtral Mini Transcribe V2 API ($0.003/min) |
+
+**Key facts**:
+- Voxtral Realtime: 4B params, Apache 2.0, open weights on HuggingFace — free to self-host
+- Voxtral Mini Transcribe V2: API-only (not open-source), $0.003/min, native diarization — skip for now
+- Mistral API has free "Experiment" tier for testing if we want to try V2 later
+- Same PCM16/16kHz input format EchoPanel already uses — no capture changes needed
+- pyannote stays for diarization — already works, no reason to replace with a paid API
+
+**What would change this decision**:
+- If Voxtral Realtime runs well locally on M1 8GB → could become default over Faster-Whisper
+- If Mistral open-sources V2 with diarization → could replace pyannote for free
+- If paid V2 diarization quality is significantly better than pyannote → justify the API cost
+
+**Details**: See `docs/VOXTRAL_RESEARCH_2026-02.md`
+

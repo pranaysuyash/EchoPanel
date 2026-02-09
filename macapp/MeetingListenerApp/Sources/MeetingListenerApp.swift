@@ -256,8 +256,11 @@ struct MeetingListenerApp: App {
             
             if !backendManager.isServerReady {
                 // Surface an actionable error in the side panel header.
-                appState.streamStatus = .error
-                appState.statusMessage = backendManager.healthDetail.isEmpty ? "Backend not ready. Open Diagnostics to see logs." : backendManager.healthDetail
+                appState.reportBackendNotReady(
+                    detail: backendManager.healthDetail.isEmpty
+                        ? "Backend not ready. Open Diagnostics to see logs."
+                        : backendManager.healthDetail
+                )
                 return
             }
             

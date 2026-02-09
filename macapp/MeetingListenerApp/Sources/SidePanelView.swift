@@ -95,6 +95,13 @@ struct SidePanelView: View {
         }
     }
 
+    struct FilterCacheKey: Equatable {
+        let transcriptRevision: Int
+        let entityFilterID: UUID?
+        let normalizedFullQuery: String
+        let viewMode: ViewMode
+    }
+
     @ObservedObject var appState: AppState
     let onEndSession: () -> Void
     let onModeChange: ((ViewMode) -> Void)?
@@ -115,6 +122,8 @@ struct SidePanelView: View {
     @State var fullSearchQuery = ""
     @State var selectedSessionID: String = "live"
     @State var timelinePosition = 1.0
+    @State var filteredCacheKey: FilterCacheKey?
+    @State var filteredSegmentsCache: [TranscriptSegment] = []
 
     @State var focusedSegmentID: UUID?
     @State var lensSegmentID: UUID?
@@ -188,6 +197,7 @@ struct SidePanelView: View {
                 viewMode = .roll
             }
             lastTranscriptCount = appState.transcriptSegments.count
+            refreshFilteredSegmentsCache(force: true)
             sanitizeStateForTranscript()
             installKeyboardMonitor()
             showCaptureDetails = false
@@ -217,11 +227,13 @@ struct SidePanelView: View {
             showCaptureDetails = false
             storedViewModeRaw = newValue.rawValue
             onModeChange?(newValue)
+            refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
         .onChange(of: appState.transcriptSegments.count) { newCount in
             let diff = newCount - lastTranscriptCount
             lastTranscriptCount = newCount
+            refreshFilteredSegmentsCache()
             guard diff > 0 else {
                 sanitizeStateForTranscript()
                 return
@@ -241,7 +253,16 @@ struct SidePanelView: View {
 
             sanitizeStateForTranscript()
         }
-        .onChange(of: appState.transcriptSegments.map(\.id)) { _ in
+        .onChange(of: appState.transcriptRevision) { _ in
+            refreshFilteredSegmentsCache()
+            sanitizeStateForTranscript()
+        }
+        .onChange(of: entityFilter?.id) { _ in
+            refreshFilteredSegmentsCache()
+            sanitizeStateForTranscript()
+        }
+        .onChange(of: fullSearchQuery) { _ in
+            refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
         .onChange(of: followLive) { isOn in

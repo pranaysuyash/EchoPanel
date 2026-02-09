@@ -21,6 +21,49 @@ final class AppState: ObservableObject {
         case both = "Both"
     }
 
+    enum AppRuntimeErrorState: Equatable {
+        case backendNotReady(detail: String)
+        case screenRecordingPermissionRequired
+        case screenRecordingRequiresRelaunch
+        case microphonePermissionRequired
+        case systemCaptureFailed(detail: String)
+        case microphoneCaptureFailed(detail: String)
+        case streaming(detail: String)
+
+        var message: String {
+            switch self {
+            case .backendNotReady(let detail):
+                return detail.isEmpty ? "Backend not ready. Open Diagnostics to see logs." : detail
+            case .screenRecordingPermissionRequired:
+                return "Screen Recording permission required for System Audio. Open Settings → Privacy & Security → Screen Recording."
+            case .screenRecordingRequiresRelaunch:
+                return "Screen Recording permission was granted, but macOS requires you to quit and relaunch EchoPanel before system audio can be captured."
+            case .microphonePermissionRequired:
+                return "Microphone permission required for Microphone audio"
+            case .systemCaptureFailed(let detail):
+                return "Capture failed: \(detail)"
+            case .microphoneCaptureFailed(let detail):
+                return "Mic capture failed: \(detail)"
+            case .streaming(let detail):
+                return detail
+            }
+        }
+
+        var isStreamingError: Bool {
+            if case .streaming = self {
+                return true
+            }
+            return false
+        }
+    }
+
+    enum BackendUXState: Equatable {
+        case ready
+        case preparing
+        case recovering(attempt: Int, maxAttempts: Int)
+        case failed(detail: String)
+    }
+
     struct SourceProbe: Identifiable {
         let id: String
         let label: String
@@ -53,6 +96,8 @@ final class AppState: ObservableObject {
     @Published var audioQuality: AudioQuality = .unknown
     @Published var streamStatus: StreamStatus = .reconnecting
     @Published var statusMessage: String = ""
+    @Published var runtimeErrorState: AppRuntimeErrorState?
+    @Published private(set) var transcriptRevision: Int = 0
     
     // Permission Tracking
     @Published var screenRecordingPermission: PermissionState = .unknown
@@ -88,6 +133,26 @@ final class AppState: ObservableObject {
     // H9 Fix: Expose backend status
     var isServerReady: Bool { BackendManager.shared.isServerReady }
     var serverStatus: BackendManager.ServerStatus { BackendManager.shared.serverStatus }
+    var backendUXState: BackendUXState {
+        if isServerReady {
+            return .ready
+        }
+
+        let manager = BackendManager.shared
+        switch manager.recoveryPhase {
+        case .retryScheduled(let attempt, let maxAttempts, _):
+            return .recovering(attempt: attempt, maxAttempts: maxAttempts)
+        case .failed:
+            let detail = manager.healthDetail.isEmpty ? "Backend failed to start." : manager.healthDetail
+            return .failed(detail: detail)
+        case .idle:
+            if manager.serverStatus == .error || manager.serverStatus == .runningNeedsSetup {
+                let detail = manager.healthDetail.isEmpty ? "Backend not ready." : manager.healthDetail
+                return .failed(detail: detail)
+            }
+            return .preparing
+        }
+    }
 
     @Published var finalSummaryMarkdown: String = ""
     @Published var finalSummaryJSON: [String: Any] = [:]
@@ -187,6 +252,11 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.streamStatus = status
                 self?.statusMessage = message
+                if status == .error {
+                    self?.runtimeErrorState = .streaming(detail: message)
+                } else if self?.runtimeErrorState?.isStreamingError == true {
+                    self?.runtimeErrorState = nil
+                }
             }
         }
         streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
@@ -240,6 +310,7 @@ final class AppState: ObservableObject {
                         newSegments.append(segment)
                     }
                     self?.transcriptSegments = newSegments
+                    self?.bumpTranscriptRevision()
                 }
 
                 NotificationCenter.default.post(name: .finalSummaryReady, object: nil)
@@ -335,11 +406,29 @@ final class AppState: ObservableObject {
         return nil
     }
 
+    func reportBackendNotReady(detail: String) {
+        streamStatus = .error
+        let state = AppRuntimeErrorState.backendNotReady(detail: detail)
+        runtimeErrorState = state
+        statusMessage = state.message
+    }
+
+    private func setSessionError(_ error: AppRuntimeErrorState) {
+        sessionState = .error
+        runtimeErrorState = error
+        statusMessage = error.message
+    }
+
+    private func bumpTranscriptRevision() {
+        transcriptRevision &+= 1
+    }
+
     func startSession() {
         guard sessionState != .listening else { return }
         resetSession()
         sessionState = .starting
         statusMessage = "Requesting permission"
+        runtimeErrorState = nil
         finalizationOutcome = .none
 
         Task {
@@ -358,13 +447,11 @@ final class AppState: ObservableObject {
                 let effective = granted && CGPreflightScreenCaptureAccess()
                 screenRecordingPermission = effective ? .authorized : .denied
                 guard granted else {
-                    sessionState = .error
-                    statusMessage = "Screen Recording permission required for System Audio. Open Settings → Privacy & Security → Screen Recording."
+                    setSessionError(.screenRecordingPermissionRequired)
                     return
                 }
                 guard effective else {
-                    sessionState = .error
-                    statusMessage = "Screen Recording permission was granted, but macOS requires you to quit and relaunch EchoPanel before system audio can be captured."
+                    setSessionError(.screenRecordingRequiresRelaunch)
                     return
                 }
             }
@@ -374,8 +461,7 @@ final class AppState: ObservableObject {
                 let micGranted = await micCapture.requestPermission()
                 microphonePermission = micGranted ? .authorized : .denied
                 guard micGranted else {
-                    sessionState = .error
-                    statusMessage = "Microphone permission required for Microphone audio"
+                    setSessionError(.microphonePermissionRequired)
                     return
                 }
             }
@@ -390,8 +476,7 @@ final class AppState: ObservableObject {
                 do {
                     try await audioCapture.startCapture()
                 } catch {
-                    sessionState = .error
-                    statusMessage = "Capture failed: \(error.localizedDescription)"
+                    setSessionError(.systemCaptureFailed(detail: error.localizedDescription))
                     return
                 }
             }
@@ -401,8 +486,7 @@ final class AppState: ObservableObject {
                 do {
                     try micCapture.startCapture()
                 } catch {
-                    sessionState = .error
-                    statusMessage = "Mic capture failed: \(error.localizedDescription)"
+                    setSessionError(.microphoneCaptureFailed(detail: error.localizedDescription))
                     // Stop system capture if it was started
                     if audioSource == .both {
                         await audioCapture.stopCapture()
@@ -413,6 +497,7 @@ final class AppState: ObservableObject {
 
             streamStatus = .reconnecting
             statusMessage = "Connecting"
+            runtimeErrorState = nil
             streamer.connect(sessionID: id)
             startTimer()
             sessionState = .listening
@@ -459,6 +544,7 @@ final class AppState: ObservableObject {
             self.sessionState = .idle
             self.statusMessage = ""
             self.streamStatus = .reconnecting // Reset stream status
+            self.runtimeErrorState = nil
             self.noAudioDetected = false
 
             NotificationCenter.default.post(name: .summaryShouldOpen, object: nil)
@@ -468,6 +554,7 @@ final class AppState: ObservableObject {
     func resetSession() {
         elapsedSeconds = 0
         transcriptSegments = []
+        bumpTranscriptRevision()
         actions = []
         decisions = []
         risks = []
@@ -482,6 +569,7 @@ final class AppState: ObservableObject {
         inputLastSeenBySource = [:]
         asrLastSeenBySource = [:]
         asrEventCount = 0
+        runtimeErrorState = nil
     }
     
     /// Save current session snapshot for auto-save (v0.2)
@@ -796,6 +884,7 @@ final class AppState: ObservableObject {
                 transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source))
                 lastPartialIndexBySource[sourceKey] = transcriptSegments.count - 1
             }
+            bumpTranscriptRevision()
         }
     }
 
@@ -816,6 +905,7 @@ final class AppState: ObservableObject {
                 transcriptSegments.append(segment)
             }
             lastPartialIndexBySource[sourceKey] = nil
+            bumpTranscriptRevision()
             
             // H6 Fix: Append to persistent transcript log
             let payload: [String: Any] = [
@@ -874,6 +964,7 @@ final class AppState: ObservableObject {
         sessionState = .listening
         streamStatus = .streaming
         statusMessage = "Demo mode"
+        runtimeErrorState = nil
         audioQuality = .good
         elapsedSeconds = 12 * 60 + 34
         audioSource = .both
@@ -885,6 +976,7 @@ final class AppState: ObservableObject {
             TranscriptSegment(text: "I'll send the proposal tomorrow.", t0: 33, t1: 35, isFinal: true, confidence: 0.82, source: "mic", speaker: nil),
             TranscriptSegment(text: "Let’s keep the scope focused.", t0: 34, t1: 36, isFinal: true, confidence: 0.78, source: "system", speaker: nil),
         ]
+        bumpTranscriptRevision()
 
         actions = [
             ActionItem(text: "Send revised proposal", owner: "Pranay", due: "Tue", confidence: 0.82),

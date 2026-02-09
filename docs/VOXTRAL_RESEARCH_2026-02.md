@@ -112,29 +112,24 @@ response = client.audio.transcriptions.complete(
 
 ## 6. Integration Strategy for EchoPanel
 
-### Recommended: Tiered Approach
+### Recommended: Try Voxtral Realtime Locally, Keep pyannote, V2 API Optional
 
-| Layer | Model | Purpose | Fallback |
-|-------|-------|---------|----------|
-| **Live (during meeting)** | Voxtral Realtime | Real-time captions, sub-200ms | Faster-Whisper (local) |
-| **Post-session** | Voxtral Mini Transcribe V2 | Diarized transcript + word timestamps | pyannote + Faster-Whisper (local) |
+**Primary (default)**: Faster-Whisper (local) — current setup, works offline.  
+**Try out**: Voxtral Realtime (local, open-source) — self-host the 4B model, no API key needed.  
+**Keep**: pyannote for diarization — already works, no paid replacement needed.  
+**Optional/future**: Voxtral Mini Transcribe V2 API — only if paid plan is justified later.
 
-### Deployment Options
-
-| Strategy | Live Transcription | Diarization | Fully Offline? | Dependencies |
-|----------|-------------------|-------------|----------------|--------------|
-| **Full API** | Voxtral Realtime (API) | V2 (API) | No | `mistralai[realtime]` |
-| **Hybrid** | Voxtral Realtime (local, 4B) | V2 (API) | Partial | HuggingFace model + `mistralai` |
-| **Full local** | Voxtral Realtime (local, 4B) | pyannote (keep) | Yes | HuggingFace model + torch + pyannote |
-| **Current** | Faster-Whisper (local) | pyannote (local) | Yes | faster-whisper + torch + pyannote |
+| Component | Current | Try Out (open-source) | Future (paid, optional) |
+|-----------|---------|----------------------|------------------------|
+| **Live transcription** | Faster-Whisper | Voxtral Realtime (local, 4B) | Voxtral Realtime API ($0.006/min) |
+| **Diarization** | pyannote | pyannote (keep) | Voxtral V2 API ($0.003/min) |
 
 ### Recommended Path
 
-**Hybrid approach** — best trade-off for EchoPanel's local-first philosophy:
-
-1. **Live**: Voxtral Realtime via API (or local if user has GPU headroom). Replaces Faster-Whisper as primary. Faster-Whisper remains as offline fallback when no API key is set.
-2. **Post-session**: Voxtral Mini Transcribe V2 via API for diarized, timestamped final transcript. Replaces pyannote. pyannote remains as offline fallback.
-3. **Config**: `ECHOPANEL_ASR_PROVIDER=voxtral_realtime` (new) or `faster_whisper` (existing default).
+1. **Now**: Download Voxtral Realtime (4B) from HuggingFace. Build `provider_voxtral_realtime.py` for local inference. Test against Faster-Whisper on real meeting audio.
+2. **Keep**: pyannote stays for diarization. No changes needed.
+3. **Config**: `ECHOPANEL_ASR_PROVIDER=faster_whisper` (default) or `voxtral_realtime` (local open-source).
+4. **Later (optional)**: If paid API is justified, add Voxtral V2 for batch diarization as an alternative to pyannote.
 
 ### Benefits Over Current Stack
 
@@ -148,31 +143,63 @@ response = client.audio.transcriptions.complete(
 
 1. **New file**: `server/services/provider_voxtral_realtime.py`
    - Implements `ASRProvider` interface
-   - Wraps `client.audio.realtime.transcribe_stream()`
-   - Maps `TranscriptionStreamTextDelta` → `ASRSegment(is_final=False)`
-   - Maps `TranscriptionStreamDone` → `ASRSegment(is_final=True)`
-   - Requires `ECHOPANEL_MISTRAL_API_KEY` env var
+   - Loads Voxtral Realtime (4B) from HuggingFace for local inference
+   - Streams PCM audio → text segments, same interface as Faster-Whisper provider
+   - No API key needed (open-source model)
 
-2. **New file**: `server/services/provider_voxtral_batch.py`
-   - Post-session batch transcription with diarization
-   - Calls `client.audio.transcriptions.complete()` with `diarize=True`
-   - Returns diarized segments compatible with existing `merge_transcript_with_speakers()` format
+2. **Update**: `server/services/asr_stream.py`
+   - Import and register new provider
+   - Select via `ECHOPANEL_ASR_PROVIDER=voxtral_realtime`
 
-3. **Update**: `server/services/asr_stream.py`
-   - Import and register new providers
-   - Auto-select based on `ECHOPANEL_ASR_PROVIDER` env var
+3. **Update**: `server/requirements.txt`
+   - Add HuggingFace model dependencies (transformers, etc.) as optional
 
-4. **Update**: `server/requirements.txt`
-   - Add `mistralai[realtime]` as optional dependency
-
-5. **No changes needed**:
+4. **No changes needed**:
+   - Diarization (`diarization.py`) — pyannote stays as-is
    - WebSocket protocol (`ws_live_listener.py`) — same event format
    - macOS app audio capture — same PCM16/16kHz format
    - Frontend transcript rendering — same data shape
 
+5. **Future (optional, paid API)**:
+   - `server/services/provider_voxtral_batch.py` — V2 API with native diarization
+   - Requires `ECHOPANEL_MISTRAL_API_KEY` env var
+   - Only build if paid plan is justified
+
 ---
 
-## 7. Comparison: Voxtral vs Current Stack
+## 7. Mistral API Plans & Pricing
+
+### API Tiers
+
+| Tier | Cost | Notes |
+|------|------|-------|
+| **Experiment** | Free | Rate-limited, for testing/prototyping |
+| **Scale** | Pay-as-you-go | Production use, no rate limits |
+
+Sign up at [console.mistral.ai](https://console.mistral.ai). Billing managed at [admin.mistral.ai](https://admin.mistral.ai).
+
+### Voxtral Model Pricing (per minute of audio)
+
+| Model | $/min | Type | Open Weights |
+|-------|-------|------|-------------|
+| Voxtral Mini (chat+audio) | $0.001 | Open | Yes |
+| Voxtral Mini Transcribe V2 | $0.003 | Premier | No |
+| Voxtral Small (chat+audio) | $0.004 | Open | Yes |
+| Voxtral Realtime | $0.006 | Open | Yes |
+
+### Cost Estimates for EchoPanel Usage
+
+| Scenario | Monthly Audio | Realtime Cost | V2 Diarization | Total |
+|----------|--------------|---------------|----------------|-------|
+| Light (5 meetings/week, 30min) | 10 hours | $3.60 | $1.80 | **$5.40** |
+| Medium (10 meetings/week, 45min) | 30 hours | $10.80 | $5.40 | **$16.20** |
+| Heavy (20 meetings/week, 1hr) | 80 hours | $28.80 | $14.40 | **$43.20** |
+
+The free Experiment tier is sufficient for initial testing and prototyping before committing to paid usage.
+
+---
+
+## 8. Comparison: Voxtral vs Current Stack
 
 | Feature | Current (Faster-Whisper + pyannote) | Voxtral Transcribe 2 |
 |---------|-------------------------------------|----------------------|
@@ -187,7 +214,7 @@ response = client.audio.transcriptions.complete(
 
 ---
 
-## 8. Risks & Considerations
+## 9. Risks & Considerations
 
 - **API dependency**: Full Voxtral path requires internet + API key. EchoPanel's "works offline" promise requires keeping Faster-Whisper as fallback.
 - **Privacy**: Audio leaves the machine when using API. Must be clearly communicated in UI. Consistent with existing LLM strategy (Decision v0.3: "Transcript text can optionally be sent to your own LLM provider").
@@ -197,7 +224,7 @@ response = client.audio.transcriptions.complete(
 
 ---
 
-## 9. Next Steps
+## 10. Next Steps
 
 - [ ] Obtain Mistral API key and test Voxtral Realtime with EchoPanel's PCM stream
 - [ ] Benchmark Voxtral Realtime vs Faster-Whisper on sample meeting audio
