@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Optional, Set
@@ -27,6 +28,8 @@ WS_AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
 @dataclass
 class SessionState:
     session_id: Optional[str] = None
+    attempt_id: Optional[str] = None  # V1: For correlation with client reconnects
+    connection_id: Optional[str] = None  # V1: Per-WS connection ID
     started: bool = False
     tasks: list[asyncio.Task] = field(default_factory=list)  # General tasks (for future use)
     asr_tasks: list[asyncio.Task] = field(default_factory=list)
@@ -56,6 +59,10 @@ class SessionState:
     asr_last_dropped: int = 0  # For computing dropped_recent
     audio_time_processed: float = 0.0  # Total audio seconds processed
     processing_time_total: float = 0.0  # Total processing time spent
+    # V1: Provider info for metrics
+    provider_name: str = "unknown"
+    model_id: str = "unknown"
+    vad_enabled: bool = False
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -248,6 +255,10 @@ async def put_audio(
         return
     try:
         q.put_nowait(chunk)
+        # V1: Track bytes received
+        if state is not None:
+            from server.services.metrics_registry import get_registry
+            get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
     except asyncio.QueueFull:
         # Drop oldest to avoid lag spiral
         _ = q.get_nowait()
@@ -256,6 +267,9 @@ async def put_audio(
             state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
             # Always log drops (not just DEBUG) for observability
             logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
+            # V1: Track in metrics registry
+            from server.services.metrics_registry import get_registry
+            get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
             # P1 fix: Send backpressure warning to client (throttled)
             if websocket is not None and not state.backpressure_warned:
                 state.backpressure_warned = True
@@ -352,6 +366,9 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                 chunk_seconds = float(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2"))
                 realtime_factor = avg_infer_time / chunk_seconds if chunk_seconds > 0 else 0.0
                 
+                # Calculate backlog seconds
+                backlog_seconds = fill_ratio * chunk_seconds * queue_max if queue_max > 0 else 0.0
+                
                 # Backpressure warnings
                 if fill_ratio > 0.95 and not state.backpressure_warned:
                     state.backpressure_warned = True
@@ -371,19 +388,35 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                 elif fill_ratio < 0.70:
                     state.backpressure_warned = False
                 
-                # Emit metrics
+                # V1: Emit enhanced metrics with correlation IDs and provider info
                 await ws_send(state, websocket, {
                     "type": "metrics",
+                    "session_id": state.session_id,
+                    "attempt_id": state.attempt_id,
+                    "connection_id": state.connection_id,
                     "source": source,
                     "queue_depth": queue_depth,
                     "queue_max": queue_max,
                     "queue_fill_ratio": round(fill_ratio, 2),
                     "dropped_total": state.dropped_frames,
                     "dropped_recent": dropped_recent,
+                    "dropped_chunks_last_10s": dropped_recent,  # V1: Explicit field name
                     "avg_infer_ms": round(avg_infer_time * 1000, 1),
+                    "avg_processing_ms": round(avg_infer_time * 1000, 1),  # V1: Alias for consistency
                     "realtime_factor": round(realtime_factor, 2),
+                    "backlog_seconds": round(backlog_seconds, 2),  # V1: New metric
+                    "provider": state.provider_name,  # V1: Provider name
+                    "model_id": state.model_id,  # V1: Model identifier
+                    "vad_enabled": state.vad_enabled,  # V1: VAD status
+                    "sources_active": list(state.active_sources),  # V1: Active sources list
                     "timestamp": time.time()
                 })
+                
+                # V1: Update global metrics registry
+                from server.services.metrics_registry import get_registry
+                registry = get_registry()
+                registry.set_gauge("queue_depth", queue_depth, labels={"source": source})
+                registry.observe_histogram("inference_time_ms", avg_infer_time * 1000)
                 
     except asyncio.CancelledError:
         return
@@ -439,6 +472,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
 
                     if msg_type == "start":
                         state.session_id = payload.get("session_id")
+                        state.attempt_id = payload.get("attempt_id")  # V1: Client attempt ID
+                        state.connection_id = payload.get("connection_id") or str(uuid.uuid4())  # V1: Generate if not provided
                         sample_rate = payload.get("sample_rate", 16000)
                         encoding = payload.get("format", "pcm_s16le")
                         channels = payload.get("channels", 1)
@@ -454,8 +489,33 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         
                         state.sample_rate = sample_rate
                         state.started = True
+                        
+                        # V1: Get provider info for metrics
+                        from server.services.asr_providers import ASRProviderRegistry, _get_default_config
+                        config = _get_default_config()
+                        provider = ASRProviderRegistry.get_provider(config=config)
+                        if provider:
+                            state.provider_name = provider.name
+                            state.model_id = config.model_name
+                            state.vad_enabled = config.vad_enabled
+                        
+                        # V1: Track connection in metrics
+                        from server.services.metrics_registry import get_registry
+                        get_registry().inc_counter("ws_connections_total")
+                        get_registry().set_gauge("active_sessions", 1)  # Simplified - should count actual
+                        
                         # PR2: Now ASR is ready, send streaming ACK
-                        await ws_send(state, websocket, {"type": "status", "state": "streaming", "message": "Streaming"})
+                        await ws_send(state, websocket, {
+                            "type": "status", 
+                            "state": "streaming", 
+                            "message": "Streaming",
+                            "connection_id": state.connection_id  # V1: Echo back for confirmation
+                        })
+                        
+                        logger.info(f"Session started: session_id={state.session_id}, "
+                                  f"attempt_id={state.attempt_id}, connection_id={state.connection_id}, "
+                                  f"provider={state.provider_name}, model={state.model_id}")
+                        
                         if DEBUG:
                             logger.debug(f"ws_live_listener: start session_id={state.session_id}")
                         state.analysis_tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
@@ -597,6 +657,10 @@ async def ws_live_listener(websocket: WebSocket) -> None:
         # P2-13: Close audio dump files
         _close_audio_dumps(state)
         
+        # V1: Track disconnect in metrics
+        from server.services.metrics_registry import get_registry
+        get_registry().inc_counter("ws_disconnects_total")
+        
         # PR2: Cancel metrics task
         if state.metrics_task:
             state.metrics_task.cancel()
@@ -612,5 +676,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
             task.cancel()
         await asyncio.gather(*all_tasks, return_exceptions=True)
         # Log session metrics for observability
-        if state.dropped_frames > 0:
-            logger.info(f"Session {state.session_id} complete: dropped_frames={state.dropped_frames}")
+        logger.info(f"Session {state.session_id} complete: "
+                   f"connection_id={state.connection_id}, "
+                   f"dropped_frames={state.dropped_frames}, "
+                   f"transcript_segments={len(state.transcript)}, "
+                   f"audio_time={state.audio_time_processed:.1f}s")

@@ -11,6 +11,26 @@ struct SourceMetrics {
     let avgInferMs: Double
     let realtimeFactor: Double
     let timestamp: TimeInterval
+    
+    // V1: Additional fields for enhanced observability
+    let connectionId: String?
+    let sessionId: String?
+    let attemptId: String?
+}
+
+// V1: Correlation IDs for observability
+struct CorrelationIDs {
+    let sessionId: String
+    let attemptId: String
+    let connectionId: String
+    
+    static func generate(sessionId: String, attemptId: String) -> CorrelationIDs {
+        return CorrelationIDs(
+            sessionId: sessionId,
+            attemptId: attemptId,
+            connectionId: UUID().uuidString
+        )
+    }
 }
 
 final class WebSocketStreamer: NSObject {
@@ -21,6 +41,10 @@ final class WebSocketStreamer: NSObject {
     var onEntitiesUpdate: (([EntityItem]) -> Void)?
     var onFinalSummary: ((String, [String: Any]) -> Void)?
     var onMetrics: ((SourceMetrics) -> Void)? // PR2: Metrics callback
+    
+    // V1: Correlation ID access for logging
+    var correlationIDs: CorrelationIDs? { _correlationIDs }
+    private var _correlationIDs: CorrelationIDs?
 
     private let session = URLSession(configuration: .default)
     private var task: URLSessionWebSocketTask?
@@ -29,6 +53,7 @@ final class WebSocketStreamer: NSObject {
     private var pingTimer: Timer?
 
     private var sessionID: String?
+    private var attemptID: String?
     private var reconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 10
     private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
@@ -37,8 +62,16 @@ final class WebSocketStreamer: NSObject {
         super.init()
     }
 
-    func connect(sessionID: String) {
+    func connect(sessionID: String, attemptID: String? = nil) {
         self.sessionID = sessionID
+        self.attemptID = attemptID ?? UUID().uuidString
+        
+        // V1: Generate correlation IDs for this connection
+        self._correlationIDs = CorrelationIDs.generate(
+            sessionId: sessionID,
+            attemptId: self.attemptID!
+        )
+        
         reconnectDelay = 1
 
         task?.cancel(with: .goingAway, reason: nil)
@@ -49,6 +82,22 @@ final class WebSocketStreamer: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.sendStart()
         }
+        
+        // V1: Structured logging with correlation IDs (async to MainActor)
+        Task { @MainActor in
+            StructuredLogger.shared.withContext(
+                sessionId: sessionID,
+                attemptId: self.attemptID,
+                connectionId: self._correlationIDs?.connectionId
+            ) {
+                StructuredLogger.shared.info("WebSocket connecting", metadata: [
+                    "url_scheme": self.url.scheme ?? "ws",
+                    "url_host": self.url.host ?? "localhost",
+                    "url_port": self.url.port ?? 80
+                ])
+            }
+        }
+        
         if debugEnabled {
             // Sanitize URL: only log scheme and host to avoid leaking tokens in query params
             let sanitizedURL = "\(url.scheme ?? "ws")://\(url.host ?? "localhost"):\(url.port ?? 80)"
@@ -114,13 +163,29 @@ final class WebSocketStreamer: NSObject {
         if debugEnabled {
             NSLog("WebSocketStreamer: send start")
         }
-        let payload: [String: Any] = [
+        
+        // V1: Include correlation IDs in start message
+        var payload: [String: Any] = [
             "type": "start",
             "session_id": sessionID,
             "sample_rate": 16000,
             "format": "pcm_s16le",
             "channels": 1
         ]
+        
+        if let correlationIDs = _correlationIDs {
+            payload["attempt_id"] = correlationIDs.attemptId
+            payload["connection_id"] = correlationIDs.connectionId
+        }
+        
+        Task { @MainActor in
+            StructuredLogger.shared.logWebSocketEvent(
+                "start",
+                connectionId: _correlationIDs?.connectionId ?? "unknown",
+                metadata: ["session_id": sessionID]
+            )
+        }
+        
         sendJSON(payload)
     }
 
@@ -234,6 +299,7 @@ final class WebSocketStreamer: NSObject {
 
         case "metrics":
             // PR2: Parse metrics message
+            // V1: Include correlation IDs from server response
             let metrics = SourceMetrics(
                 source: object["source"] as? String ?? "",
                 queueDepth: object["queue_depth"] as? Int ?? 0,
@@ -243,7 +309,10 @@ final class WebSocketStreamer: NSObject {
                 droppedRecent: object["dropped_recent"] as? Int ?? 0,
                 avgInferMs: object["avg_infer_ms"] as? Double ?? 0.0,
                 realtimeFactor: object["realtime_factor"] as? Double ?? 0.0,
-                timestamp: object["timestamp"] as? TimeInterval ?? 0
+                timestamp: object["timestamp"] as? TimeInterval ?? 0,
+                connectionId: object["connection_id"] as? String ?? self._correlationIDs?.connectionId,
+                sessionId: object["session_id"] as? String ?? self.sessionID,
+                attemptId: object["attempt_id"] as? String ?? self.attemptID
             )
             DispatchQueue.main.async {
                 self.onMetrics?(metrics)

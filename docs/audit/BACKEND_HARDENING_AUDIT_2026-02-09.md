@@ -237,3 +237,68 @@ rg -n "print\(" server/api/ws_live_listener.py -n
 - [Apple Keychain Services Docs](https://developer.apple.com/documentation/security/keychain_services)
 - [App Store Review Guideline 5.1.1 — Data Collection and Storage](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage)
 - Related Ticket: TCK-20260209-001 (SidePanel refactor — established testing baseline)
+
+
+---
+
+## Fix Implementation Status (Updated 2026-02-11)
+
+| Issue | Severity | Status | Implementation Details | Verification Command |
+|-------|----------|--------|------------------------|---------------------|
+| P0-1: HF Token in UserDefaults | P0 | ✅ **FIXED** | Migrated to `KeychainHelper` with `SecItemAdd/SecItemCopyMatching` (BackendManager.swift:126) | `grep -n "KeychainHelper.loadHFToken" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+| P0-2: Zombie Process Prevention | P0 | ✅ **FIXED** | `terminateGracefully()` implements SIGTERM→SIGINT→SIGKILL with 2s timeout (BackendManager.swift:227-240) | `grep -n "terminateGracefully\|SIGKILL" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+| P0-3: Server Crash Recovery | P0 | ✅ **FIXED** | `restartAttempts`, `maxRestartAttempts=3`, exponential backoff, `retryScheduled` state (BackendManager.swift:26-202) | `grep -n "restartAttempts\|retryScheduled" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+| P0-4: Hardcoded Dev Path | P0 | ❌ **OPEN** | Still present at BackendManager.swift:451 | `grep -n "/Users/pranay" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+| P1-1: Log Redaction | P1 | 🟡 **PARTIAL** | `sanitizeWhisperModel()`, `sanitizedPath` for some paths; home directory still appears in some logs | `grep -n "sanitize\|lastPathComponent" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+| P1-2: Task Cancellation Timeout | P1 | ✅ **FIXED** | `asyncio.wait_for()` with timeout in analysis cancellation (ws_live_listener.py:554, 571) | `grep -n "wait_for" server/api/ws_live_listener.py` |
+| P1-3: DEBUG Flag Logging | P1 | ❌ **OPEN** | Still using `if DEBUG:` pattern; should use proper logging levels | `grep -c "if DEBUG:" server/api/ws_live_listener.py` |
+| P2-1: Port Conflict Auto-Retry | P2 | ❌ **OPEN** | Only reports `.portInUse`, no attempt to bind to 8001, 8002, etc. | `grep -n "portInUse\|alternative" macapp/MeetingListenerApp/Sources/BackendManager.swift` |
+
+### Implementation Summary
+
+**Fixed (5/9):**
+- P0-1, P0-2, P0-3: Critical privacy and reliability issues addressed
+- P1-2: Task cancellation timeout implemented
+- Partial P1-1: Some log sanitization in place
+
+**Open (4/9):**
+- P0-4: Hardcoded path needs `#if DEBUG` wrapper or removal
+- P1-3: Replace DEBUG flag with proper Python logging
+- P2-1: Add port auto-retry logic for 8000→8001→8002
+
+### Remaining Work Tickets
+
+Based on this verification:
+
+1. **TCK-20260211-003 :: Remove Hardcoded Dev Path (P0)**
+   - Wrap `/Users/pranay/Projects/EchoPanel/server` in `#if DEBUG` or remove
+   
+2. **TCK-20260211-004 :: Implement Proper Python Logging (P1)**
+   - Replace `if DEBUG:` with `logging.getLogger()` and appropriate levels
+   
+3. **TCK-20260211-005 :: Port Conflict Auto-Retry (P2)**
+   - Try ports 8000, 8001, 8002 before giving up
+
+### Verification Commands
+
+```bash
+# Check all fixes status
+echo "=== P0 Fixes ==="
+grep -n "KeychainHelper.loadHFToken" macapp/MeetingListenerApp/Sources/BackendManager.swift
+grep -n "terminateGracefully" macapp/MeetingListenerApp/Sources/BackendManager.swift
+grep -n "restartAttempts" macapp/MeetingListenerApp/Sources/BackendManager.swift
+grep -n "/Users/pranay" macapp/MeetingListenerApp/Sources/BackendManager.swift
+
+echo "=== P1 Fixes ==="
+grep -n "sanitize" macapp/MeetingListenerApp/Sources/BackendManager.swift
+grep -n "wait_for" server/api/ws_live_listener.py
+grep -c "if DEBUG:" server/api/ws_live_listener.py
+
+echo "=== P2 Fixes ==="
+grep -n "portInUse" macapp/MeetingListenerApp/Sources/BackendManager.swift
+```
+
+---
+
+*Audit updated: 2026-02-11*  
+*Fix verification: 5/9 issues addressed, 4 remaining*

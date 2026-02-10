@@ -7,6 +7,8 @@ Comprehensive technical audits organized by date and scope.
 | Priority | Audit | Scope | Lines |
 |----------|-------|-------|-------|
 | 🔴 **P0** | [Phase 0A: System Contracts](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) | Client/server state machines, WebSocket protocol, truth contracts | 691 |
+| 🔴 **P0** | [Phase 1C: Streaming + Backpressure](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | End-to-end queues, overload policy, UI truth mapping | 1100+ |
+| 🔴 **P0** | [Phase 2D: ASR Provider Layer](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | Residency, streaming semantics, Apple Silicon, degrade ladder | 900+ |
 | 🔴 **P0** | [Streaming Reliability](./streaming-reliability-dual-pipeline-20260210.md) | End-to-end streaming, backpressure, UI truthfulness | 788 |
 | 🟡 **P1** | [UI/UX Full Audit](./UI_UX_AUDIT_2026-02-09.md) | Visual design, interactions, accessibility | 463 |
 | 🟡 **P1** | [Streaming ASR](./STREAMING_ASR_AUDIT_2026-02.md) | ASR pipeline, VAD, provider architecture | 1707 |
@@ -21,6 +23,8 @@ Comprehensive technical audits organized by date and scope.
 
 | Date | File | Topic | Lines |
 |------|------|-------|-------|
+| 2026-02-12 | [PHASE_2D_ASR_PROVIDER_AUDIT.md](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | ASR providers, residency, streaming, Apple Silicon, 11 failure modes | 900+ |
+| 2026-02-11 | [PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | Streaming reliability, backpressure policy, 14 failure modes | 1100+ |
 | 2026-02-11 | [PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) | State machines, protocol contracts, race conditions | 691 |
 | 2026-02-10 | [OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md](./OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md) | Offline pipeline, transcript reconciliation | 610 |
 | 2026-02-10 | [streaming-reliability-dual-pipeline-20260210.md](./streaming-reliability-dual-pipeline-20260210.md) | Streaming reliability, metrics contract | 788 |
@@ -63,6 +67,8 @@ Comprehensive technical audits organized by date and scope.
 ## By Category
 
 ### 🔴 Critical (P0)
+- [Phase 2D: ASR Provider Layer](./PHASE_2D_ASR_PROVIDER_AUDIT.md) - Residency, streaming semantics, Apple Silicon
+- [Phase 1C: Streaming + Backpressure](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) - Queue inventory, overload policy, 14 failure modes
 - [Phase 0A: System Contracts](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) - State machines, protocol truth
 - [Streaming Reliability](./streaming-reliability-dual-pipeline-20260210.md) - End-to-end streaming
 

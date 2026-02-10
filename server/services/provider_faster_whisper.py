@@ -1,5 +1,5 @@
 """
-Local Faster-Whisper ASR Provider (v0.3)
+Local Faster-Whisper ASR Provider (v0.4)
 
 Implements the ASRProvider interface using faster-whisper for local transcription.
 
@@ -9,6 +9,8 @@ Fixes applied:
 - P0: Emit only final events (no fake partials)
 - P0: Fixed timestamp math to track processed_samples correctly
 - P1: Model loaded at first _get_model call (consider moving to startup)
+
+v0.4: Added health metrics and capabilities (PR6)
 """
 
 from __future__ import annotations
@@ -17,9 +19,13 @@ import asyncio
 import os
 import platform
 import threading
-from typing import AsyncIterator, Optional
+import time
+from typing import AsyncIterator, Optional, List
 
-from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource
+from .asr_providers import (
+    ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource,
+    ASRHealth, ProviderCapabilities,
+)
 
 try:
     import numpy as np
@@ -39,6 +45,9 @@ class FasterWhisperProvider(ASRProvider):
         super().__init__(config)
         self._model: Optional["WhisperModel"] = None
         self._infer_lock = threading.Lock()
+        self._infer_times: List[float] = []  # Track inference times for health
+        self._model_loaded_at: Optional[float] = None
+        self._chunks_processed = 0
 
     @property
     def name(self) -> str:
@@ -47,6 +56,22 @@ class FasterWhisperProvider(ASRProvider):
     @property
     def is_available(self) -> bool:
         return WhisperModel is not None and np is not None
+    
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """Report provider capabilities."""
+        return ProviderCapabilities(
+            supports_streaming=False,  # Chunked-batch, not true streaming
+            supports_batch=True,
+            supports_gpu=True,  # CUDA support
+            supports_metal=False,  # CTranslate2 doesn't support MPS
+            supports_cuda=True,
+            supports_vad=True,  # Has built-in VAD option
+            supports_diarization=False,
+            supports_multilanguage=True,
+            min_ram_gb=2.0,  # base.en needs ~2GB
+            recommended_ram_gb=4.0,
+        )
 
     def _get_model(self) -> Optional["WhisperModel"]:
         if not self.is_available:
@@ -73,8 +98,14 @@ class FasterWhisperProvider(ASRProvider):
             
             try:
                 self._model = WhisperModel(model_name, device=device, compute_type=compute_type)
+                self._model_loaded_at = time.time()
+                self._health.model_resident = True
+                self._health.model_loaded_at = self._model_loaded_at
             except Exception as e:
                 self.log(f"FATAL ERROR loading model: {e}")
+                self._health.model_resident = False
+                self._health.last_error = str(e)
+                self._health.consecutive_errors += 1
                 raise e
         
         return self._model
@@ -129,6 +160,8 @@ class FasterWhisperProvider(ASRProvider):
 
                 audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
+                infer_start = time.perf_counter()
+                
                 def _transcribe():
                     with self._infer_lock:
                         segments, info = model.transcribe(
@@ -139,9 +172,17 @@ class FasterWhisperProvider(ASRProvider):
                     return list(segments), info
 
                 segments, info = await asyncio.to_thread(_transcribe)
+                
+                infer_ms = (time.perf_counter() - infer_start) * 1000
+                self._infer_times.append(infer_ms)
+                self._chunks_processed += 1
+                
+                # Keep only last 100 measurements
+                if len(self._infer_times) > 100:
+                    self._infer_times = self._infer_times[-100:]
                 detected_lang = getattr(info, 'language', None)
                 
-                self.log(f"Transcribed {len(segments)} segments, language={detected_lang}")
+                self.log(f"Transcribed {len(segments)} segments in {infer_ms:.1f}ms, language={detected_lang}")
 
                 for segment in segments:
                     text = segment.text.strip()
@@ -233,6 +274,33 @@ class FasterWhisperProvider(ASRProvider):
                     source=source,
                     language=detected_lang,
                 )
+
+
+    async def health(self) -> ASRHealth:
+        """Get health metrics for faster-whisper provider."""
+        health = await super().health()
+        
+        # Calculate RTF from inference times
+        if self._infer_times:
+            avg_ms = sum(self._infer_times) / len(self._infer_times)
+            sorted_times = sorted(self._infer_times)
+            p95_ms = sorted_times[int(len(sorted_times) * 0.95)] if len(sorted_times) > 1 else avg_ms
+            p99_ms = sorted_times[int(len(sorted_times) * 0.99)] if len(sorted_times) > 1 else avg_ms
+            
+            # Assume 4s chunks (configurable)
+            chunk_seconds = self.config.chunk_seconds
+            rtf = (avg_ms / 1000.0) / chunk_seconds
+            
+            health.realtime_factor = rtf
+            health.avg_infer_ms = avg_ms
+            health.p95_infer_ms = p95_ms
+            health.p99_infer_ms = p99_ms
+        
+        health.model_resident = self._model is not None
+        health.model_loaded_at = self._model_loaded_at
+        health.chunks_processed = self._chunks_processed
+        
+        return health
 
 
 # Register the provider

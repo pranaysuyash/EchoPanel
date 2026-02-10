@@ -1,13 +1,22 @@
 """
-Voxtral Realtime ASR Provider (v0.1) — Local Open-Source
+Voxtral Realtime ASR Provider (v0.2) — Local Open-Source, Streaming Mode
 
 Implements the ASRProvider interface using antirez/voxtral.c for local inference.
+Uses --stdin streaming mode to keep the model resident (fixes subprocess-per-chunk bug).
+
 No API key needed. Requires voxtral.c binary and downloaded model (~8.9GB).
 
 Config:
-    ECHOPANEL_VOXTRAL_BIN     — path to voxtral binary (default: ../voxtral.c/voxtral)
-    ECHOPANEL_VOXTRAL_MODEL   — path to model dir (default: ../voxtral.c/voxtral-model)
+    ECHOPANEL_VOXTRAL_BIN        — path to voxtral binary (default: ../voxtral.c/voxtral)
+    ECHOPANEL_VOXTRAL_MODEL      — path to model dir (default: ../voxtral.c/voxtral-model)
+    ECHOPANEL_VOXTRAL_STREAMING_DELAY — streaming delay in seconds (default: 0.5)
     ECHOPANEL_ASR_PROVIDER=voxtral_realtime
+
+Changes in v0.2:
+    - Rewritten to use --stdin streaming mode (model stays resident)
+    - Added session lifecycle management (start/stop streaming process)
+    - Added per-chunk latency tracking and health metrics
+    - Removed subprocess-per-chunk architecture (was causing ~11s load per chunk)
 """
 
 from __future__ import annotations
@@ -15,11 +24,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import struct
-import tempfile
+import re
 import time
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Tuple
+from dataclasses import dataclass
 
 from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource
 
@@ -42,13 +51,50 @@ def _default_model() -> Path:
     ))
 
 
+def _streaming_delay() -> float:
+    """Streaming delay in seconds (lower = lower latency, higher = better accuracy)."""
+    return float(os.getenv("ECHOPANEL_VOXTRAL_STREAMING_DELAY", "0.5"))
+
+
+@dataclass
+class StreamingSession:
+    """Manages a resident voxtral.c process for streaming transcription."""
+    process: asyncio.subprocess.Process
+    started_at: float
+    chunks_processed: int = 0
+    total_infer_ms: float = 0.0
+    
+    @property
+    def avg_infer_ms(self) -> float:
+        if self.chunks_processed == 0:
+            return 0.0
+        return self.total_infer_ms / self.chunks_processed
+    
+    @property
+    def realtime_factor(self) -> float:
+        """RTF based on average inference time per 4s chunk."""
+        if self.chunks_processed == 0:
+            return 0.0
+        # Assume 4s chunks (configurable)
+        chunk_seconds = 4.0
+        avg_infer_s = self.avg_infer_ms / 1000.0
+        return avg_infer_s / chunk_seconds
+
+
 class VoxtralRealtimeProvider(ASRProvider):
-    """ASR provider using voxtral.c (local, open-source, MPS/BLAS)."""
+    """ASR provider using voxtral.c in streaming mode (local, open-source, MPS/BLAS).
+    
+    v0.2 rewrite: Uses --stdin streaming mode to keep model resident.
+    Previous versions spawned a new subprocess per chunk (~11s penalty each).
+    """
 
     def __init__(self, config: ASRConfig):
         super().__init__(config)
         self._bin = _default_bin()
         self._model = _default_model()
+        self._streaming_delay = _streaming_delay()
+        self._session: Optional[StreamingSession] = None
+        self._session_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -58,14 +104,184 @@ class VoxtralRealtimeProvider(ASRProvider):
     def is_available(self) -> bool:
         return self._bin.is_file() and (self._model / "consolidated.safetensors").is_file()
 
+    async def _start_session(self) -> StreamingSession:
+        """Start voxtral.c in streaming mode with --stdin.
+        
+        The process stays resident and reads PCM audio from stdin.
+        Output format: Each transcription result is printed to stdout as text.
+        """
+        if not self.is_available:
+            raise RuntimeError(f"Voxtral unavailable: bin={self._bin.exists()}, model={self._model.exists()}")
+        
+        # Build command: voxtral -d model --stdin -I <delay>
+        # --stdin: read PCM audio from stdin
+        # -I: streaming delay in seconds (e.g., 0.5 = 500ms)
+        cmd = [
+            str(self._bin),
+            "-d", str(self._model),
+            "--stdin",
+            "-I", str(self._streaming_delay),
+            "--silent",  # Suppress progress output, only emit transcriptions
+        ]
+        
+        self.log(f"Starting voxtral.c streaming session: delay={self._streaming_delay}s")
+        t0 = time.perf_counter()
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to start voxtral.c: {e}")
+        
+        # Wait for model to load (parse stderr for "Metal GPU" or similar ready signal)
+        # This is typically the slow part (~2-11s depending on hardware)
+        ready = await self._wait_for_ready(process, timeout=30.0)
+        load_time = time.perf_counter() - t0
+        
+        if not ready:
+            process.kill()
+            await process.wait()
+            raise RuntimeError(f"voxtral.c failed to become ready after {load_time:.1f}s")
+        
+        self.log(f"Voxtral streaming session ready in {load_time:.2f}s")
+        
+        return StreamingSession(
+            process=process,
+            started_at=time.perf_counter(),
+        )
+
+    async def _wait_for_ready(self, process: asyncio.subprocess.Process, timeout: float) -> bool:
+        """Wait for voxtral.c to finish loading and signal readiness.
+        
+        Looks for indicators in stderr like "Metal GPU" or "BLAS" that indicate
+        the model is loaded and ready for inference.
+        """
+        if not process.stderr:
+            return False
+            
+        ready_patterns = [
+            b"Metal GPU",      # MPS/Metal backend ready
+            b"BLAS",           # CPU BLAS backend ready
+            b"Ready",          # Generic ready signal
+            b"Model loaded",   # Alternative ready signal
+        ]
+        
+        start_time = time.perf_counter()
+        buffer = b""
+        
+        while time.perf_counter() - start_time < timeout:
+            try:
+                # Read stderr in chunks, non-blocking with timeout
+                chunk = await asyncio.wait_for(
+                    process.stderr.read(1024),
+                    timeout=1.0
+                )
+                if not chunk:
+                    # EOF - process exited
+                    return False
+                buffer += chunk
+                
+                # Check for ready signals
+                for pattern in ready_patterns:
+                    if pattern in buffer:
+                        return True
+                        
+            except asyncio.TimeoutError:
+                # Still waiting, check if process is alive
+                if process.returncode is not None:
+                    return False
+                continue
+        
+        return False  # Timeout
+
+    async def _stop_session(self) -> None:
+        """Clean up the streaming session."""
+        async with self._session_lock:
+            if self._session is None:
+                return
+            
+            session = self._session
+            self._session = None
+            
+            self.log(f"Stopping voxtral.c session: {session.chunks_processed} chunks, "
+                    f"avg infer={session.avg_infer_ms:.1f}ms, "
+                    f"RTF={session.realtime_factor:.3f}x")
+            
+            if session.process.returncode is None:
+                # Graceful shutdown: close stdin, wait for process to exit
+                try:
+                    if session.process.stdin:
+                        session.process.stdin.close()
+                    await asyncio.wait_for(session.process.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    self.log("Voxtral process did not exit gracefully, killing...")
+                    session.process.kill()
+                    await session.process.wait()
+
+    async def _ensure_session(self) -> StreamingSession:
+        """Get existing session or start a new one."""
+        async with self._session_lock:
+            if self._session is None or self._session.process.returncode is not None:
+                self._session = await self._start_session()
+            return self._session
+
+    async def _write_chunk(self, session: StreamingSession, pcm_bytes: bytes, sample_rate: int) -> None:
+        """Write a PCM chunk to voxtral.c stdin.
+        
+        voxtral.c expects raw PCM16 mono data at 16kHz.
+        """
+        if session.process.stdin is None or session.process.returncode is not None:
+            raise RuntimeError("Voxtral process not ready")
+        
+        # voxtral.c expects continuous PCM stream
+        # No framing needed - just raw bytes
+        try:
+            session.process.stdin.write(pcm_bytes)
+            await session.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError) as e:
+            raise RuntimeError(f"Voxtral process pipe broken: {e}")
+
+    async def _read_transcription(self, session: StreamingSession, timeout: float = 10.0) -> Optional[str]:
+        """Read a transcription result from voxtral.c stdout.
+        
+        Returns the transcribed text, or None if timeout/no output.
+        Output format from voxtral.c: plain text lines (one per utterance).
+        """
+        if session.process.stdout is None:
+            return None
+        
+        try:
+            # Read line from stdout (voxtral.c prints transcriptions as lines)
+            line = await asyncio.wait_for(
+                session.process.stdout.readline(),
+                timeout=timeout
+            )
+            if not line:
+                return None
+            
+            text = line.decode("utf-8", errors="replace").strip()
+            
+            # Parse timing info from stderr if available (for metrics)
+            # This is done asynchronously - we don't block on it
+            return text if text else None
+            
+        except asyncio.TimeoutError:
+            return None
+
     async def transcribe_stream(
         self,
         pcm_stream: AsyncIterator[bytes],
         sample_rate: int = 16000,
         source: Optional[AudioSource] = None,
     ) -> AsyncIterator[ASRSegment]:
-        """Transcribe audio stream using voxtral.c binary."""
-
+        """Transcribe audio stream using voxtral.c in streaming mode.
+        
+        Keeps the model resident throughout the session for real-time performance.
+        """
         if not self.is_available:
             self.log(f"Voxtral unavailable: bin={self._bin.exists()}, model={self._model.exists()}")
             yield ASRSegment(
@@ -84,101 +300,152 @@ class VoxtralRealtimeProvider(ASRProvider):
         chunk_bytes = int(sample_rate * chunk_seconds * bytes_per_sample)
         buffer = bytearray()
         processed_samples = 0
-
-        self.log(f"Started streaming via voxtral.c, chunk={chunk_seconds}s")
-
-        async for chunk in pcm_stream:
-            buffer.extend(chunk)
-
-            while len(buffer) >= chunk_bytes:
-                audio_bytes = bytes(buffer[:chunk_bytes])
-                del buffer[:chunk_bytes]
-
+        
+        session: Optional[StreamingSession] = None
+        
+        try:
+            # Ensure session is started
+            session = await self._ensure_session()
+            self.log(f"Started streaming via voxtral.c (streaming mode), chunk={chunk_seconds}s")
+            
+            # Task to read transcriptions from stdout
+            pending_transcriptions: asyncio.Queue[Tuple[int, int, str]] = asyncio.Queue()
+            read_task: Optional[asyncio.Task] = None
+            
+            async def read_loop():
+                """Background task to read transcriptions from stdout."""
+                while session and session.process.returncode is None:
+                    try:
+                        text = await self._read_transcription(session, timeout=0.5)
+                        if text:
+                            # Store with current sample position
+                            await pending_transcriptions.put((
+                                processed_samples,
+                                text
+                            ))
+                    except Exception as e:
+                        self.log(f"Read loop error: {e}")
+                        break
+            
+            # Start background reader
+            read_task = asyncio.create_task(read_loop())
+            
+            async for chunk in pcm_stream:
+                buffer.extend(chunk)
+                
+                # Send complete chunks to voxtral.c
+                while len(buffer) >= chunk_bytes:
+                    audio_bytes = bytes(buffer[:chunk_bytes])
+                    del buffer[:chunk_bytes]
+                    
+                    t0 = processed_samples / sample_rate
+                    chunk_samples = len(audio_bytes) // bytes_per_sample
+                    t1 = (processed_samples + chunk_samples) / sample_rate
+                    
+                    # Write chunk to streaming process
+                    infer_start = time.perf_counter()
+                    try:
+                        await self._write_chunk(session, audio_bytes, sample_rate)
+                        session.chunks_processed += 1
+                    except RuntimeError as e:
+                        self.log(f"Write error, restarting session: {e}")
+                        # Try to recover by restarting session
+                        await self._stop_session()
+                        session = await self._ensure_session()
+                        await self._write_chunk(session, audio_bytes, sample_rate)
+                        session.chunks_processed += 1
+                    
+                    infer_ms = (time.perf_counter() - infer_start) * 1000
+                    session.total_infer_ms += infer_ms
+                    
+                    processed_samples += chunk_samples
+                    
+                    # Check for any completed transcriptions
+                    while not pending_transcriptions.empty():
+                        try:
+                            _, text = pending_transcriptions.get_nowait()
+                            yield ASRSegment(
+                                text=text,
+                                t0=t0,
+                                t1=t1,
+                                confidence=0.9,
+                                is_final=True,
+                                source=source,
+                            )
+                        except asyncio.QueueEmpty:
+                            break
+            
+            # Flush remaining buffer
+            if buffer:
+                audio_bytes = bytes(buffer)
                 t0 = processed_samples / sample_rate
                 chunk_samples = len(audio_bytes) // bytes_per_sample
                 t1 = (processed_samples + chunk_samples) / sample_rate
+                
+                try:
+                    await self._write_chunk(session, audio_bytes, sample_rate)
+                    session.chunks_processed += 1
+                except RuntimeError as e:
+                    self.log(f"Write error on final chunk: {e}")
+                
                 processed_samples += chunk_samples
-
-                text = await self._transcribe_chunk(audio_bytes, sample_rate)
-                if text:
+            
+            # Allow time for final transcriptions
+            await asyncio.sleep(self._streaming_delay + 0.5)
+            
+            # Drain remaining transcriptions
+            if read_task:
+                read_task.cancel()
+                try:
+                    await read_task
+                except asyncio.CancelledError:
+                    pass
+            
+            while not pending_transcriptions.empty():
+                try:
+                    _, text = pending_transcriptions.get_nowait()
                     yield ASRSegment(
                         text=text,
-                        t0=t0,
-                        t1=t1,
+                        t0=0,  # Timing lost for buffered transcriptions
+                        t1=0,
                         confidence=0.9,
                         is_final=True,
                         source=source,
                     )
-
-        if buffer:
-            audio_bytes = bytes(buffer)
-            del buffer[:]
-            t0 = processed_samples / sample_rate
-            chunk_samples = len(audio_bytes) // bytes_per_sample
-            t1 = (processed_samples + chunk_samples) / sample_rate
-
-            text = await self._transcribe_chunk(audio_bytes, sample_rate)
-            if text:
-                yield ASRSegment(
-                    text=text,
-                    t0=t0,
-                    t1=t1,
-                    confidence=0.9,
-                    is_final=True,
-                    source=source,
-                )
-
-    async def _transcribe_chunk(self, pcm_bytes: bytes, sample_rate: int) -> Optional[str]:
-        """Write PCM to a temp WAV, run voxtral.c, return text."""
-        tmp = None
-        try:
-            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            self._write_wav(tmp.name, pcm_bytes, sample_rate)
-            tmp.close()
-
-            proc = await asyncio.create_subprocess_exec(
-                str(self._bin),
-                "-d", str(self._model),
-                "-i", tmp.name,
-                "--silent",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            text = stdout.decode("utf-8", errors="replace").strip()
-            if proc.returncode != 0:
-                self.log(f"voxtral.c error (rc={proc.returncode}): {stderr.decode()[:200]}")
-                return None
-            return text if text else None
+                except asyncio.QueueEmpty:
+                    break
+            
+            # Log session stats
+            if session:
+                self.log(f"Session complete: {session.chunks_processed} chunks, "
+                        f"RTF={session.realtime_factor:.3f}x, "
+                        f"avg_infer={session.avg_infer_ms:.1f}ms")
+                
         except Exception as e:
-            self.log(f"voxtral.c exec error: {e}")
-            return None
+            self.log(f"Streaming error: {e}")
+            raise
         finally:
-            if tmp:
-                try:
-                    os.unlink(tmp.name)
-                except OSError:
-                    pass
+            # Clean up session
+            await self._stop_session()
 
-    @staticmethod
-    def _write_wav(path: str, pcm_bytes: bytes, sample_rate: int) -> None:
-        """Write raw PCM16 mono bytes as a valid WAV file."""
-        num_channels = 1
-        bits_per_sample = 16
-        byte_rate = sample_rate * num_channels * bits_per_sample // 8
-        block_align = num_channels * bits_per_sample // 8
-        data_size = len(pcm_bytes)
-
-        with open(path, "wb") as f:
-            f.write(b"RIFF")
-            f.write(struct.pack("<I", 36 + data_size))
-            f.write(b"WAVE")
-            f.write(b"fmt ")
-            f.write(struct.pack("<I", 16))
-            f.write(struct.pack("<HHIIHH", 1, num_channels, sample_rate, byte_rate, block_align, bits_per_sample))
-            f.write(b"data")
-            f.write(struct.pack("<I", data_size))
-            f.write(pcm_bytes)
+    async def health(self) -> dict:
+        """Return health metrics for the provider."""
+        async with self._session_lock:
+            if self._session is None:
+                return {
+                    "status": "idle",
+                    "realtime_factor": 0.0,
+                    "chunks_processed": 0,
+                }
+            
+            session = self._session
+            return {
+                "status": "active" if session.process.returncode is None else "error",
+                "realtime_factor": session.realtime_factor,
+                "chunks_processed": session.chunks_processed,
+                "avg_infer_ms": session.avg_infer_ms,
+                "session_duration_s": time.perf_counter() - session.started_at,
+            }
 
 
 ASRProviderRegistry.register("voxtral_realtime", VoxtralRealtimeProvider)

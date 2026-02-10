@@ -16,6 +16,7 @@ from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegist
 # Import providers to trigger registration
 from . import provider_faster_whisper  # noqa: F401
 from . import provider_voxtral_realtime  # noqa: F401
+from . import provider_whisper_cpp  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

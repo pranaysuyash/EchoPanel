@@ -180,7 +180,7 @@ final class AppState: ObservableObject {
         case incompleteError
     }
 
-    private var sessionID: String?
+    private(set) var sessionID: String?
     private var sessionStart: Date?
     private var sessionEnd: Date?
     private var timerCancellable: AnyCancellable?
@@ -303,6 +303,20 @@ final class AppState: ObservableObject {
                 } else {
                     self?.backpressureLevel = .normal
                 }
+                
+                // V1: Record metrics in session bundle
+                if let sessionId = self?.sessionID {
+                    SessionBundleManager.shared.bundle(for: sessionId)?.recordMetrics(metrics)
+                }
+                
+                // V1: Log high-latency warnings
+                if metrics.realtimeFactor > 1.5 {
+                    StructuredLogger.shared.warning("High processing latency detected", metadata: [
+                        "source": metrics.source,
+                        "realtime_factor": metrics.realtimeFactor,
+                        "avg_infer_ms": metrics.avgInferMs
+                    ])
+                }
             }
         }
         streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
@@ -316,7 +330,13 @@ final class AppState: ObservableObject {
             Task { @MainActor in 
                 self?.lastMessageDate = Date()
                 self?.markASREvent(source: source)
-                self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
+                self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source)
+                
+                // V1: Record in session bundle
+                if let sessionId = self?.sessionID,
+                   let segment = self?.transcriptSegments.last {
+                    SessionBundleManager.shared.bundle(for: sessionId)?.recordTranscriptSegment(segment)
+                }
             }
         }
         streamer.onCardsUpdate = { [weak self] actions, decisions, risks in
@@ -480,6 +500,28 @@ final class AppState: ObservableObject {
         // PR1: Generate new attempt ID for this start
         startAttemptId = UUID()
         let currentAttemptId = startAttemptId
+        
+        // V1: Generate session ID early for logging
+        let id = UUID().uuidString
+        sessionID = id
+        
+        // V1: Set up structured logging context
+        StructuredLogger.shared.setContext(
+            sessionId: id,
+            attemptId: currentAttemptId?.uuidString
+        )
+        
+        // V1: Create session bundle for observability
+        let bundle = SessionBundleManager.shared.createBundle(
+            for: id,
+            configuration: .privacySafe
+        )
+        bundle.recordSessionStart(audioSource: audioSource.rawValue)
+        
+        StructuredLogger.shared.info("Session starting", metadata: [
+            "audio_source": audioSource.rawValue,
+            "session_id": id
+        ])
 
         Task {
             refreshPermissionStatuses()
@@ -548,8 +590,16 @@ final class AppState: ObservableObject {
             streamStatus = .reconnecting
             statusMessage = "Connecting to backend..."
             runtimeErrorState = nil
-            streamer.connect(sessionID: id)
+            
+            // V1: Pass attempt ID to WebSocket for correlation
+            streamer.connect(sessionID: id, attemptID: currentAttemptId?.uuidString)
             startTimer()
+            
+            // V1: Record connection attempt in bundle
+            SessionBundleManager.shared.bundle(for: id)?.recordWebSocketStatus(
+                state: "connecting",
+                message: "Connecting to backend"
+            )
             
             // PR1: Start timeout task for handshake
             startTimeoutTask?.cancel()
@@ -588,6 +638,12 @@ final class AppState: ObservableObject {
         sessionState = .finalizing
         stopTimer()
         sessionEnd = Date()
+        
+        let sessionId = self.sessionID
+        StructuredLogger.shared.info("Session finalizing", metadata: [
+            "session_id": sessionId ?? "unknown",
+            "duration_seconds": effectiveElapsedSeconds
+        ])
 
         Task {
             if audioSource == .system || audioSource == .both {
@@ -606,9 +662,19 @@ final class AppState: ObservableObject {
             // Gap 2 fix: Stop silence detection
             stopSilenceCheck()
             
-            // End session storage (v0.2)
-            if let id = sessionID {
+            // V1: Record session end in bundle
+            if let id = sessionId {
+                let bundle = SessionBundleManager.shared.bundle(for: id)
+                bundle?.setFinalTranscript(self.transcriptSegments)
+                bundle?.recordSessionEnd(finalization: self.finalizationOutcome.rawValue)
+                
+                // End session storage (v0.2)
                 sessionStore.endSession(sessionId: id, finalData: exportPayload())
+                
+                StructuredLogger.shared.info("Session ended", metadata: [
+                    "session_id": id,
+                    "finalization": self.finalizationOutcome.rawValue
+                ])
             }
             
             self.sessionState = .idle
@@ -616,6 +682,9 @@ final class AppState: ObservableObject {
             self.streamStatus = .reconnecting // Reset stream status
             self.runtimeErrorState = nil
             self.noAudioDetected = false
+            
+            // V1: Clear logging context
+            StructuredLogger.shared.clearContext()
 
             NotificationCenter.default.post(name: .summaryShouldOpen, object: nil)
         }
@@ -745,51 +814,76 @@ final class AppState: ObservableObject {
 
     func exportDebugBundle() {
         Task {
-            // 1. Prepare files
-            let tmpDir = FileManager.default.temporaryDirectory
-            let bundleDir = tmpDir.appendingPathComponent("echopanel_debug_\(UUID().uuidString)")
-            let logFile = tmpDir.appendingPathComponent("echopanel_server.log")
-            
             do {
-                try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
-                
-                // Copy Server Log
-                if FileManager.default.fileExists(atPath: logFile.path) {
-                    try FileManager.default.copyItem(at: logFile, to: bundleDir.appendingPathComponent("server.log"))
+                // V1: Use new SessionBundle system
+                if let sessionId = sessionID,
+                   let bundle = SessionBundleManager.shared.bundle(for: sessionId) {
+                    
+                    let savePanel = NSSavePanel()
+                    savePanel.allowedContentTypes = [UTType.zip]
+                    savePanel.nameFieldStringValue = "echopanel-session-\(sessionId.prefix(8)).zip"
+                    
+                    let response = await savePanel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow())
+                    guard response == .OK, let url = savePanel.url else { return }
+                    
+                    try await bundle.exportBundle(to: url)
+                    
+                    StructuredLogger.shared.info("Debug bundle exported", metadata: [
+                        "session_id": sessionId,
+                        "destination": url.path
+                    ])
                 } else {
-                    try "Log file not found".write(to: bundleDir.appendingPathComponent("server.log_missing"), atomically: true, encoding: .utf8)
-                }
-                
-                // Dump Session State
-                let sessionData = try JSONSerialization.data(withJSONObject: exportPayload(), options: [.prettyPrinted, .sortedKeys])
-                try sessionData.write(to: bundleDir.appendingPathComponent("session_dump.json"))
-                
-                // 2. Zip
-                let zipURL = tmpDir.appendingPathComponent("echopanel_debug.zip")
-                try? FileManager.default.removeItem(at: zipURL)
-                
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-                process.arguments = ["-r", zipURL.path, "."]
-                process.currentDirectoryURL = bundleDir
-                try process.run()
-                process.waitUntilExit()
-                
-                // 3. Save Panel
-                DispatchQueue.main.async {
-                    let panel = NSSavePanel()
-                    panel.allowedContentTypes = [UTType.zip]
-                    panel.nameFieldStringValue = "echopanel-debug.zip"
-                    panel.begin { response in
-                        guard response == .OK, let url = panel.url else { return }
-                        try? FileManager.default.copyItem(at: zipURL, to: url)
-                        // Cleanup
-                        try? FileManager.default.removeItem(at: bundleDir)
-                        try? FileManager.default.removeItem(at: zipURL)
-                    }
+                    // Fallback: Legacy export for sessions without bundle
+                    try await exportLegacyDebugBundle()
                 }
             } catch {
+                StructuredLogger.shared.error("Debug export failed", error: error)
                 NSLog("Debug export failed: \(error)")
+            }
+        }
+    }
+    
+    private func exportLegacyDebugBundle() async throws {
+        // 1. Prepare files
+        let tmpDir = FileManager.default.temporaryDirectory
+        let bundleDir = tmpDir.appendingPathComponent("echopanel_debug_\(UUID().uuidString)")
+        let logFile = tmpDir.appendingPathComponent("echopanel_server.log")
+        
+        try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+        
+        // Copy Server Log
+        if FileManager.default.fileExists(atPath: logFile.path) {
+            try FileManager.default.copyItem(at: logFile, to: bundleDir.appendingPathComponent("server.log"))
+        } else {
+            try "Log file not found".write(to: bundleDir.appendingPathComponent("server.log_missing"), atomically: true, encoding: .utf8)
+        }
+        
+        // Dump Session State
+        let sessionData = try JSONSerialization.data(withJSONObject: exportPayload(), options: [.prettyPrinted, .sortedKeys])
+        try sessionData.write(to: bundleDir.appendingPathComponent("session_dump.json"))
+        
+        // 2. Zip
+        let zipURL = tmpDir.appendingPathComponent("echopanel_debug.zip")
+        try? FileManager.default.removeItem(at: zipURL)
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.arguments = ["-r", zipURL.path, "."]
+        process.currentDirectoryURL = bundleDir
+        try process.run()
+        process.waitUntilExit()
+        
+        // 3. Save Panel
+        await MainActor.run {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [UTType.zip]
+            panel.nameFieldStringValue = "echopanel-debug.zip"
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else { return }
+                try? FileManager.default.copyItem(at: zipURL, to: url)
+                // Cleanup
+                try? FileManager.default.removeItem(at: bundleDir)
+                try? FileManager.default.removeItem(at: zipURL)
             }
         }
     }
