@@ -69,18 +69,6 @@ if (!prefersReducedMotion && window.anime) {
     });
 
     anime({
-      targets: '.mesh-orb',
-      translateX: () => anime.random(-20, 20),
-      translateY: () => anime.random(-16, 16),
-      scale: [1, 1.06],
-      direction: 'alternate',
-      easing: 'easeInOutSine',
-      duration: 6000,
-      delay: anime.stagger(600),
-      loop: true,
-    });
-
-    anime({
       targets: '.panel-card',
       backgroundColor: ['#f9f6f1', '#ffffff'],
       direction: 'alternate',

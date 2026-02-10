@@ -1,7 +1,12 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Transcript Surfaces Extension
+// HIG-compliant transcript scroller, toolbar, and surface overlays
+
 extension SidePanelView {
+
+    // MARK: - Transcript Scroller
     func transcriptScroller(style: TranscriptStyle) -> some View {
         transcriptScrollerBody(style: style)
         .accessibilityLabel("Transcript, \(visibleTranscriptSegments.count) segments")
@@ -26,7 +31,7 @@ extension SidePanelView {
                 onPrev: { scrollToPreviousMention(for: entity) }
             )
             .frame(width: 320)
-            .padding(12)
+            .padding(Spacing.md)
         }
     }
 
@@ -52,19 +57,29 @@ extension SidePanelView {
     }
 
     private func transcriptRows(style: TranscriptStyle) -> some View {
-        VStack(alignment: .leading, spacing: style.rowSpacing) {
+        let spacing = ViewModeSpacing(from: style)
+
+        return VStack(alignment: .leading, spacing: spacing.rowSpacing) {
             if visibleTranscriptSegments.isEmpty {
                 emptyTranscriptState
             } else {
-                ForEach(visibleTranscriptSegments) { segment in
+                // Use enumerated with stable IDs to reduce re-rendering
+                ForEach(Array(visibleTranscriptSegments.enumerated()), id: \.element.id) { index, segment in
                     transcriptRow(segment: segment)
                         .id(segment.id)
+                        .transaction { transaction in
+                            // Only animate for user interactions, not streaming updates
+                            if appState.sessionState == .listening && !followLive {
+                                transaction.animation = nil
+                            }
+                        }
                 }
             }
         }
-        .padding(.vertical, style.verticalPadding)
-        .padding(.horizontal, style.horizontalPadding)
+        .padding(.vertical, spacing.verticalPadding)
+        .padding(.horizontal, spacing.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .gesture(
             DragGesture(minimumDistance: 3).onChanged { _ in
                 if followLive {
@@ -98,7 +113,7 @@ extension SidePanelView {
                     selectedEntity = resolveEntity(clicked)
                 }
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous))
             .onTapGesture {
                 focusedSegmentID = segment.id
                 if followLive {
@@ -119,9 +134,11 @@ extension SidePanelView {
         }
     }
 
+    // MARK: - Footer Controls
     func footerControls(panelWidth: CGFloat) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+            // Expanded layout
+            HStack(spacing: Spacing.sm) {
                 Button {
                     appState.copyMarkdownToClipboard()
                 } label: {
@@ -160,7 +177,8 @@ extension SidePanelView {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
 
-            HStack(spacing: 8) {
+            // Compact layout
+            HStack(spacing: Spacing.sm) {
                 Button {
                     appState.copyMarkdownToClipboard()
                 } label: {
@@ -197,6 +215,7 @@ extension SidePanelView {
         }
     }
 
+    // MARK: - Transcript Toolbar
     func transcriptToolbar(panelWidth: CGFloat, showSurfaceButtons: Bool) -> some View {
         let pickerCap: CGFloat = viewMode == .compact ? 190 : 250
         let pickerWidth = min(max(panelWidth * 0.4, 150), pickerCap)
@@ -219,12 +238,12 @@ extension SidePanelView {
     @ViewBuilder
     func toolbarRowLayout(pickerWidth: CGFloat, compactStack: Bool, showSurfaceButtons: Bool) -> some View {
         if compactStack {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 toolbarPickerAndInfo(pickerWidth: pickerWidth, fillsWidth: true)
                 toolbarTrailingControls(showSurfaceButtons: showSurfaceButtons)
             }
         } else {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.md) {
                 toolbarPickerAndInfo(pickerWidth: pickerWidth, fillsWidth: false)
                 toolbarTrailingControls(showSurfaceButtons: showSurfaceButtons)
             }
@@ -232,7 +251,7 @@ extension SidePanelView {
     }
 
     func toolbarPickerAndInfo(pickerWidth: CGFloat, fillsWidth: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.md) {
             Picker("", selection: $highlightMode) {
                 ForEach(EntityHighlighter.HighlightMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -254,17 +273,17 @@ extension SidePanelView {
             .popover(isPresented: $showHighlightHelp, arrowEdge: .bottom) {
                 HighlightHelpView()
                     .frame(width: 320)
-                    .padding(12)
+                    .padding(Spacing.md)
             }
         }
     }
 
     func toolbarTrailingControls(showSurfaceButtons: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.md) {
             if let filter = entityFilter {
                 HStack(spacing: 5) {
                     Text(filter.name)
-                        .font(.caption2)
+                        .font(Typography.captionSmall)
                     Button {
                         entityFilter = nil
                     } label: {
@@ -315,15 +334,16 @@ extension SidePanelView {
         }
     }
 
+    // MARK: - Surface Overlay
     var surfaceOverlay: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(activeSurface.rawValue)
-                    .font(.headline)
+                    .font(Typography.title)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text("←/→ cycle · Esc close")
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
                     .foregroundColor(.secondary)
                 Button {
                     showSurfaceOverlay = false
@@ -332,30 +352,31 @@ extension SidePanelView {
                 }
                 .buttonStyle(.borderless)
             }
-            .padding(10)
-            .background(contentBackgroundColor)
+            .padding(Spacing.sm + 2)
+            .background(BackgroundStyle.container.color(for: colorScheme))
 
             Divider()
 
             surfaceContent(surface: activeSurface)
-                .padding(10)
-                .background(contentBackgroundColor)
+                .padding(Spacing.sm + 2)
+                .background(BackgroundStyle.container.color(for: colorScheme))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
         )
-        .padding(8)
+        .padding(Spacing.sm)
         .transition(.opacity)
     }
 
+    // MARK: - Surface Content
     func surfaceContent(surface: Surface) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm + 2) {
                 switch surface {
                 case .summary:
                     if surfaceSummaryItems.isEmpty {
@@ -432,7 +453,7 @@ extension SidePanelView {
                     }
 
                 case .raw:
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.sm + 2) {
                         Button("Copy Raw") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(rawTranscriptText, forType: .string)
@@ -442,12 +463,12 @@ extension SidePanelView {
                         .accessibilityHint("Copies the full transcript in plain text.")
 
                         Text(rawTranscriptText)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(Typography.mono)
                             .textSelection(.enabled)
-                            .padding(8)
+                            .padding(Spacing.sm)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.35 : 0.65))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .background(BackgroundStyle.card.color(for: colorScheme))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
                     }
                 }
             }
@@ -457,5 +478,19 @@ extension SidePanelView {
     private func transcriptRotorLabel(for segment: TranscriptSegment) -> String {
         let preview = String(segment.text.prefix(48))
         return "\(formatTime(segment.t0)) \(speakerLabel(for: segment)): \(preview)"
+    }
+}
+
+// MARK: - ViewModeSpacing Helper
+extension ViewModeSpacing {
+    init(from style: SidePanelView.TranscriptStyle) {
+        switch style {
+        case .roll:
+            self = .roll
+        case .compact:
+            self = .compact
+        case .full:
+            self = .full
+        }
     }
 }

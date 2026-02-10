@@ -34,9 +34,13 @@ final class SidePanelContractsTests: XCTestCase {
     }
 
     func testNeedsReviewBadgeContrastMeetsWCAG() {
+        // Convert SwiftUI Color to NSColor for testing
+        let fgNSColor = NSColor(NeedsReviewBadgeStyle.foreground)
+        let bgNSColor = NSColor(NeedsReviewBadgeStyle.background)
+        
         let ratio = contrastRatio(
-            foreground: NeedsReviewBadgeStyle.foreground,
-            background: NeedsReviewBadgeStyle.background
+            foreground: fgNSColor,
+            background: bgNSColor
         )
         XCTAssertGreaterThanOrEqual(ratio, 4.5, "Needs review badge must meet WCAG AA contrast for normal text.")
     }

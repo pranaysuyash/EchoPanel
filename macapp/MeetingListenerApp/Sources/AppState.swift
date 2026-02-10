@@ -134,6 +134,16 @@ final class AppState: ObservableObject {
     @Published var contextQuery: String = ""
     @Published var contextStatusMessage: String = ""
     @Published var contextBusy: Bool = false
+    
+    // PR2: Metrics tracking
+    @Published var lastMetrics: [String: SourceMetrics] = [:]
+    @Published var backpressureLevel: BackpressureLevel = .normal
+    
+    enum BackpressureLevel {
+        case normal
+        case buffering
+        case overloaded
+    }
 
     // H9 Fix: Expose backend status
     var isServerReady: Bool { BackendManager.shared.isServerReady }
@@ -176,6 +186,10 @@ final class AppState: ObservableObject {
     private var timerCancellable: AnyCancellable?
     private var permissionCancellable: AnyCancellable?
     private var lastPartialIndexBySource: [String: Int] = [:]
+    
+    // PR1: UI Handshake - track attempt ID and timeout
+    private var startAttemptId: UUID?
+    private var startTimeoutTask: Task<Void, Never>?
 
     private let audioCapture = AudioCaptureManager()
     private let micCapture = MicrophoneCaptureManager()
@@ -258,10 +272,36 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.streamStatus = status
                 self?.statusMessage = message
+                
+                // PR1: Handle streaming ACK from backend
+                if status == .streaming && self?.sessionState == .starting {
+                    self?.startTimeoutTask?.cancel()
+                    self?.startTimeoutTask = nil
+                    self?.sessionState = .listening
+                }
+                
                 if status == .error {
                     self?.runtimeErrorState = .streaming(detail: message)
+                    self?.startTimeoutTask?.cancel()
+                    self?.startTimeoutTask = nil
                 } else if self?.runtimeErrorState?.isStreamingError == true {
                     self?.runtimeErrorState = nil
+                }
+            }
+        }
+        
+        // PR2: Handle metrics from backend
+        streamer.onMetrics = { [weak self] metrics in
+            Task { @MainActor in
+                self?.lastMetrics[metrics.source] = metrics
+                
+                // Update backpressure level based on metrics
+                if metrics.queueFillRatio > 0.95 || metrics.droppedRecent > 0 {
+                    self?.backpressureLevel = .overloaded
+                } else if metrics.queueFillRatio > 0.85 || metrics.realtimeFactor > 1.0 {
+                    self?.backpressureLevel = .buffering
+                } else {
+                    self?.backpressureLevel = .normal
                 }
             }
         }
@@ -430,12 +470,16 @@ final class AppState: ObservableObject {
     }
 
     func startSession() {
-        guard sessionState != .listening else { return }
+        guard sessionState != .listening && sessionState != .starting else { return }
         resetSession()
         sessionState = .starting
         statusMessage = "Requesting permission"
         runtimeErrorState = nil
         finalizationOutcome = .none
+        
+        // PR1: Generate new attempt ID for this start
+        startAttemptId = UUID()
+        let currentAttemptId = startAttemptId
 
         Task {
             refreshPermissionStatuses()
@@ -502,11 +546,31 @@ final class AppState: ObservableObject {
             }
 
             streamStatus = .reconnecting
-            statusMessage = "Connecting"
+            statusMessage = "Connecting to backend..."
             runtimeErrorState = nil
             streamer.connect(sessionID: id)
             startTimer()
-            sessionState = .listening
+            
+            // PR1: Start timeout task for handshake
+            startTimeoutTask?.cancel()
+            startTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                
+                guard let self else { return }
+                
+                // Check if this is still the current attempt
+                guard self.startAttemptId == currentAttemptId else { return }
+                
+                // Check if we got the streaming ACK
+                if self.sessionState == .starting {
+                    // Timeout! Backend didn't acknowledge streaming
+                    self.stopSession()
+                    self.sessionState = .error
+                    self.runtimeErrorState = .streaming(detail: "Backend did not start streaming within 5 seconds. It may be overloaded or still loading the ASR model.")
+                }
+            }
+            
+            // PR1: Don't set .listening yet! Wait for backend ACK in onStatus handler
             
             // Start session storage (v0.2)
             sessionStore.startSession(sessionId: id, audioSource: audioSource.rawValue)
@@ -900,6 +964,10 @@ final class AppState: ObservableObject {
     }
 
     private func handlePartial(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        // P2 Fix: Skip empty or whitespace-only partials to reduce visual noise
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
         // Keep the UI timer aligned with the server's timeline (t1), especially if the timer
         // publisher is delayed or throttled in a menu-bar context.
         if t1.isFinite {
@@ -907,32 +975,78 @@ final class AppState: ObservableObject {
         }
 
         let sourceKey = (source ?? "system").lowercased()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            if let index = lastPartialIndexBySource[sourceKey],
-               transcriptSegments.indices.contains(index),
-               transcriptSegments[index].isFinal == false {
-                transcriptSegments[index] = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source)
+        
+        // P2 Fix: Use more stable updates - reduce animation jitter for partials
+        // Only animate on significant text changes, not every partial update
+        let shouldAnimate: Bool
+        if let index = lastPartialIndexBySource[sourceKey],
+           transcriptSegments.indices.contains(index),
+           transcriptSegments[index].isFinal == false {
+            let oldText = transcriptSegments[index].text
+            let textDiff = abs(trimmedText.count - oldText.count)
+            shouldAnimate = textDiff > 5  // Only animate on significant changes
+        } else {
+            shouldAnimate = true  // New segment
+        }
+        
+        let updateAction = {
+            if let index = self.lastPartialIndexBySource[sourceKey],
+               self.transcriptSegments.indices.contains(index),
+               self.transcriptSegments[index].isFinal == false {
+                self.transcriptSegments[index] = TranscriptSegment(text: trimmedText, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source)
             } else {
-                transcriptSegments.append(TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source))
-                lastPartialIndexBySource[sourceKey] = transcriptSegments.count - 1
+                self.transcriptSegments.append(TranscriptSegment(text: trimmedText, t0: t0, t1: t1, isFinal: false, confidence: confidence, source: source))
+                self.lastPartialIndexBySource[sourceKey] = self.transcriptSegments.count - 1
             }
-            bumpTranscriptRevision()
+            self.bumpTranscriptRevision()
+        }
+        
+        if shouldAnimate {
+            withAnimation(.easeInOut(duration: 0.15), updateAction)
+        } else {
+            updateAction()
         }
     }
 
     private func handleFinal(text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        // P2 Fix: Skip empty or very short low-confidence finals (hallucination filter)
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wordCount = trimmedText.split(separator: " ").count
+        if trimmedText.isEmpty || (confidence < 0.3 && wordCount < 2) {
+            return
+        }
+        
         if t1.isFinite {
             elapsedSeconds = max(elapsedSeconds, Int(t1.rounded(.down)))
         }
 
         let sourceKey = (source ?? "system").lowercased()
+        
+        // P2 Fix: Check for duplicate final segments (same text + timestamp)
+        let isDuplicate = transcriptSegments.contains { existing in
+            existing.isFinal &&
+            existing.text == trimmedText &&
+            abs(existing.t0 - t0) < 0.5 &&  // Within 500ms
+            existing.source == source
+        }
+        
+        guard !isDuplicate else {
+            lastPartialIndexBySource[sourceKey] = nil
+            return
+        }
+        
         withAnimation(.easeInOut(duration: 0.2)) {
-            let segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
+            let segment = TranscriptSegment(text: trimmedText, t0: t0, t1: t1, isFinal: true, confidence: confidence, source: source)
             
             if let index = lastPartialIndexBySource[sourceKey],
                transcriptSegments.indices.contains(index),
                transcriptSegments[index].isFinal == false {
-                transcriptSegments[index] = segment
+                // P2 Fix: Preserve speaker info from partial if available
+                var updatedSegment = segment
+                if updatedSegment.speaker == nil, let speaker = transcriptSegments[index].speaker {
+                    updatedSegment.speaker = speaker
+                }
+                transcriptSegments[index] = updatedSegment
             } else {
                 transcriptSegments.append(segment)
             }
@@ -941,7 +1055,7 @@ final class AppState: ObservableObject {
             
             // H6 Fix: Append to persistent transcript log
             let payload: [String: Any] = [
-                "text": text,
+                "text": trimmedText,
                 "t0": t0,
                 "t1": t1,
                 "confidence": confidence,

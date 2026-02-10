@@ -113,9 +113,24 @@ cd /Users/pranay/Projects/EchoPanel
 
 If the app says “Port 8000 is already in use”, that’s expected when you’re running the backend manually; just ensure `curl /health` succeeds.
 
-## More troubleshooting
+## Documentation
 
-- `docs/TROUBLESHOOTING.md`
+**Comprehensive documentation (50+ files, 45,000+ lines):**
+
+| Quick Links | |
+|-------------|---|
+| 📖 **Getting Started** | [docs/LIVE_LISTENER_SPEC.md](./docs/LIVE_LISTENER_SPEC.md) |
+| 🔧 **Troubleshooting** | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) |
+| 📊 **All Docs** | [docs/README.md](./docs/README.md) |
+| 🔍 **Audits** | [docs/audit/README.md](./docs/audit/README.md) (30+ technical audits) |
+| 📋 **Work Status** | [docs/WORKLOG_TICKETS.md](./docs/WORKLOG_TICKETS.md) |
+
+**Latest Audits:**
+- [Phase 0A: System Contracts](./docs/audit/PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) - State machines, protocol truth
+- [Streaming Reliability](./docs/audit/streaming-reliability-dual-pipeline-20260210.md) - End-to-end streaming analysis
+- [UI/UX Audit](./docs/UI_UX_AUDIT_2026-02-10.md) - Interface design review
+
+See [docs/DOCUMENTATION_STATUS.md](./docs/DOCUMENTATION_STATUS.md) for complete index.
 
 ## Local quality gate
 

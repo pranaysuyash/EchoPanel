@@ -18,15 +18,16 @@ async def test_source_tagged_audio_flow():
     client = TestClient(app)
     
     with client.websocket_connect("/ws/live-listener") as websocket:
-        # 1. Check connection
+        # 1. Check connection - PR2: Now sends "connected" first, not "streaming"
         data = websocket.receive_json()
         assert data["type"] == "status"
-        assert data["state"] == "streaming"
+        assert data["state"] == "connected"
         
-        # 2. Start session
+        # 2. Start session - PR2: "streaming" ACK sent after start, not on connect
         websocket.send_json({"type": "start", "session_id": "test_session_H7"})
         data = websocket.receive_json()
         assert data["type"] == "status"
+        assert data["state"] == "streaming"
         
         # 3. Send Audio Frame with Source "mic"
         # Create a small silent frame (16k * 0.1s = 1600 samples * 2 bytes = 3200 bytes)
@@ -120,6 +121,13 @@ def test_ws_auth_accepts_query_token(monkeypatch):
     client = TestClient(app)
 
     with client.websocket_connect("/ws/live-listener?token=secret-token") as websocket:
+        # PR2: First message is "connected", not "streaming"
+        data = websocket.receive_json()
+        assert data["type"] == "status"
+        assert data["state"] == "connected"
+        
+        # PR2: Send start to get streaming ACK
+        websocket.send_json({"type": "start", "session_id": "test_auth_session"})
         data = websocket.receive_json()
         assert data["type"] == "status"
         assert data["state"] == "streaming"

@@ -15,6 +15,7 @@ from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegist
 
 # Import providers to trigger registration
 from . import provider_faster_whisper  # noqa: F401
+from . import provider_voxtral_realtime  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,8 @@ def _get_default_config() -> ASRConfig:
         device=os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto"),
         compute_type=os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8"),
         language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE"),  # None = auto-detect
-        chunk_seconds=int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "4")),
-        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "0") == "1",
+        chunk_seconds=int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2")),  # PR3: Reduced from 4s
+        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "1") == "1",  # PR3: Default ON (was "0")
     )
 
 

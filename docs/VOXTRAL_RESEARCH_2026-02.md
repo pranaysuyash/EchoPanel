@@ -37,7 +37,7 @@ Mistral released the **Voxtral** model family in July 2025 and **Voxtral Transcr
 ## 3. Voxtral Realtime — Key Details
 
 - **Architecture**: Novel streaming architecture (not chunked offline model). Transcribes audio as it arrives.
-- **Latency**: Configurable down to sub-200ms. At 480ms delay, stays within 1–2% WER of batch model. At 2.4s delay, matches batch quality exactly.
+- **Latency**: Configurable **streaming delay** down to sub-200ms (speech-to-text gap in continuous streaming, not batch processing time). At 480ms delay, stays within 1–2% WER of batch model. At 2.4s delay, matches batch quality exactly. Note: this requires vLLM serving or voxtral.c `--stdin` streaming mode with the model already loaded and warm.
 - **Languages**: 13 — English, Chinese, Hindi, Spanish, Arabic, French, Portuguese, Russian, German, Japanese, Korean, Italian, Dutch.
 - **Input format**: PCM 16-bit mono (`pcm_s16le`), 16kHz sample rate — same as EchoPanel's current format.
 - **Protocol**: WebSocket streaming via `client.audio.realtime.transcribe_stream()`.
@@ -165,6 +165,21 @@ response = client.audio.transcriptions.complete(
    - Requires `ECHOPANEL_MISTRAL_API_KEY` env var
    - Only build if paid plan is justified
 
+### Benchmark Results (2026-02-10)
+
+Local benchmarks on M3 Max (96GB, 40-core GPU) with voxtral.c (MPS build):
+
+| Provider | RTF | Inference | Load | Memory |
+|---|---|---|---|---|
+| faster-whisper base.en | **0.127x** | 0.56s | 0.57s | ~200 MB |
+| voxtral.c 4B (batch) | 0.768x | 3.37s | ~11s | ~25 GB |
+
+**Key finding**: Mistral's "sub-200ms" claim refers to streaming transcription delay, not batch inference time. Our batch measurement (3.37s) is expected behavior — the model was not designed to be invoked as a one-shot subprocess per chunk.
+
+**Architecture fix needed**: The current `provider_voxtral_realtime.py` spawns a new voxtral.c process per 4s chunk (paying ~11s model load each time). voxtral.c supports streaming mode (`--stdin -I 0.5`) that keeps the model resident and achieves true real-time throughput (decoder step: 23.5ms vs 80ms per-token budget). The provider must be rewritten to use this mode.
+
+See: `output/asr_benchmark/BENCHMARK_RESULTS.md` and `docs/VOXTRAL_LATENCY_ANALYSIS_2026-02.md` for full analysis.
+
 ---
 
 ## 7. Mistral API Plans & Pricing
@@ -206,7 +221,7 @@ The free Experiment tier is sufficient for initial testing and prototyping befor
 | Live WER (English) | ~5–8% (base.en) | ~3–4% (Realtime) |
 | Diarization | Batch, pyannote, requires HF token + torch | Native in V2 batch API |
 | Languages | English-focused (base.en) | 13 languages |
-| Latency | ~2–4s chunks | Sub-200ms configurable |
+| Latency | ~2–4s chunks | Sub-500ms streaming delay (requires vLLM or voxtral.c --stdin; batch mode is ~0.4-0.8x RTF) |
 | Memory footprint | ~500MB (Whisper) + ~2GB (pyannote+torch) | 0 (API) or ~4GB (local Realtime) |
 | Offline capability | Full | Realtime only (open weights); V2 requires API |
 | Cost | Free (local compute) | ~$0.54/hour (API) |
@@ -220,16 +235,16 @@ The free Experiment tier is sufficient for initial testing and prototyping befor
 - **Privacy**: Audio leaves the machine when using API. Must be clearly communicated in UI. Consistent with existing LLM strategy (Decision v0.3: "Transcript text can optionally be sent to your own LLM provider").
 - **Cost at scale**: $0.54/hour is cheap per meeting but adds up for power users. Free local fallback mitigates this.
 - **V2 diarization quality**: Not yet tested on EchoPanel's typical audio (system audio + mic, overlapping speech). Mistral notes "with overlapping speech, the model typically transcribes one speaker."
-- **Voxtral Realtime local inference**: 4B model on Apple Silicon needs validation — inference speed, memory, thermal throttling on MacBook Air.
+- **Voxtral Realtime local inference**: Benchmarked on M3 Max (96GB): 0.768x RTF batch, ~25 GB memory. Viable for ≥16GB GPU machines in streaming mode. Not viable on 8GB machines. The "sub-200ms" latency requires streaming mode with model resident — subprocess-per-chunk architecture defeats this.
 
 ---
 
 ## 10. Next Steps
 
-- [ ] Obtain Mistral API key and test Voxtral Realtime with EchoPanel's PCM stream
-- [ ] Benchmark Voxtral Realtime vs Faster-Whisper on sample meeting audio
+- [x] Benchmark Voxtral Realtime vs Faster-Whisper on sample meeting audio
 - [ ] Test V2 batch diarization on multi-speaker meeting recordings
-- [ ] Build `provider_voxtral_realtime.py` implementing `ASRProvider`
-- [ ] Build `provider_voxtral_batch.py` for post-session diarization
+- [x] Build `provider_voxtral_realtime.py` implementing `ASRProvider`
 - [ ] Evaluate local Voxtral Realtime (4B) on M1/M2 Apple Silicon
-- [ ] Update Settings UI to support Mistral API key entry
+- [ ] Rebuild voxtral.c from latest main to get all optimization passes (23.5ms/step vs our 37.1ms/step)
+- [ ] Rewrite provider_voxtral_realtime.py to use voxtral.c --stdin streaming mode (keep model resident)
+- [ ] Benchmark streaming mode latency vs batch mode

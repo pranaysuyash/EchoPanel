@@ -1,26 +1,32 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Layout Views Extension
+// HIG-compliant top bar, capture bar, and content layout
+
 extension SidePanelView {
+
+    // MARK: - Top Bar
     func topBar(panelWidth: CGFloat) -> some View {
         let isNarrow = panelWidth < 600
+        // HIG: Consistent picker width calculation
         let pickerWidth = min(
             max(panelWidth * (viewMode == .full ? 0.32 : 0.42), 170),
             viewMode == .full ? 300 : 250
         )
 
         return VStack(spacing: 6) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: Spacing.sm + 2) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("EchoPanel")
-                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                        .font(Typography.titleLarge)
                     Text(statusTitle)
-                        .font(.caption2)
+                        .font(Typography.captionSmall)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: Spacing.sm)
 
                 if isNarrow {
                     EmptyView()
@@ -41,14 +47,15 @@ extension SidePanelView {
                 statusPill
 
                 Text(appState.timerText)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .monospacedDigit()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(chipBackgroundColor)
                     .clipShape(Capsule())
 
-                if !showCaptureDetails {
+                if !showCaptureDetails && viewMode != .full {
+                    // HIG: Full mode has capture bar integrated, so no button needed
                     Button("Audio Setup") {
                         showCaptureDetails = true
                     }
@@ -73,18 +80,20 @@ extension SidePanelView {
         }
     }
 
+    // MARK: - Capture Bar
+    // HIG Note: Full mode has its own capture bar (fullCaptureBar)
     func captureBar(panelWidth: CGFloat) -> some View {
         let stacked = panelWidth < 560
         let collapsed = !showCaptureDetails
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: Spacing.sm + 2) {
             if collapsed {
                 HStack(spacing: 6) {
                     Text("Audio")
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundColor(.secondary)
                     Text(appState.audioSource.rawValue)
-                        .font(.caption)
+                        .font(Typography.caption)
                         .fontWeight(.semibold)
                     Toggle("Follow", isOn: $followLive)
                         .toggleStyle(.switch)
@@ -93,7 +102,7 @@ extension SidePanelView {
                     qualityChip
                     if captureNeedsAttention {
                         Text("Attention")
-                            .font(.caption2)
+                            .font(Typography.captionSmall)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.2))
@@ -108,7 +117,7 @@ extension SidePanelView {
                 }
 
                 Text(appState.sourceTroubleshootingHint ?? appState.captureRouteDescription)
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
                     .foregroundColor(appState.sourceTroubleshootingHint == nil ? .secondary : .orange)
                     .lineLimit(2)
             } else if stacked {
@@ -123,7 +132,7 @@ extension SidePanelView {
                 .accessibilityLabel("Audio source")
                 .frame(maxWidth: .infinity)
 
-                HStack(spacing: 10) {
+                HStack(spacing: Spacing.md) {
                     Toggle("Follow", isOn: $followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
@@ -146,7 +155,7 @@ extension SidePanelView {
                     .controlSize(.mini)
                 }
             } else {
-                HStack(spacing: 10) {
+                HStack(spacing: Spacing.md) {
                     Picker("Audio source", selection: $appState.audioSource) {
                         ForEach(AppState.AudioSource.allCases, id: \.self) { source in
                             Text(source.rawValue).tag(source)
@@ -181,45 +190,46 @@ extension SidePanelView {
 
             if !collapsed {
                 ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    if appState.audioSource == .system || appState.audioSource == .both {
-                        AudioLevelMeter(label: "Sys", level: appState.systemAudioLevel)
-                    }
-                    if appState.audioSource == .microphone || appState.audioSource == .both {
-                        AudioLevelMeter(label: "Mic", level: appState.microphoneAudioLevel)
-                    }
-
-                    Spacer()
-
-                    qualityChip
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Spacing.md) {
                         if appState.audioSource == .system || appState.audioSource == .both {
                             AudioLevelMeter(label: "Sys", level: appState.systemAudioLevel)
                         }
                         if appState.audioSource == .microphone || appState.audioSource == .both {
                             AudioLevelMeter(label: "Mic", level: appState.microphoneAudioLevel)
                         }
+
+                        Spacer()
+
+                        qualityChip
                     }
 
-                    qualityChip
-                }
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        HStack(spacing: Spacing.md) {
+                            if appState.audioSource == .system || appState.audioSource == .both {
+                                AudioLevelMeter(label: "Sys", level: appState.systemAudioLevel)
+                            }
+                            if appState.audioSource == .microphone || appState.audioSource == .both {
+                                AudioLevelMeter(label: "Mic", level: appState.microphoneAudioLevel)
+                            }
+                        }
+
+                        qualityChip
+                    }
                 }
 
                 sourceDiagnosticsStrip
             }
         }
-        .padding(8)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.42 : 0.58))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(Spacing.sm + 2)
+        .background(BackgroundStyle.control.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
         )
     }
 
+    // MARK: - Content Router
     func content(panelWidth: CGFloat) -> some View {
         Group {
             switch viewMode {
@@ -231,7 +241,7 @@ extension SidePanelView {
                 fullRenderer(panelWidth: panelWidth)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: viewMode)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: visibleTranscriptSegments)
+        // HIG: Respect reduce motion preference
+        .animation(reduceMotion ? nil : .easeInOut(duration: AnimationDuration.standard), value: viewMode)
     }
 }

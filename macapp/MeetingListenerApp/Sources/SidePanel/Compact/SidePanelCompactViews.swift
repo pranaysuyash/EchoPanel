@@ -1,39 +1,66 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Compact View Mode
+// HIG-compliant minimal companion view
+
 extension SidePanelView {
     func compactRenderer(panelWidth: CGFloat) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.sm) {  // 8pt spacing per HIG
             transcriptToolbar(panelWidth: panelWidth, showSurfaceButtons: false)
-                .accessibilitySortPriority(300)
+                .accessibilitySortPriority(Accessibility.SortPriority.content)
 
             ZStack {
                 transcriptScroller(style: .compact)
-                    .background(contentBackgroundColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // HIG Fix: Standardized background color
+                    .background(BackgroundStyle.container.color(for: colorScheme))
+                    // HIG Fix: Standardized corner radius (12pt)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(strokeColor, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                            .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
                     )
 
                 if showSurfaceOverlay {
                     surfaceOverlay
                 }
             }
-            .accessibilitySortPriority(200)
+            .accessibilitySortPriority(Accessibility.SortPriority.content)
 
-            HStack(spacing: 8) {
+            // HIG Fix: Added Surfaces button for feature parity (C1)
+            HStack(spacing: Spacing.sm) {
                 smallStateBadge(title: followLive ? "Follow ON" : "Follow OFF", tint: followLive ? .green : .orange)
                 smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
                 smallStateBadge(title: "Pins \(pinnedSegmentIDs.count)", tint: .indigo)
+
                 Spacer()
+
+                // HIG Fix: Added Surfaces button (was missing in Compact)
+                Button("Surfaces") {
+                    if showSurfaceOverlay {
+                        showSurfaceOverlay = false
+                    } else {
+                        showSurfaceOverlay = true
+                        activeSurface = .summary
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Toggle surfaces overlay")
+                .accessibilityHint("Shows summary, actions, pins, and entities")
+
+                // HIG Fix: Standardized button label to "Jump Live"
                 if !followLive {
-                    Button("Live") { jumpToLive() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button("Jump Live") {
+                        jumpToLive()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityLabel("Jump to live transcript")
+                    .accessibilityHint("Press J to jump to latest transcript")
                 }
             }
-            .accessibilitySortPriority(100)
+            .accessibilitySortPriority(Accessibility.SortPriority.footer)
         }
     }
 }

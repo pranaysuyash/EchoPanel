@@ -64,33 +64,33 @@ struct SidePanelView: View {
         var rowSpacing: CGFloat {
             switch self {
             case .roll:
-                return 10
+                return ViewModeSpacing.roll.rowSpacing
             case .compact:
-                return 8
+                return ViewModeSpacing.compact.rowSpacing
             case .full:
-                return 8
+                return ViewModeSpacing.full.rowSpacing
             }
         }
 
         var verticalPadding: CGFloat {
             switch self {
             case .roll:
-                return 14
+                return ViewModeSpacing.roll.verticalPadding
             case .compact:
-                return 10
+                return ViewModeSpacing.compact.verticalPadding
             case .full:
-                return 12
+                return ViewModeSpacing.full.verticalPadding
             }
         }
 
         var horizontalPadding: CGFloat {
             switch self {
             case .roll:
-                return 14
+                return ViewModeSpacing.roll.horizontalPadding
             case .compact:
-                return 10
+                return ViewModeSpacing.compact.horizontalPadding
             case .full:
-                return 12
+                return ViewModeSpacing.full.horizontalPadding
             }
         }
     }

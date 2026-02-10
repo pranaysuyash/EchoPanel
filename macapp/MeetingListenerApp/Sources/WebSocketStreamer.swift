@@ -1,5 +1,18 @@
 import Foundation
 
+// PR2: SourceMetrics struct for health monitoring
+struct SourceMetrics {
+    let source: String
+    let queueDepth: Int
+    let queueMax: Int
+    let queueFillRatio: Double
+    let droppedTotal: Int
+    let droppedRecent: Int
+    let avgInferMs: Double
+    let realtimeFactor: Double
+    let timestamp: TimeInterval
+}
+
 final class WebSocketStreamer: NSObject {
     var onStatus: ((StreamStatus, String) -> Void)?
     var onASRPartial: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)? // + source
@@ -7,6 +20,7 @@ final class WebSocketStreamer: NSObject {
     var onCardsUpdate: (([ActionItem], [DecisionItem], [RiskItem]) -> Void)?
     var onEntitiesUpdate: (([EntityItem]) -> Void)?
     var onFinalSummary: ((String, [String: Any]) -> Void)?
+    var onMetrics: ((SourceMetrics) -> Void)? // PR2: Metrics callback
 
     private let session = URLSession(configuration: .default)
     private var task: URLSessionWebSocketTask?
@@ -216,6 +230,23 @@ final class WebSocketStreamer: NSObject {
                     self.finalSummaryWaiter = nil
                     waiter.resume(returning: true)
                 }
+            }
+
+        case "metrics":
+            // PR2: Parse metrics message
+            let metrics = SourceMetrics(
+                source: object["source"] as? String ?? "",
+                queueDepth: object["queue_depth"] as? Int ?? 0,
+                queueMax: object["queue_max"] as? Int ?? 1,
+                queueFillRatio: object["queue_fill_ratio"] as? Double ?? 0.0,
+                droppedTotal: object["dropped_total"] as? Int ?? 0,
+                droppedRecent: object["dropped_recent"] as? Int ?? 0,
+                avgInferMs: object["avg_infer_ms"] as? Double ?? 0.0,
+                realtimeFactor: object["realtime_factor"] as? Double ?? 0.0,
+                timestamp: object["timestamp"] as? TimeInterval ?? 0
+            )
+            DispatchQueue.main.async {
+                self.onMetrics?(metrics)
             }
 
         default:

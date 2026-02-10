@@ -50,3 +50,29 @@ Do not delete files or remove “unused” code unless explicitly requested or c
 ## Staging policy
 - Default to staging all useful, non-breaking project changes with `git add -A`.
 - Only skip full staging when the user explicitly asks not to.
+
+## Audit documentation requirements
+
+When conducting an audit (type: `AUDIT`), you MUST:
+
+1. **Create a ticket** in `docs/WORKLOG_TICKETS.md` following the template
+2. **Create/update an audit document** in `docs/audit/` with naming convention:
+   - `docs/audit/<surface>-<area>-<YYYYMMDD>.md` for scoped audits
+   - `docs/audit/<theme>-<YYYYMMDD>.md` for cross-cutting audits
+3. **Include all required sections**:
+   - Files inspected (with paths)
+   - Executive summary (5-10 bullets)
+   - Failure modes table (minimum 10 entries)
+   - Root causes (ranked by impact)
+   - Concrete fixes (ranked by impact/effort/risk)
+   - Test plan (unit + integration + manual)
+   - Instrumentation plan (metrics, logs)
+   - State machine diagrams (text form acceptable)
+   - Queue/backpressure analysis
+   - Evidence citations (file path + line range)
+
+4. **Answer all key questions** specified in the audit prompt
+5. **Run all required personas** and include their findings
+6. **Update the ticket** with evidence log and mark DONE when complete
+
+Audits are documentation-only but MUST be comprehensive and cite specific code locations. Do not fabricate performance numbers—label assumptions clearly.

@@ -50,6 +50,12 @@ class SessionState:
     backpressure_warned: bool = False
     # P2-13: Audio debug dump file handles
     debug_dump_files: Dict[str, Any] = field(default_factory=dict)
+    # PR2: Metrics tracking
+    metrics_task: Optional[asyncio.Task] = None
+    asr_processing_times: list[float] = field(default_factory=list)  # Track inference times
+    asr_last_dropped: int = 0  # For computing dropped_recent
+    audio_time_processed: float = 0.0  # Total audio seconds processed
+    processing_time_total: float = 0.0  # Total processing time spent
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -275,12 +281,22 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
     try:
         async for event in stream_asr(_pcm_stream(queue), sample_rate=state.sample_rate, source=source):
             logger.debug(f"yielding event: {event}")
+            
+            # PR2: Track processing time for metrics
+            # Note: stream_asr doesn't directly expose timing, so we infer from chunk intervals
+            # A more accurate approach would instrument the provider itself
+            
             await ws_send(state, websocket, event)
             if event.get("type") == "asr_final":
                 # Add source if missing (stream_asr does it, but double check)
                 if "source" not in event:
                     event["source"] = source
                 state.transcript.append(event)
+                
+                # Track audio time processed
+                t0 = event.get("t0", 0)
+                t1 = event.get("t1", 0)
+                state.audio_time_processed += (t1 - t0)
     except Exception as e:
         logger.error(f"error in ASR loop ({source}): {e}")
 
@@ -307,6 +323,74 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
         return
 
 
+async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
+    """Emit metrics every 1 second for health monitoring."""
+    try:
+        while True:
+            await asyncio.sleep(1.0)
+            
+            if state.closed:
+                return
+            
+            for source, q in state.queues.items():
+                queue_depth = q.qsize()
+                queue_max = QUEUE_MAX
+                fill_ratio = queue_depth / queue_max if queue_max > 0 else 0
+                
+                # Calculate dropped in last 10s
+                dropped_recent = state.dropped_frames - state.asr_last_dropped
+                state.asr_last_dropped = state.dropped_frames
+                
+                # Calculate realtime factor
+                # Use last 10 processing times if available
+                recent_times = state.asr_processing_times[-10:] if state.asr_processing_times else []
+                avg_infer_time = sum(recent_times) / len(recent_times) if recent_times else 0.0
+                
+                # Realtime factor = processing_time / audio_time
+                # Assuming 2s chunks, if avg_infer_time is 0.5s, factor is 0.25 (good)
+                # If avg_infer_time is 3s, factor is 1.5 (bad - falling behind)
+                chunk_seconds = float(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2"))
+                realtime_factor = avg_infer_time / chunk_seconds if chunk_seconds > 0 else 0.0
+                
+                # Backpressure warnings
+                if fill_ratio > 0.95 and not state.backpressure_warned:
+                    state.backpressure_warned = True
+                    await ws_send(state, websocket, {
+                        "type": "status",
+                        "state": "overloaded",
+                        "message": f"Audio backlog critical for {source}",
+                        "source": source
+                    })
+                elif fill_ratio > 0.85 and not state.backpressure_warned:
+                    await ws_send(state, websocket, {
+                        "type": "status",
+                        "state": "buffering",
+                        "message": f"Processing backlog for {source}",
+                        "source": source
+                    })
+                elif fill_ratio < 0.70:
+                    state.backpressure_warned = False
+                
+                # Emit metrics
+                await ws_send(state, websocket, {
+                    "type": "metrics",
+                    "source": source,
+                    "queue_depth": queue_depth,
+                    "queue_max": queue_max,
+                    "queue_fill_ratio": round(fill_ratio, 2),
+                    "dropped_total": state.dropped_frames,
+                    "dropped_recent": dropped_recent,
+                    "avg_infer_ms": round(avg_infer_time * 1000, 1),
+                    "realtime_factor": round(realtime_factor, 2),
+                    "timestamp": time.time()
+                })
+                
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        logger.error(f"Error in metrics loop: {e}")
+
+
 @router.websocket("/ws/live-listener")
 async def ws_live_listener(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -328,9 +412,11 @@ async def ws_live_listener(websocket: WebSocket) -> None:
     state.diarization_enabled = diarization_enabled
     state.diarization_max_bytes = diarization_max_seconds * 16000 * 2
 
-    await ws_send(state, websocket, {"type": "status", "state": "streaming", "message": "Connected"})
+    # PR2: Don't send streaming status on connect - wait for start message
+    # Initial status is "connected" not "streaming"
+    await ws_send(state, websocket, {"type": "status", "state": "connected", "message": "Connected, waiting for start"})
     if DEBUG:
-        logger.debug("ws_live_listener: connected")
+        logger.debug("ws_live_listener: connected, waiting for start")
 
     try:
         while True:
@@ -368,10 +454,13 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         
                         state.sample_rate = sample_rate
                         state.started = True
+                        # PR2: Now ASR is ready, send streaming ACK
                         await ws_send(state, websocket, {"type": "status", "state": "streaming", "message": "Streaming"})
                         if DEBUG:
                             logger.debug(f"ws_live_listener: start session_id={state.session_id}")
                         state.analysis_tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
+                        # PR2: Start metrics emission task
+                        state.metrics_task = asyncio.create_task(_metrics_loop(websocket, state))
 
                     elif msg_type == "audio":
                         # B1 Fix: Handle source-tagged audio frames
@@ -507,6 +596,14 @@ async def ws_live_listener(websocket: WebSocket) -> None:
     finally:
         # P2-13: Close audio dump files
         _close_audio_dumps(state)
+        
+        # PR2: Cancel metrics task
+        if state.metrics_task:
+            state.metrics_task.cancel()
+            try:
+                await state.metrics_task
+            except asyncio.CancelledError:
+                pass
         
         for q in state.queues.values():
             await q.put(None)

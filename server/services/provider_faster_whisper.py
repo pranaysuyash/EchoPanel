@@ -180,13 +180,25 @@ class FasterWhisperProvider(ASRProvider):
 
             self.log(f"Processing final chunk #{chunk_count}, {len(audio_bytes)} bytes, t={t0:.1f}-{t1:.1f}s")
 
+            # P2 Fix: Skip very small final buffers to prevent hallucination from silence/noise
+            min_final_bytes = int(sample_rate * 0.5 * bytes_per_sample)  # 0.5 seconds minimum
+            if len(audio_bytes) < min_final_bytes:
+                self.log(f"Skipping final chunk: too small ({len(audio_bytes)} bytes < {min_final_bytes} min)")
+                return
+
             audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+
+            # P2 Fix: Check for silence/low energy to prevent hallucination
+            audio_energy = np.sqrt(np.mean(audio**2))
+            if audio_energy < 0.01:  # Very low energy threshold
+                self.log(f"Skipping final chunk: low energy ({audio_energy:.4f})")
+                return
 
             def _transcribe():
                 with self._infer_lock:
                     segments, info = model.transcribe(
                         audio,
-                        vad_filter=self.config.vad_enabled,
+                        vad_filter=True,  # P2 Fix: Always use VAD for final chunk
                         language=self.config.language,
                     )
                 return list(segments), info
@@ -203,6 +215,11 @@ class FasterWhisperProvider(ASRProvider):
 
                 avg_logprob = getattr(segment, 'avg_logprob', -0.5)
                 confidence = max(0.0, min(1.0, 1.0 + avg_logprob / 2.0))
+                
+                # P2 Fix: Filter low-confidence final segments to reduce hallucination
+                if confidence < 0.3 and len(text.split()) < 3:
+                    self.log(f"Filtering likely hallucination: '{text[:30]}...' conf={confidence:.2f}")
+                    continue
                 
                 if self._debug:
                     self.log(f"Segment: '{text[:30]}...' logprob={avg_logprob:.2f} conf={confidence:.2f}")

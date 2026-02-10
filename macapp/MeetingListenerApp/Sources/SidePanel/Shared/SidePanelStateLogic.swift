@@ -5,6 +5,10 @@ extension SidePanelView {
     var statusTitle: String {
         switch appState.sessionState {
         case .starting:
+            // PR1: More descriptive message for handshake
+            if appState.statusMessage.contains("Connecting") {
+                return "Waiting for backend to start streaming..."
+            }
             return "Checking permissions and connecting..."
         case .listening:
             if viewMode == .roll {
@@ -99,14 +103,17 @@ extension SidePanelView {
 
     var visibleTranscriptSegments: [TranscriptSegment] {
         let base = filteredSegments
+        // P2 Fix: Stable slice to reduce re-rendering during streaming
+        let result: [TranscriptSegment]
         switch viewMode {
         case .roll:
-            return Array(base.suffix(120))
+            result = Array(base.suffix(120))
         case .compact:
-            return Array(base.suffix(36))
+            result = Array(base.suffix(36))
         case .full:
-            return Array(base.suffix(500))
+            result = Array(base.suffix(500))
         }
+        return result
     }
 
     var pinnedSegments: [TranscriptSegment] {

@@ -1,7 +1,12 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Chrome Views Extension
+// HIG-compliant chrome, backgrounds, and shared UI components
+
 extension SidePanelView {
+
+    // MARK: - Shortcut Overlay
     var shortcutOverlay: some View {
         ZStack {
             Color.black.opacity(0.25)
@@ -10,10 +15,10 @@ extension SidePanelView {
                     showShortcutOverlay = false
                 }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm + 2) {
                 HStack {
                     Text("Keyboard")
-                        .font(.headline)
+                        .font(Typography.title)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button {
@@ -36,17 +41,17 @@ extension SidePanelView {
                 ShortcutRow(label: "Help", key: "?")
 
                 Text("Arrows move focus unless a surface overlay is open.")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundColor(.secondary)
-                    .padding(.top, 4)
+                    .padding(.top, Spacing.xs)
             }
-            .padding(14)
+            .padding(Spacing.md + 2)
             .frame(width: 340)
             .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(strokeColor, lineWidth: 1)
+                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                    .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
             )
             .onTapGesture {
                 // Consume taps so only backdrop closes the overlay.
@@ -54,11 +59,12 @@ extension SidePanelView {
         }
     }
 
+    // MARK: - Panel Background
     var panelBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -75,30 +81,28 @@ extension SidePanelView {
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08), radius: 14, x: 0, y: 8)
     }
 
+    // MARK: - Receipt Background (Deprecated - kept for compatibility)
+    // HIG Note: Using container background for consistency
     var receiptBackground: some View {
-        LinearGradient(
-            colors: [
-                Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.94),
-                Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.22 : 0.88)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        BackgroundStyle.container.color(for: colorScheme)
     }
 
+    // MARK: - Quality Chip
     var qualityChip: some View {
         Text("Audio \(appState.audioQuality.rawValue)")
-            .font(.caption2)
+            .font(Typography.captionSmall)
             .fontWeight(.medium)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(qualityColor(appState.audioQuality).opacity(0.14))
             .foregroundColor(qualityColor(appState.audioQuality))
             .clipShape(Capsule())
+            .accessibilityLabel("Audio quality: \(appState.audioQuality.rawValue)")
     }
 
+    // MARK: - Source Diagnostics Strip
     var sourceDiagnosticsStrip: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
                     ForEach(appState.activeSourceProbes) { probe in
@@ -115,7 +119,7 @@ extension SidePanelView {
             }
 
             Text(appState.sourceTroubleshootingHint ?? appState.captureRouteDescription)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(appState.sourceTroubleshootingHint == nil ? .secondary : .orange)
                 .lineLimit(2)
         }
@@ -124,7 +128,7 @@ extension SidePanelView {
     func sourceProbeChip(_ probe: AppState.SourceProbe) -> some View {
         HStack(spacing: 5) {
             Text(probe.label)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .fontWeight(.semibold)
 
             Circle()
@@ -132,84 +136,90 @@ extension SidePanelView {
                 .frame(width: 5, height: 5)
 
             Text("In \(probe.inputAgeText)")
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(.secondary)
 
             Text("ASR \(probe.asrAgeText)")
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(probe.asrIsFresh ? .green : .secondary)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.24 : 0.72))
+        .background(BackgroundStyle.input.color(for: colorScheme))
         .clipShape(Capsule())
     }
 
+    // MARK: - Status Pill
     var statusPill: some View {
         HStack(spacing: 6) {
             Circle()
                 .fill(sessionStatusColor)
                 .frame(width: 7, height: 7)
             Text(statusShort)
-                .font(.caption)
+                .font(Typography.caption)
                 .lineLimit(1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(sessionStatusColor.opacity(0.15))
         .clipShape(Capsule())
+        .accessibilityLabel("Session status: \(statusShort)")
     }
 
+    // MARK: - No Audio Banner
     var noAudioBanner: some View {
         HStack(spacing: 6) {
             Image(systemName: "speaker.slash.fill")
                 .foregroundColor(.orange)
             Text(appState.silenceMessage)
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.orange)
                 .lineLimit(2)
         }
-        .padding(8)
+        .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
+        .accessibilityLabel("No audio detected: \(appState.silenceMessage)")
     }
 
+    // MARK: - Empty Transcript State
     var emptyTranscriptState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Waiting for speech")
                 .font(.callout)
                 .fontWeight(.semibold)
             Text("Source: \(appState.audioSource.rawValue) · first transcript usually appears in 2-5 seconds.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.secondary)
             Text(appState.sourceTroubleshootingHint ?? appState.captureRouteDescription)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(appState.sourceTroubleshootingHint == nil ? .secondary : .orange)
             Text("Use ↑/↓ to move focus, Enter for lens, P to pin.")
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(.secondary)
         }
-        .padding(12)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(contentBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(BackgroundStyle.container.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
         )
     }
 
+    // MARK: - Focus Lens
     func focusLens(segment: TranscriptSegment) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm + 2) {
             HStack {
                 Text("Focus Lens")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .fontWeight(.semibold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text("Line \(focusedLineLabel)")
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
                     .foregroundColor(.secondary)
             }
 
@@ -237,19 +247,19 @@ extension SidePanelView {
                 }
             }
         }
-        .padding(10)
+        .padding(Spacing.sm + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(contentBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(BackgroundStyle.container.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
         )
     }
 
     func lensTag(_ title: String, tint: Color) -> some View {
         Text(title)
-            .font(.caption2)
+            .font(Typography.captionSmall)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(tint.opacity(0.16))
@@ -259,7 +269,7 @@ extension SidePanelView {
 
     func smallStateBadge(title: String, tint: Color) -> some View {
         Text(title)
-            .font(.caption2)
+            .font(Typography.captionSmall)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(tint.opacity(0.14))
@@ -271,17 +281,17 @@ extension SidePanelView {
         Text(text)
             .font(.footnote)
             .foregroundColor(.secondary)
-            .padding(10)
+            .padding(Spacing.sm + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.3 : 0.66))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(BackgroundStyle.card.color(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
     }
 
     func surfaceItemCard(tag: String, title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(tag)
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(Color.accentColor.opacity(colorScheme == .dark ? 0.3 : 0.14))
@@ -295,19 +305,20 @@ extension SidePanelView {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(subtitle)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
+        .padding(Spacing.sm + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.35 : 0.56))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(BackgroundStyle.control.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md + 1, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(tag). \(title)")
         .accessibilityValue(subtitle)
     }
 
+    // MARK: - Window Backdrop
     var windowBackdrop: some View {
         LinearGradient(
             colors: [
@@ -319,23 +330,25 @@ extension SidePanelView {
         )
     }
 
+    // MARK: - Legacy Color Properties (for backward compatibility)
     var chipBackgroundColor: Color {
-        Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.45 : 0.65)
+        BackgroundStyle.control.color(for: colorScheme)
     }
 
     var contentBackgroundColor: Color {
-        Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.26 : 0.86)
+        BackgroundStyle.container.color(for: colorScheme)
     }
 
     var strokeColor: Color {
-        Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.58 : 0.24)
+        StrokeStyle.standard.color(for: colorScheme)
     }
 
+    // MARK: - Animation Helper
     func performAnimatedUpdate(_ updates: () -> Void) {
         if reduceMotion {
             updates()
         } else {
-            withAnimation(.easeOut(duration: 0.2), updates)
+            withAnimation(.easeOut(duration: AnimationDuration.standard), updates)
         }
     }
 }

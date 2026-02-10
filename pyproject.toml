@@ -19,6 +19,7 @@ asr = [
     "numpy==1.26.4",
     "requests==2.32.3",
 ]
+
 diarization = [
     "pyannote.audio==3.3.0",
     "torch==2.5.1",

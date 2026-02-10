@@ -1,11 +1,17 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Needs Review Badge Style
+// HIG-compliant warning badge using semantic colors
+// WCAG AA compliant: minimum 4.5:1 contrast ratio for normal text
 enum NeedsReviewBadgeStyle {
-    static let foreground = NSColor.black
-    static let background = NSColor.systemOrange
+    // Using black text on orange for consistent high contrast in both modes
+    // Orange background with black text provides ~5.2:1 contrast ratio
+    static var foreground: Color { Color.black }
+    static var background: Color { Color.orange }
 }
 
+// MARK: - Data Models
 struct SurfaceCardItem: Identifiable {
     let id = UUID()
     let tag: String
@@ -29,6 +35,9 @@ struct SpeakerChipItem: Identifiable {
     let searchToken: String
 }
 
+// MARK: - Transcript Line Row
+// HIG-compliant transcript row with stable layout and accessibility
+
 struct TranscriptLineRow: View {
     @Environment(\.colorScheme) var colorScheme
 
@@ -42,20 +51,28 @@ struct TranscriptLineRow: View {
     let onJump: () -> Void
     let onEntityClick: (EntityItem) -> Void
 
-    private let lowConfidenceThreshold = 0.5
+    // HIG Fix: Using centralized threshold from DesignTokens
+    private let lowConfidenceThreshold = ConfidenceThreshold.low
 
     var body: some View {
         let highlightMatches = EntityHighlighter.matches(in: segment.text, entities: entities, mode: highlightMode)
-        HStack(alignment: .top, spacing: 10) {
+
+        // HIG: Fixed alignment to prevent jitter during streaming updates
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm + 2) {
+            // Timestamp
             Text(formatTime(segment.t0))
-                .font(.caption2)
+                .font(Typography.monoSmall)
                 .monospacedDigit()
                 .foregroundColor(.secondary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: Layout.timestampWidth, alignment: .trailing)
+                .frame(height: Layout.rowMinHeight, alignment: .center)
 
+            // Speaker Badge
             speakerBadge
+                .frame(width: Layout.speakerBadgeSize, height: Layout.speakerBadgeSize, alignment: .center)
 
-            VStack(alignment: .leading, spacing: 4) {
+            // Content Column
+            VStack(alignment: .leading, spacing: Spacing.xs + 2) {
                 EntityTextView(
                     text: segment.text,
                     matches: highlightMatches,
@@ -64,6 +81,7 @@ struct TranscriptLineRow: View {
                     onEntityClick(entity)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityRepresentation {
                     EntityHighlightsAccessibilityRepresentation(
                         transcriptText: segment.text,
@@ -72,19 +90,27 @@ struct TranscriptLineRow: View {
                     )
                 }
 
-                HStack(spacing: 8) {
+                // Confidence Row
+                HStack(spacing: Spacing.sm) {
                     Text(formatConfidence(segment.confidence))
-                        .font(.caption2)
+                        .font(Typography.monoSmall)
+                        .monospacedDigit()
                         .foregroundColor(confidenceColor)
+                        .frame(minWidth: Layout.confidenceMinWidth, alignment: .leading)
 
                     if segment.confidence < lowConfidenceThreshold {
                         needsReviewBadge
                     }
-                }
-            }
 
-            if isFocused {
-                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Action Buttons
+            HStack(spacing: Spacing.xs) {
+                if isFocused {
                     iconButton(
                         systemName: isPinned ? "pin.fill" : "pin",
                         accessibilityLabel: isPinned ? "Unpin line" : "Pin line",
@@ -102,22 +128,28 @@ struct TranscriptLineRow: View {
                     )
                 }
             }
+            .frame(width: isFocused ? Layout.actionContainerWidth : 0, alignment: .trailing)
+            .opacity(isFocused ? 1 : 0)
+            .animation(.easeInOut(duration: AnimationDuration.quick), value: isFocused)
         }
-        .padding(10)
+        .padding(Spacing.sm + 2)
         .background(rowBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                 .stroke(rowStroke, lineWidth: 1)
         )
+        .transaction { transaction in
+            transaction.animation = .easeInOut(duration: AnimationDuration.quick)
+        }
     }
 
     var speakerBadge: some View {
         let label = speakerInitial
         let accessibilityLabel = speakerAccessibilityLabel
         return Text(label)
-            .font(.caption)
+            .font(Typography.caption)
             .fontWeight(.semibold)
-            .frame(width: 24, height: 24)
+            .frame(width: Layout.speakerBadgeSize, height: Layout.speakerBadgeSize)
             .background(Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.3 : 0.9))
             .clipShape(Circle())
             .overlay(Circle().stroke(speakerTint.opacity(0.7), lineWidth: 1))
@@ -125,7 +157,7 @@ struct TranscriptLineRow: View {
             .accessibilityLabel(accessibilityLabel)
             .accessibilityAddTraits(.isStaticText)
     }
-    
+
     var speakerAccessibilityLabel: String {
         if let speaker = segment.speaker, !speaker.isEmpty {
             return "Speaker: \(speaker)"
@@ -140,7 +172,7 @@ struct TranscriptLineRow: View {
     func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.caption)
+                .font(Typography.caption)
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
@@ -149,22 +181,22 @@ struct TranscriptLineRow: View {
 
     var rowBackground: Color {
         if isFocused {
-            return Color.blue.opacity(0.11)
+            return BackgroundStyle.rowSelected.color(for: colorScheme)
         }
         if isPinned {
-            return Color.indigo.opacity(0.1)
+            return BackgroundStyle.rowPinned.color(for: colorScheme)
         }
-        return Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.18 : 0.75)
+        return BackgroundStyle.card.color(for: colorScheme)
     }
 
     var rowStroke: Color {
         if isFocused {
-            return Color.blue.opacity(0.5)
+            return StrokeStyle.focus.color(for: colorScheme)
         }
         if isPinned {
-            return Color.indigo.opacity(0.45)
+            return StrokeStyle.pinned.color(for: colorScheme)
         }
-        return Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.55 : 0.25)
+        return StrokeStyle.standard.color(for: colorScheme)
     }
 
     var speakerInitial: String {
@@ -187,10 +219,10 @@ struct TranscriptLineRow: View {
     }
 
     var confidenceColor: Color {
-        if segment.confidence >= 0.8 {
+        if segment.confidence >= ConfidenceThreshold.high {
             return .green
         }
-        if segment.confidence >= 0.5 {
+        if segment.confidence >= ConfidenceThreshold.medium {
             return .secondary
         }
         return .orange
@@ -219,24 +251,26 @@ struct TranscriptLineRow: View {
     }
 
     var needsReviewBadge: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xs) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption2)
+                .font(Typography.captionSmall)
             Text("Needs review")
-                .font(.caption2)
+                .font(Typography.captionSmall)
         }
-        .foregroundColor(Color(nsColor: NeedsReviewBadgeStyle.foreground))
+        .foregroundColor(NeedsReviewBadgeStyle.foreground)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(Color(nsColor: NeedsReviewBadgeStyle.background))
+        .background(NeedsReviewBadgeStyle.background)
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color(nsColor: NeedsReviewBadgeStyle.foreground).opacity(0.25), lineWidth: 0.5)
+                .stroke(NeedsReviewBadgeStyle.foreground.opacity(0.25), lineWidth: 0.5)
         )
-        .accessibilityLabel("Needs review low confidence transcript line")
+        .accessibilityLabel("Low confidence transcript, needs review")
     }
 }
+
+// MARK: - Accessibility Representation
 
 struct EntityHighlightsAccessibilityRepresentation: View {
     let transcriptText: String
@@ -265,6 +299,8 @@ struct EntityHighlightsAccessibilityRepresentation: View {
     }
 }
 
+// MARK: - Shortcut Row
+
 struct ShortcutRow: View {
     @Environment(\.colorScheme) var colorScheme
 
@@ -274,52 +310,56 @@ struct ShortcutRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .font(.caption)
+                .font(Typography.caption)
             Spacer()
             Text(key)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
                 .background(Color(nsColor: .textBackgroundColor).opacity(colorScheme == .dark ? 0.35 : 0.7))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xs, style: .continuous))
         }
     }
 }
+
+// MARK: - Highlight Help View
 
 struct HighlightHelpView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Highlights")
-                .font(.headline)
+                .font(Typography.title)
 
             Text("Off")
-                .font(.subheadline)
+                .font(Typography.subtitle)
                 .fontWeight(.semibold)
             Text("No in-line entity highlighting.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.secondary)
 
             Text("Extracted")
-                .font(.subheadline)
+                .font(Typography.subtitle)
                 .fontWeight(.semibold)
             Text("Uses backend entities for consistent names across transcript and entity surface.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.secondary)
 
             Text("NLP")
-                .font(.subheadline)
+                .font(Typography.subtitle)
                 .fontWeight(.semibold)
             Text("Uses on-device Apple NLP for quick name/place/org highlighting.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.secondary)
 
             Divider()
             Text("Tip: click a highlight to filter and jump mentions.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundColor(.secondary)
         }
     }
 }
+
+// MARK: - Entity Detail Popover
 
 struct EntityDetailPopover: View {
     let entity: EntityItem
@@ -333,9 +373,9 @@ struct EntityDetailPopover: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entity.name)
-                        .font(.headline)
+                        .font(Typography.title)
                     Text(entity.type.uppercased())
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
@@ -343,10 +383,10 @@ struct EntityDetailPopover: View {
 
             HStack(spacing: 10) {
                 Label("\(entity.count)", systemImage: "number")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundColor(.secondary)
                 Label("\(Int(entity.confidence * 100))%", systemImage: "checkmark.seal")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundColor(.secondary)
             }
 
@@ -384,17 +424,19 @@ struct EntityDetailPopover: View {
     }
 }
 
+// MARK: - Permission Banner
+
 struct PermissionBanner: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
         if issues.isEmpty == false {
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.red)
-                    .font(.caption)
+                    .font(Typography.caption)
                 Text(issues.map(\.label).joined(separator: " · "))
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundColor(.red)
                     .lineLimit(1)
                 Spacer()
@@ -406,10 +448,10 @@ struct PermissionBanner: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 5)
             .background(Color.red.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm, style: .continuous))
         }
     }
 
@@ -435,14 +477,17 @@ struct PermissionBanner: View {
     }
 }
 
+// MARK: - Audio Level Meter
+// HIG Fix: Added accessibility support (A3)
+
 struct AudioLevelMeter: View {
     let label: String
     let level: Float
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xs) {
             Text(label)
-                .font(.caption2)
+                .font(Typography.captionSmall)
                 .foregroundColor(.secondary)
                 .frame(width: 24, alignment: .trailing)
 
@@ -456,7 +501,10 @@ struct AudioLevelMeter: View {
                         .frame(width: max(2, CGFloat(level) * geometry.size.width))
                 }
             }
-            .frame(width: 72, height: 7)
+            .frame(width: Layout.audioMeterWidth, height: Layout.audioMeterHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(label) audio level")
+            .accessibilityValue("\(Int(level * 100)) percent")
         }
     }
 
