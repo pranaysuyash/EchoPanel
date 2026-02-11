@@ -150,7 +150,7 @@ class ConcurrencyController:
         chunk: bytes,
         source: str,
         timeout: float = 0.1
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         """
         Submit an audio chunk for processing.
         
@@ -160,7 +160,9 @@ class ConcurrencyController:
             timeout: How long to wait if queue is full
             
         Returns:
-            True if chunk queued, False if dropped (backpressure)
+            Tuple of (success, dropped_oldest):
+            - success: True if chunk was queued
+            - dropped_oldest: True if an old chunk was dropped to make room
         """
         if source not in self._queues:
             logger.warning(f"Unknown source '{source}', using 'system' queue")
@@ -177,13 +179,15 @@ class ConcurrencyController:
             priority=priority,
         )
         
+        dropped_oldest = False
+        
         try:
             # Non-blocking put with timeout
             await asyncio.wait_for(
                 queue.put(audio_chunk),
                 timeout=timeout
             )
-            return True
+            return True, dropped_oldest
             
         except (asyncio.QueueFull, asyncio.TimeoutError):
             # Backpressure: drop oldest and add new (keep newest)
@@ -191,6 +195,7 @@ class ConcurrencyController:
                 dropped = queue.get_nowait()
                 self._dropped_frames_total += 1
                 self._dropped_frames_recent += 1
+                dropped_oldest = True
                 
                 logger.warning(
                     f"Dropped oldest {dropped.source} chunk "
@@ -199,12 +204,12 @@ class ConcurrencyController:
                 
                 # Try again with space now available
                 await queue.put(audio_chunk)
-                return True
+                return True, dropped_oldest
                 
             except asyncio.QueueEmpty:
                 # Shouldn't happen, but handle gracefully
                 logger.error(f"Queue full but get_nowait failed for {source}")
-                return False
+                return False, dropped_oldest
     
     async def get_chunk(self, source: str) -> Optional[AudioChunk]:
         """

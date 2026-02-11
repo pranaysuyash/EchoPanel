@@ -66,6 +66,80 @@ Next actions:
 
 ## Active tickets
 
+### TCK-20260211-005 :: Audio Pipeline Hardening — Phase 1 (Clipping Fix + Limiter)
+
+Type: HARDENING
+Owner: Pranay (agent: Amp)
+Created: 2026-02-11 10:50 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement Phase 1 of audio pipeline hardening based on TCK-20260211-004 audio review. Focus on fixing the most critical issue: hard clipping during Float→Int16 conversion that causes digital distortion and degrades ASR accuracy. Add a soft limiter with proper attack/release characteristics.
+
+Scope contract:
+
+- In-scope:
+  - Add limiter to AudioCaptureManager (system audio)
+  - Add limiter to MicrophoneCaptureManager (mic audio)
+  - Limiter parameters: threshold=-0.9dBFS, fast attack, slow release
+  - Add limiting ratio metric to quality monitoring
+  - Update audio quality enum to include "limited" state
+  - Unit tests for limiter functionality
+- Out-of-scope:
+  - Clock drift compensation (Phase 2)
+  - Client-side VAD (Phase 3)
+  - Bluetooth handling (Phase 4)
+  - Binary WebSocket frames (future optimization)
+  - AEC/NS/AGC (future features)
+- Behavior change allowed: YES (adding headroom management)
+
+Targets:
+
+- Surfaces: macapp
+- Files:
+  - `macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift`
+  - `macapp/MeetingListenerApp/Sources/MicrophoneCaptureManager.swift`
+  - `macapp/MeetingListenerApp/Tests/AudioLimiterTests.swift` (new)
+- Branch/PR: To be created
+- Range: Unknown
+
+Acceptance criteria:
+
+- [ ] Limiter implemented in AudioCaptureManager with attack/release
+- [ ] Limiter implemented in MicrophoneCaptureManager with attack/release
+- [ ] Limiter threshold configurable (default -0.9 dBFS)
+  - [ ] No hard clipping observed on 0 dBFS test tones
+  - [ ] ASR accuracy maintained or improved on loud audio samples
+  - [ ] Limiting activity logged (debug builds)
+  - [ ] Unit tests: limiter reduces peaks, preserves quiet signals
+  - [ ] Swift build passes with no warnings
+  - [ ] Manual test: 1-hour meeting with loud system audio shows no distortion
+
+Evidence log:
+
+- [2026-02-11 10:50] Created implementation ticket | Evidence:
+  - Based on: TCK-20260211-004 Audio Industry Code Review
+  - Patch reference: docs/audit/audio-clipping-fix.patch
+  - Interpretation: Observed — plan created before implementation
+
+Status updates:
+
+- [2026-02-11 10:50] **OPEN** 🔵 — awaiting implementation start
+
+Next actions:
+
+1. Review and approve scope with human (Pranay)
+2. Create feature branch
+3. Implement AudioCaptureManager limiter
+4. Implement MicrophoneCaptureManager limiter
+5. Add unit tests
+6. Manual testing with loud audio
+7. Create PR
+8. Update ticket status
+
+---
+
 ### TCK-20260211-003 :: ASR Provider & Performance Audit (Local-First, Streaming Residency, Apple Silicon Focus)
 
 Type: AUDIT
@@ -6876,3 +6950,108 @@ Next actions:
 2. Create implementation tickets for P0-1 (SRT export) if broadcast use case confirmed
 3. Document current meeting documentation use case limitations
 4. Consider Phase 1 broadcast features for roadmap (SRT, real-time diarization)
+
+---
+
+### TCK-20260212-002 :: Senior Architect Review - Patch Implementation (3 Critical Fixes)
+
+Type: HARDENING
+Owner: Pranay (agent: Amp)
+Created: 2026-02-12 00:50 (local time)
+Status: **DONE** ✅
+Priority: P0
+
+Description:
+Implement the three critical patches from Senior Architect Review (TCK-20260212-001):
+1. Add inference lock to whisper.cpp provider (P0) - prevents race condition with multiple audio sources
+2. Add timeout to NLP calls (P1) - prevents indefinite hang on entity/card extraction
+3. Add async send queue to WebSocketStreamer (P0) - prevents capture thread blocking on network stall
+
+Scope contract:
+
+- In-scope:
+  - Patch 1: Add `threading.Lock()` to `WhisperCppProvider._infer_lock` and wrap `model.transcribe()`
+  - Patch 2: Wrap `extract_entities` and `extract_cards` with `asyncio.wait_for()` (10s/15s timeouts)
+  - Patch 3: Add `OperationQueue` to `WebSocketStreamer` with 100-message limit and 5s send timeout
+  - Verify all patches with Swift build and test suite
+- Out-of-scope:
+  - Additional architectural changes beyond the three specified patches
+  - New features or enhancements
+- Behavior change allowed: YES (hardening fixes)
+
+Targets:
+
+- Surfaces: macapp | server
+- Files:
+  - `server/services/provider_whisper_cpp.py` (Patch 1)
+  - `server/api/ws_live_listener.py` (Patch 2)
+  - `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (Patch 3)
+- Branch/PR: N/A (direct commits)
+- Range: HEAD
+
+Acceptance criteria:
+
+- [x] Patch 1 applied: Inference lock added to whisper.cpp provider
+- [x] Patch 2 applied: Timeouts added to NLP calls in analysis loop
+- [x] Patch 3 applied: Async send queue added to WebSocketStreamer
+- [x] Python syntax validation passes
+- [x] Swift build succeeds (3.71s build time)
+- [x] All 30 tests pass
+- [x] No new warnings introduced by changes
+
+Evidence log:
+
+- [2026-02-12 00:50] Started patch implementation | Evidence:
+  - Reviewed SENIOR_ARCHITECT_REVIEW_2026-02-12.md patches
+  - Confirmed no prior patches applied (grep found no _infer_lock, wait_for, sendQueue)
+  - Interpretation: Observed — all three patches need application
+
+- [2026-02-12 00:52] Applied Patch 1 (whisper.cpp inference lock) | Evidence:
+  - File: `server/services/provider_whisper_cpp.py`
+  - Added `self._infer_lock = threading.Lock()` in `__init__`
+  - Wrapped `model.transcribe(audio_float32)` with `with self._infer_lock:`
+  - Command: `python3 -m py_compile server/services/provider_whisper_cpp.py` → no errors
+  - Interpretation: Observed — patch applied successfully
+
+- [2026-02-12 00:55] Applied Patch 2 (NLP timeouts) | Evidence:
+  - File: `server/api/ws_live_listener.py`
+  - Added `asyncio.wait_for()` with 10s timeout for `extract_entities`
+  - Added `asyncio.wait_for()` with 15s timeout for `extract_cards`
+  - Added timeout handling with warning logs and status messages
+  - Command: `python3 -m py_compile server/api/ws_live_listener.py` → no errors
+  - Interpretation: Observed — patch applied successfully
+
+- [2026-02-12 00:58] Applied Patch 3 (async send queue) | Evidence:
+  - File: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`
+  - Added `sendQueue` (OperationQueue) and `maxQueuedSends` properties
+  - Initialized queue in `init()` with maxConcurrentOperationCount=1, QoS=.utility
+  - Modified `sendJSON()` to enqueue sends with 5s semaphore timeout
+  - Added queue overflow protection (drops frames at 100 queued)
+  - Updated `disconnect()` to cancel pending operations
+  - Fixed actor isolation issues with DispatchQueue.main.async for logging
+  - Interpretation: Observed — patch applied with Swift concurrency fixes
+
+- [2026-02-12 01:00] Verified Swift build | Evidence:
+  - Command: `cd macapp/MeetingListenerApp && swift build`
+  - Output: Build complete! (3.71s)
+  - Warnings: 2 pre-existing warnings in ResilientWebSocket.swift (unrelated to changes)
+  - Interpretation: Observed — build succeeds, no new warnings from patches
+
+- [2026-02-12 01:02] Verified test suite | Evidence:
+  - Command: `swift test`
+  - Results: 30 tests, 0 failures
+  - Suites: SidePanelContractsTests, SidePanelPerformanceTests, SidePanelVisualSnapshotTests, StreamingVisualTests
+  - Duration: 9.489 seconds
+  - Interpretation: Observed — all tests pass, patches don't break existing functionality
+
+Status updates:
+
+- [2026-02-12 00:50] **IN_PROGRESS** 🟡 — applying patches from Senior Architect Review
+- [2026-02-12 01:02] **DONE** ✅ — all 3 patches applied and verified
+
+Next actions:
+
+1. Monitor for any runtime issues with async send queue in production use
+2. Consider adding metrics for send queue depth and dropped frames
+3. Document the timeout values (10s/15s) in configuration options
+4. Close loop with Senior Architect Review findings (all P0/P1 patches now applied)

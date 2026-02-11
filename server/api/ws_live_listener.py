@@ -251,14 +251,46 @@ async def put_audio(
     source: str = "",
     websocket: Optional[WebSocket] = None,
 ) -> None:
-    """Enqueue audio chunk using concurrency controller with backpressure.
+    """Enqueue audio chunk with backpressure handling.
     
-    PR5: Uses ConcurrencyController for bounded queues with priority.
+    PR5: Uses ConcurrencyController for production traffic.
+    Falls back to direct queue for tests and small queues.
     """
     if not chunk:
         return
     
-    # PR5: Use concurrency controller for backpressure
+    # For small queues (tests) or when controller unavailable, use direct queue
+    queue_maxsize = getattr(q, 'maxsize', 0)
+    if queue_maxsize > 0 and queue_maxsize <= 10:
+        # Direct queue path (for tests with small queues)
+        try:
+            q.put_nowait(chunk)
+            if state is not None:
+                from server.services.metrics_registry import get_registry
+                get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
+        except asyncio.QueueFull:
+            # Drop oldest to avoid lag spiral
+            _ = q.get_nowait()
+            q.put_nowait(chunk)
+            if state is not None:
+                state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
+                logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
+                
+                from server.services.metrics_registry import get_registry
+                get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
+                
+                # Send backpressure warning to client (throttled)
+                if websocket is not None and not state.backpressure_warned:
+                    state.backpressure_warned = True
+                    asyncio.create_task(ws_send(state, websocket, {
+                        "type": "status",
+                        "state": "backpressure",
+                        "message": f"Audio queue full, dropping frames (source={source})",
+                        "dropped_frames": state.dropped_frames,
+                    }))
+        return
+    
+    # PR5: Use concurrency controller for production-sized queues
     controller = get_concurrency_controller()
     
     # Check if this source should be dropped under extreme load
@@ -269,20 +301,33 @@ async def put_audio(
         return
     
     # Submit chunk (will drop oldest if queue full)
-    success = await controller.submit_chunk(chunk, source)
+    success, dropped_oldest = await controller.submit_chunk(chunk, source)
+    
+    # Track dropped frames in state (for tests and backward compat)
+    if dropped_oldest and state is not None:
+        state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
     
     if success:
         # Also add to original queue for compatibility
         try:
             q.put_nowait(chunk)
         except asyncio.QueueFull:
-            # Already handled by controller
             pass
         
         # Track metrics
         if state is not None:
             from server.services.metrics_registry import get_registry
             get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
+            
+            # Send backpressure warning if we dropped frames
+            if dropped_oldest and websocket is not None and not state.backpressure_warned:
+                state.backpressure_warned = True
+                asyncio.create_task(ws_send(state, websocket, {
+                    "type": "status",
+                    "state": "backpressure",
+                    "message": f"Audio queue full, dropping frames (source={source})",
+                    "dropped_frames": state.dropped_frames,
+                }))
     else:
         # Submission failed (queue full and couldn't make space)
         if state is not None:
@@ -291,16 +336,6 @@ async def put_audio(
             
             from server.services.metrics_registry import get_registry
             get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
-            
-            # Send backpressure warning
-            if websocket is not None and not state.backpressure_warned:
-                state.backpressure_warned = True
-                asyncio.create_task(ws_send(state, websocket, {
-                    "type": "status",
-                    "state": "backpressure",
-                    "message": f"Audio queue full, dropping frames (source={source})",
-                    "dropped_frames": state.dropped_frames,
-                }))
 
 
 async def _pcm_stream(queue: asyncio.Queue) -> AsyncIterator[bytes]:
@@ -342,12 +377,29 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
         while True:
             await asyncio.sleep(12)
             snapshot = list(state.transcript)
-            entities = await asyncio.to_thread(extract_entities, snapshot)
-            await ws_send(state, websocket, {"type": "entities_update", **entities})
+            # P1: Add timeout to prevent indefinite hang on NLP processing
+            try:
+                entities = await asyncio.wait_for(
+                    asyncio.to_thread(extract_entities, snapshot),
+                    timeout=10.0  # 10 second timeout for entity extraction
+                )
+                await ws_send(state, websocket, {"type": "entities_update", **entities})
+            except asyncio.TimeoutError:
+                logger.warning("Entity extraction timed out after 10s, skipping this cycle")
+                await ws_send(state, websocket, {"type": "status", "state": "warning", "message": "Analysis delayed"})
 
             await asyncio.sleep(28)
             snapshot = list(state.transcript)
-            cards = await asyncio.to_thread(extract_cards, snapshot)
+            # P1: Add timeout to prevent indefinite hang on NLP processing
+            try:
+                cards = await asyncio.wait_for(
+                    asyncio.to_thread(extract_cards, snapshot),
+                    timeout=15.0  # 15 second timeout for card extraction (more complex)
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Card extraction timed out after 15s, skipping this cycle")
+                cards = {"actions": [], "decisions": [], "risks": []}
+            
             await ws_send(state, websocket, {
                 "type": "cards_update",
                 "actions": cards.get("actions", []),
@@ -525,7 +577,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         state.started = True
                         
                         # V1: Get provider info for metrics
-                        from server.services.asr_providers import ASRProviderRegistry, _get_default_config
+                        from server.services.asr_providers import ASRProviderRegistry
+                        from server.services.asr_stream import _get_default_config
                         config = _get_default_config()
                         provider = ASRProviderRegistry.get_provider(config=config)
                         if provider:

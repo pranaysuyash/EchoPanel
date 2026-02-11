@@ -57,9 +57,15 @@ final class WebSocketStreamer: NSObject {
     private var reconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 10
     private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
+    
+    // P0: Bounded send queue to prevent blocking capture thread on network stall
+    private let sendQueue = OperationQueue()
+    private let maxQueuedSends = 100
 
     override init() {
         super.init()
+        sendQueue.maxConcurrentOperationCount = 1
+        sendQueue.qualityOfService = .utility
     }
 
     func connect(sessionID: String, attemptID: String? = nil) {
@@ -107,6 +113,10 @@ final class WebSocketStreamer: NSObject {
 
     func disconnect() {
         sendStop()
+        
+        // P0: Cancel pending send operations
+        sendQueue.cancelAllOperations()
+        
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         sessionID = nil
@@ -204,8 +214,50 @@ final class WebSocketStreamer: NSObject {
     private func sendJSON(_ payload: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
         guard let text = String(data: data, encoding: .utf8) else { return }
-        task?.send(.string(text)) { [weak self] error in
-            if let error { self?.handleError(error) }
+        
+        // P0: Enqueue send instead of blocking capture thread
+        guard sendQueue.operationCount < maxQueuedSends else {
+            // Log on main actor
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("WebSocket send queue overflow, dropping frame", metadata: [
+                    "queue_depth": self.sendQueue.operationCount,
+                    "max_queue": self.maxQueuedSends
+                ])
+            }
+            return
+        }
+        
+        // Capture payload type for logging before capturing self
+        let payloadType = payload["type"] as? String ?? "unknown"
+        
+        sendQueue.addOperation { [weak self] in
+            guard let self = self else { return }
+            
+            // Use semaphore to make async send synchronous for queue ordering
+            let semaphore = DispatchSemaphore(value: 0)
+            var sendError: Error?
+            
+            self.task?.send(.string(text)) { error in
+                sendError = error
+                semaphore.signal()
+            }
+            
+            // Wait up to 5 seconds for send to complete
+            let result = semaphore.wait(timeout: .now() + 5)
+            
+            if result == .timedOut {
+                DispatchQueue.main.async {
+                    StructuredLogger.shared.warning("WebSocket send timeout", metadata: [
+                        "payload_type": payloadType
+                    ])
+                }
+            }
+            
+            if let error = sendError {
+                DispatchQueue.main.async {
+                    self.handleError(error)
+                }
+            }
         }
     }
 
