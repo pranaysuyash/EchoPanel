@@ -6,6 +6,7 @@ Comprehensive technical audits organized by date and scope.
 
 | Priority | Audit | Scope | Lines |
 |----------|-------|-------|-------|
+| 🔴 **P0** | [Phase 4G: Broadcast Readiness](./AUDIT_04_BROADCAST_READINESS.md) | Live production captioning, dual-path redundancy, timecode sync | 700+ |
 | 🔴 **P0** | [Phase 0A: System Contracts](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) | Client/server state machines, WebSocket protocol, truth contracts | 691 |
 | 🔴 **P0** | [Phase 1C: Streaming + Backpressure](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | End-to-end queues, overload policy, UI truth mapping | 1100+ |
 | 🔴 **P0** | [Phase 2D: ASR Provider Layer](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | Residency, streaming semantics, Apple Silicon, degrade ladder | 900+ |
@@ -23,6 +24,7 @@ Comprehensive technical audits organized by date and scope.
 
 | Date | File | Topic | Lines |
 |------|------|-------|-------|
+| 2026-02-12 | [AUDIT_04_BROADCAST_READINESS.md](./AUDIT_04_BROADCAST_READINESS.md) | Broadcast industry readiness, 10-scenario playbook, operator UX | 700+ |
 | 2026-02-12 | [SENIOR_ARCHITECT_REVIEW_2026-02-12.md](./SENIOR_ARCHITECT_REVIEW_2026-02-12.md) | Full-stack architecture, security, performance, concrete patches | 648 |
 | 2026-02-12 | [PHASE_2D_ASR_PROVIDER_AUDIT.md](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | ASR providers, residency, streaming, Apple Silicon, 11 failure modes | 900+ |
 | 2026-02-11 | [PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | Streaming reliability, backpressure policy, 14 failure modes | 1100+ |
@@ -68,6 +70,7 @@ Comprehensive technical audits organized by date and scope.
 ## By Category
 
 ### 🔴 Critical (P0)
+- [Phase 4G: Broadcast Readiness](./AUDIT_04_BROADCAST_READINESS.md) - Live captioning, 10-scenario playbook, score 42/100
 - [Senior Architect Review](./SENIOR_ARCHITECT_REVIEW_2026-02-12.md) - Full-stack architecture, security, performance, 20 findings
 - [Phase 2D: ASR Provider Layer](./PHASE_2D_ASR_PROVIDER_AUDIT.md) - Residency, streaming semantics, Apple Silicon
 - [Phase 1C: Streaming + Backpressure](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) - Queue inventory, overload policy, 14 failure modes

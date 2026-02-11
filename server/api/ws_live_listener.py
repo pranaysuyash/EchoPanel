@@ -19,6 +19,7 @@ from server.services.concurrency_controller import (
     get_concurrency_controller,
     BackpressureLevel,
 )
+from server.services.degrade_ladder import DegradeLadder, DegradeLevel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ class SessionState:
     provider_name: str = "unknown"
     model_id: str = "unknown"
     vad_enabled: bool = False
+    # TCK-20260211-010: Degrade ladder for adaptive performance
+    degrade_ladder: Optional[DegradeLadder] = None
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -349,27 +352,60 @@ async def _pcm_stream(queue: asyncio.Queue) -> AsyncIterator[bytes]:
 
 async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Queue, source: str) -> None:
     logger.debug(f"starting ASR loop for source={source}")
+    
+    # TCK-20260211-010: Track RTF for degrade ladder
+    last_chunk_time = None
+    chunk_count = 0
+    
     try:
         async for event in stream_asr(_pcm_stream(queue), sample_rate=state.sample_rate, source=source):
             logger.debug(f"yielding event: {event}")
             
-            # PR2: Track processing time for metrics
-            # Note: stream_asr doesn't directly expose timing, so we infer from chunk intervals
-            # A more accurate approach would instrument the provider itself
+            # TCK-20260211-010: Calculate RTF for degrade ladder
+            chunk_count += 1
+            current_time = time.time()
             
-            await ws_send(state, websocket, event)
             if event.get("type") == "asr_final":
+                # Calculate processing time and audio duration
+                t0 = event.get("t0", 0)
+                t1 = event.get("t1", 0)
+                audio_duration = t1 - t0
+                
+                if last_chunk_time is not None and audio_duration > 0:
+                    processing_time = current_time - last_chunk_time
+                    rtf = processing_time / audio_duration
+                    
+                    # Store for metrics
+                    state.asr_processing_times.append(processing_time)
+                    state.audio_time_processed += audio_duration
+                    state.processing_time_total += processing_time
+                    
+                    # Check degrade ladder if available
+                    if state.degrade_ladder and chunk_count % 5 == 0:  # Check every 5 chunks
+                        try:
+                            new_level, action = await state.degrade_ladder.check(rtf)
+                            if action:
+                                logger.info(f"Degrade action applied: {action.name}")
+                        except Exception as e:
+                            logger.error(f"Degrade ladder check failed: {e}")
+                
+                last_chunk_time = current_time
+                
                 # Add source if missing (stream_asr does it, but double check)
                 if "source" not in event:
                     event["source"] = source
                 state.transcript.append(event)
-                
-                # Track audio time processed
-                t0 = event.get("t0", 0)
-                t1 = event.get("t1", 0)
-                state.audio_time_processed += (t1 - t0)
+            
+            await ws_send(state, websocket, event)
+            
     except Exception as e:
         logger.error(f"error in ASR loop ({source}): {e}")
+        # TCK-20260211-010: Report error to degrade ladder for potential failover
+        if state.degrade_ladder:
+            try:
+                await state.degrade_ladder.report_provider_error(e)
+            except Exception as degrade_err:
+                logger.error(f"Failed to report error to degrade ladder: {degrade_err}")
 
 
 async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
@@ -409,6 +445,37 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
             })
     except asyncio.CancelledError:
         return
+
+
+async def _on_degrade_level_change(
+    websocket: WebSocket, 
+    state: SessionState, 
+    old_level: DegradeLevel, 
+    new_level: DegradeLevel,
+    action
+) -> None:
+    """Handle degrade level changes and notify client."""
+    action_name = action.name if action else "none"
+    logger.warning(f"Degrade level changed: {old_level.name} -> {new_level.name} (action: {action_name})")
+    
+    # Map degrade levels to UI states
+    level_to_status = {
+        DegradeLevel.NORMAL: ("streaming", "Performance optimal"),
+        DegradeLevel.WARNING: ("buffering", "Processing slower than real-time"),
+        DegradeLevel.DEGRADE: ("buffering", "Reduced quality for stability"),
+        DegradeLevel.EMERGENCY: ("overloaded", "Critical backlog, dropping frames"),
+        DegradeLevel.FAILOVER: ("reconnecting", "Switching to fallback provider"),
+    }
+    
+    status, message = level_to_status.get(new_level, ("warning", "Performance issue"))
+    
+    await ws_send(state, websocket, {
+        "type": "status",
+        "state": status,
+        "message": message,
+        "degrade_level": new_level.name,
+        "action": action_name,
+    })
 
 
 async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
@@ -462,8 +529,16 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                 elif fill_ratio < 0.70:
                     state.backpressure_warned = False
                 
+                # TCK-20260211-010: Get degrade ladder status if available
+                degrade_status = None
+                if state.degrade_ladder:
+                    try:
+                        degrade_status = state.degrade_ladder.get_status()
+                    except Exception as e:
+                        logger.debug(f"Failed to get degrade ladder status: {e}")
+                
                 # V1: Emit enhanced metrics with correlation IDs and provider info
-                await ws_send(state, websocket, {
+                metrics_payload = {
                     "type": "metrics",
                     "session_id": state.session_id,
                     "attempt_id": state.attempt_id,
@@ -484,7 +559,15 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                     "vad_enabled": state.vad_enabled,  # V1: VAD status
                     "sources_active": list(state.active_sources),  # V1: Active sources list
                     "timestamp": time.time()
-                })
+                }
+                
+                # TCK-20260211-010: Add degrade ladder status if available
+                if degrade_status:
+                    metrics_payload["degrade_level"] = degrade_status.get("level")
+                    metrics_payload["degrade_level_num"] = degrade_status.get("level_number")
+                    metrics_payload["rtf_avg_10s"] = degrade_status.get("rtf_avg_10s")
+                
+                await ws_send(state, websocket, metrics_payload)
                 
                 # V1: Update global metrics registry
                 from server.services.metrics_registry import get_registry
@@ -585,6 +668,17 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             state.provider_name = provider.name
                             state.model_id = config.model_name
                             state.vad_enabled = config.vad_enabled
+                        
+                        # TCK-20260211-010: Initialize degrade ladder for adaptive performance
+                        if provider:
+                            state.degrade_ladder = DegradeLadder(
+                                provider=provider,
+                                config=config,
+                                on_level_change=lambda old, new, action: asyncio.create_task(
+                                    _on_degrade_level_change(websocket, state, old, new, action)
+                                )
+                            )
+                            logger.info(f"Degrade ladder initialized at level {state.degrade_ladder.state.level.name}")
                         
                         # V1: Track connection in metrics
                         from server.services.metrics_registry import get_registry

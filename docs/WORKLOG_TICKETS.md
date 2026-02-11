@@ -7301,7 +7301,7 @@ Next actions:
 Type: FEATURE  
 Owner: Pranay (agent: Amp)  
 Created: 2026-02-12 23:55 (local time)  
-Status: **OPEN** 🔵  
+Status: **DONE** ✅  
 Priority: P0
 
 Description:  
@@ -7332,15 +7332,15 @@ Targets:
 
 Acceptance criteria:
 
-- [ ] F1 starts session (if idle)
-- [ ] F2 stops session (if active)
-- [ ] F3 inserts timestamp marker in transcript
-- [ ] F4 toggles audio mute
-- [ ] F5 triggers export
-- [ ] Hot-keys work when app is not foreground
-- [ ] Settings UI shows current bindings, allows change
-- [ ] Conflict warning if binding clashes with system
-- [ ] Visual overlay shows available hot-keys (help mode)
+- [x] F1 starts session (if idle)
+- [x] F2 stops session (if active)
+- [x] F3 inserts timestamp marker in transcript
+- [x] F4 toggles audio mute
+- [x] F5 triggers export
+- [x] Hot-keys work when app is not foreground
+- [x] Settings UI shows current bindings, allows change
+- [x] Conflict warning if binding clashes with system
+- [x] Visual overlay shows available hot-keys (help mode)
 
 Evidence log:
 

@@ -1,9 +1,10 @@
 # EchoPanel Phase 0A Audit: System Contracts + State Machines
 
-**Date:** 2026-02-11  
-**Auditor:** Amp (AI Agent)  
-**Scope:** Client/Server Streaming Truth Contracts  
-**Status:** COMPLETE
+**Date:** 2026-02-11
+**Auditor:** Amp (AI Agent)
+**Scope:** Client/Server Streaming Truth Contracts
+**Status:** OPEN
+**Last reviewed:** 2026-02-11 (Audit Queue Runner)
 
 ---
 
@@ -573,7 +574,117 @@ WHEN IS SERVER "READY TO INGEST AUDIO"?
 
 ---
 
-## H) Patch Plan (No Code, PR-Sized)
+## H1) Implementation Status (Updated 2026-02-11)
+
+### PR 1: Add Correlation IDs to Protocol
+**Status:** PARTIAL ✅ (50% complete)
+
+**Completed:**
+- ✅ Client sends attempt_id in start message (WebSocketStreamer.swift:187)
+- ✅ Server stores and echoes attempt_id in responses (ws_live_listener.py:549, 469)
+- ✅ CorrelationIDs struct created (WebSocketStreamer.swift:22-34)
+- ✅ Metrics include attempt_id from server (ws_live_listener.py:469)
+
+**Remaining:**
+- ❌ Client does NOT validate attempt_id before accepting "streaming" status (WebSocketStreamer.swift:305-311)
+- ❌ Late/out-of-order messages with old attempt_id can incorrectly flip state
+- ❌ AppState.swift does not track or validate incoming attempt_id
+
+**Evidence:** See Evidence Log below
+
+---
+
+### PR 2: Implement session_ack Contract
+**Status:** NOT STARTED ❌
+
+**Evidence:** No session_ack message type found in codebase (grep returned zero results)
+
+---
+
+### PR 3: Fix Server "Streaming" Truth
+**Status:** NOT STARTED ❌
+
+**Evidence:**
+- Server sends "streaming" status at ws_live_listener.py:594-600
+- Comment says "Now ASR is ready" but provider only retrieved for metadata
+- No ASR provider readiness check before streaming status
+- ASR loop starts lazily on first audio (ws_live_listener.py:622-628)
+
+---
+
+### PR 4: Client Timeout Hardening
+**Status:** NOT STARTED ❌
+
+**Evidence:**
+- No metrics staleness detection (timestamp parsed but not validated)
+- No 5s metrics freshness timeout implemented
+
+---
+
+### PR 5: Reconnect Session Continuity
+**Status:** PARTIAL ✅ (40% complete)
+
+**Completed:**
+- ✅ Client re-sends start on reconnect (WebSocketStreamer.swift:448-461)
+- ✅ Same session_id preserved across reconnect
+
+**Remaining:**
+- ❌ Server treats reconnect as new start (no session resume)
+- ❌ No attempt_id validation on reconnect
+
+---
+
+### PR 6: Stop Flow Idempotency
+**Status:** UNKNOWN (not reviewed)
+
+---
+
+## H2) Evidence Log
+
+**2026-02-11 Evidence Gathering:**
+
+```bash
+# Checked for attempt_id in Swift client
+rg "attempt_id" /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Found: WebSocketStreamer.swift:187, StructuredLogger.swift, SessionBundle.swift
+
+# Checked for attempt_id in Python server
+rg "attempt_id" /Users/pranay/Projects/EchoPanel/server/ --type py
+# Found: ws_live_listener.py:549, 469, 603
+
+# Checked for session_ack message
+rg "session_ack" /Users/pranay/Projects/EchoPanel/ --type py --type swift
+# Result: No matches (message type does not exist)
+
+# Checked streaming status sending sequence
+rg '"streaming"' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 20 -A 5
+# Found: ws_live_listener.py:594-600 - sends streaming after retrieving provider metadata
+# Critical: No ASR readiness check, just provider.get_provider() call
+
+# Checked client status handling
+rg 'case "status"' /Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift -A 15
+# Found: Lines 301-312 - no attempt_id validation before state transition
+
+# Checked metrics staleness detection
+rg 'staleness\|stalled.*metric' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches (no staleness checking implemented)
+
+# Verified file existence
+ls /Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AppState.swift
+# Exists (57825 bytes)
+ls /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py
+# Exists (35515 bytes)
+```
+
+**Interpretation:**
+- PR 1 is 50% complete (correlation IDs sent but not validated)
+- PR 2-4 are not started
+- PR 5 is partially complete (reconnect sends start but no resume logic)
+- Critical issue remains: server sends "streaming" before ASR is confirmed ready
+
+---
+
+## H3) Original Patch Plan (No Code, PR-Sized)
 
 ### PR 1: Add Correlation IDs to Protocol (HIGH IMPACT)
 **Impact:** HIGH - Foundation for all other fixes  
@@ -689,3 +800,24 @@ WHEN IS SERVER "READY TO INGEST AUDIO"?
 
 **Implementation Path:**
 6 PRs from foundational (correlation IDs) to polish (stop idempotency), totaling approximately 2-3 weeks of work for one engineer.
+
+---
+
+## I) Next Steps (Prioritized by Impact)
+
+### Immediate (P0 - Critical Reliability):
+1. **Complete PR 1 (attempt_id validation):** Add validation in WebSocketStreamer.swift:305-312 to reject messages with mismatched attempt_id
+2. **Implement PR 2 (session_ack):** Add session_ack message to protocol and modify both client and server
+
+### High Priority (P1):
+3. **Implement PR 3 (ASR readiness check):** Add is_ready() method to ASR providers and only send streaming after confirmed ready
+4. **Implement PR 4 (metrics staleness):** Add 5s timeout check in metrics handler, alert if no updates
+
+### Medium Priority (P2):
+5. **Complete PR 5 (session resume):** Add server-side session resume logic for reconnect
+6. **Implement PR 6 (stop idempotency):** Add state tracking for duplicate stop messages
+
+### Suggested Work Order:
+- Week 1: Complete PR 1 + PR 2 (foundational contract fixes)
+- Week 2: Implement PR 3 + PR 4 (reliability hardening)
+- Week 3: Complete PR 5 + PR 6 (edge case handling)
