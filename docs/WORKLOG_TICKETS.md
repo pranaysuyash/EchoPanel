@@ -7055,3 +7055,396 @@ Next actions:
 2. Consider adding metrics for send queue depth and dropped frames
 3. Document the timeout values (10s/15s) in configuration options
 4. Close loop with Senior Architect Review findings (all P0/P1 patches now applied)
+
+---
+
+### TCK-20260212-003 :: Broadcast Industry Readiness Audit (Phase 4G)
+
+Type: AUDIT + FEATURE_FINDING  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-12 22:45 (local time)  
+Status: **DONE** ✅  
+Priority: P0
+
+Description:  
+Comprehensive broadcast industry technical ops review evaluating EchoPanel for live production captioning/transcription use cases. Assessed capture reliability, failure modes, operator UX requirements, timing/sync, compliance/PII handling, and multi-language pipeline readiness. Delivered readiness scorecard (42/100), 10-scenario broadcast playbook, operator observability requirements, and 4 reliability patches.
+
+Scope contract:
+
+- In-scope:
+  - Audio capture reliability (ScreenCaptureKit, AVAudioEngine)
+  - Crash recovery and persistence (SessionStore)
+  - Backend recovery (BackendManager restart logic)
+  - Timing and synchronization analysis
+  - Output format gaps (SRT/VTT/EBU-TT)
+  - Operator UX requirements (hot-keys, confidence display)
+  - Multi-language and interpreter workflow analysis
+  - Compliance/PII handling review
+  - Network chaos resilience
+  - 10-scenario broadcast playbook
+  - Operator observability dashboard requirements
+  - Reliability patch specifications
+- Out-of-scope:
+  - Implementation of patches (captured as separate tickets)
+  - Hardware timecode integration (LTC/VITC)
+  - Hardware encoder integration (SMPTE 291M)
+  - Genlock/Blackburst support
+  - 24/7 long-running stability testing
+- Behavior change allowed: N/A (audit only)
+
+Targets:
+
+- Surfaces: docs (audit documentation)
+- Files:
+  - `docs/audit/AUDIT_04_BROADCAST_READINESS.md` (new, ~700 lines)
+  - `docs/audit/README.md` (updated index)
+- Branch/PR: Documentation update
+- Range: N/A
+
+Acceptance criteria:
+
+- [x] Broadcast readiness scorecard with 6 categories
+- [x] 10-scenario broadcast playbook with scores
+- [x] 5 capture failure modes documented
+- [x] Operator observability requirements (8 dashboard elements)
+- [x] 4 reliability patches specified (B1-B4)
+- [x] Audit index updated
+- [x] Evidence log with command outputs
+- [x] Related documents cross-referenced
+
+Evidence log:
+
+- [2026-02-12 22:45] AudioCaptureManager analysis | Evidence:
+  - File: `macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift`
+  - Observed: SCStream capture, 16kHz PCM16, 20ms frames, EMA quality metrics
+  - Interpretation: Observed — single-path architecture, no redundancy
+  
+- [2026-02-12 22:50] SessionStore persistence review | Evidence:
+  - File: `macapp/MeetingListenerApp/Sources/SessionStore.swift`
+  - Observed: JSONL append-only, 30s auto-save, recovery.json markers
+  - Interpretation: Observed — crash recovery exists but 30s interval too long for broadcast
+  
+- [2026-02-12 22:55] BackendManager resilience check | Evidence:
+  - File: `macapp/MeetingListenerApp/Sources/BackendManager.swift`
+  - Observed: 3-restart limit, exponential backoff, graceful termination
+  - Interpretation: Observed — adequate for meetings, insufficient for 24/7 broadcast
+  
+- [2026-02-12 23:00] Export format analysis | Evidence:
+  - File: `macapp/MeetingListenerApp/Sources/SessionBundle.swift`
+  - Observed: JSON export only, no SRT/VTT/EBU-TT support
+  - Interpretation: Observed — post-production only, no live caption output
+  
+- [2026-02-12 23:05] Multi-language support review | Evidence:
+  - File: `server/services/provider_faster_whisper.py`
+  - Observed: Single language per session, no auto-detection
+  - Interpretation: Observed — interpreter workflows not supported
+
+Status updates:
+
+- [2026-02-12 22:45] **IN_PROGRESS** 🟡 — audit initiated
+- [2026-02-12 23:30] **DONE** ✅ — audit document complete, index updated
+
+Next actions:
+
+1. Review audit findings with broadcast technical team
+2. Prioritize Patch B1 (Dual-path audio) for pilot implementation
+3. Prioritize Patch B2 (SRT streaming) for broadcast integration
+4. Create implementation tickets for selected patches
+5. Schedule follow-up audit after patches implemented
+
+---
+
+---
+
+### TCK-20260212-004 :: Broadcast Production Patch B1 — Dual-Path Audio Redundancy
+
+Type: FEATURE  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-12 23:45 (local time)  
+Status: **OPEN** 🔵  
+Priority: P0
+
+Description:  
+Implement dual-path audio redundancy to eliminate single-source failures in broadcast environments. Creates a RedundantAudioCaptureManager that runs primary (system audio) and backup (microphone) sources simultaneously, monitors quality in real-time, and auto-switches on degradation. Essential for live production where audio drop = show failure.
+
+Scope contract:
+
+- In-scope:
+  - New `RedundantAudioCaptureManager.swift` class
+  - Dual source operation (primary SCStream + backup AVAudioEngine)
+  - Real-time quality monitoring (RMS, clipping, silence)
+  - Automatic failover (< 500ms switch time)
+  - Source tagging in WebSocket messages
+  - UI indicator for active source
+  - Manual source override
+  - Configuration in Settings
+- Out-of-scope:
+  - More than 2 sources (future: N-way redundancy)
+  - Hardware audio routing (external mixer required)
+  - Automatic failback (manual only — prevent flapping)
+- Behavior change allowed: YES (new feature, opt-in via Settings)
+
+Targets:
+
+- Surfaces: macapp
+- Files:
+  - `macapp/MeetingListenerApp/Sources/RedundantAudioCaptureManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AppState.swift` (integration)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (config UI)
+  - `macapp/MeetingListenerApp/Tests/RedundantAudioCaptureTests.swift` (new)
+- Branch/PR: feature/broadcast-dual-path-audio
+
+Acceptance criteria:
+
+- [ ] RedundantAudioCaptureManager runs both sources concurrently
+- [ ] Quality monitoring checks both sources every 100ms
+- [ ] Failover triggers on: silence > 2s, clipping > 10%, engine stop
+- [ ] Switch time < 500ms (measured via logging)
+- [ ] WebSocket messages include `"source": "primary" | "backup"`
+- [ ] UI shows active source with color (green=primary, amber=backup, red=failure)
+- [ ] Settings toggle: "Enable backup audio source"
+- [ ] Unit tests: failover on silence, failover on engine stop
+- [ ] Manual test: 1-hour session with intentional primary failure
+
+Evidence log:
+
+- [2026-02-12 23:45] Created from AUDIT_04_BROADCAST_READINESS.md Patch B1 | Evidence:
+  - Reference: docs/audit/AUDIT_04_BROADCAST_READINESS.md Section 13
+  - Interpretation: Inferred — dual-path eliminates single point of failure
+
+Status updates:
+
+- [2026-02-12 23:45] **OPEN** 🔵 — awaiting implementation
+
+Next actions:
+
+1. Implement RedundantAudioCaptureManager
+2. Add quality monitoring with failover logic
+3. Integrate with AppState session lifecycle
+4. Add Settings UI
+5. Write unit tests
+6. Manual broadcast simulation test
+
+---
+
+### TCK-20260212-005 :: Broadcast Production Patch B2 — Real-Time SRT/VTT Streaming
+
+Type: FEATURE  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-12 23:50 (local time)  
+Status: **OPEN** 🔵  
+Priority: P0
+
+Description:  
+Implement real-time caption output in SRT and WebVTT formats for broadcast integration. Creates CaptionOutput service that converts ASR segments to standard subtitle formats and streams via WebSocket, file write, or UDP. Enables direct integration with hardware encoders, streaming platforms, and character generators.
+
+Scope contract:
+
+- In-scope:
+  - New `services/caption_output.py` with SRT and WebVTT formatters
+  - WebSocket extension: `{"type": "caption", "format": "srt", "data": "..."}`
+  - File writer for network share output (append mode)
+  - UDP socket output option (configurable host:port)
+  - Caption segment buffering (3-segment lookahead for timing)
+  - Character encoding handling (UTF-8 with BOM option)
+  - Settings UI for output configuration
+- Out-of-scope:
+  - CEA-608/CEA-708 embedding (requires hardware)
+  - EBU-TT-D live profile (future enhancement)
+  - SDI/HDMI anc data embedding (requires hardware)
+- Behavior change allowed: YES (new feature, opt-in)
+
+Targets:
+
+- Surfaces: server, macapp
+- Files:
+  - `server/services/caption_output.py` (new)
+  - `server/api/ws_live_listener.py` (caption extension)
+  - `macapp/MeetingListenerApp/Sources/CaptionOutputSettings.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (config)
+- Branch/PR: feature/broadcast-caption-streaming
+
+Acceptance criteria:
+
+- [ ] SRT format: `index\nt0 --> t1\ntext\n\n` with proper timestamp formatting
+- [ ] WebVTT format: `WEBVTT` header + cue blocks
+- [ ] WebSocket caption messages emitted within 100ms of ASR segment
+- [ ] File output appends to network path without corruption
+- [ ] UDP output sends to configured encoder address
+- [ ] Settings: enable/disable, format selection, output destination
+- [ ] Integration test: OBS/vMix can consume WebSocket captions
+- [ ] Manual test: 30-min session, verify caption sync with video
+
+Evidence log:
+
+- [2026-02-12 23:50] Created from AUDIT_04_BROADCAST_READINESS.md Patch B2 | Evidence:
+  - Reference: docs/audit/AUDIT_04_BROADCAST_READINESS.md Section 13
+  - Interpretation: Inferred — live captions required for broadcast integration
+
+Status updates:
+
+- [2026-02-12 23:50] **OPEN** 🔵 — awaiting implementation
+
+Next actions:
+
+1. Implement caption_output.py with formatters
+2. Extend WebSocket protocol for caption messages
+3. Add file writer and UDP output options
+4. Create Swift settings UI
+5. Integration test with OBS/vMix
+6. Latency measurement under load
+
+---
+
+### TCK-20260212-006 :: Broadcast Production — Hot-Key Operator Controls
+
+Type: FEATURE  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-12 23:55 (local time)  
+Status: **OPEN** 🔵  
+Priority: P0
+
+Description:  
+Implement global hot-key shortcuts for essential broadcast operations. Operators need hands-free control during live productions. Keys: F1=Start, F2=Stop, F3=Mark, F4=Toggle Mute, F5=Export. Essential for professional workflows where mouse-clicking is too slow/error-prone.
+
+Scope contract:
+
+- In-scope:
+  - Global hot-key registration (CGEventTap or NSEvent)
+  - Configurable key bindings in Settings
+  - Visual overlay showing active hot-keys
+  - Conflict detection with system shortcuts
+  - Accessibility labels for all hot-key actions
+- Out-of-scope:
+  - MIDI controller support (future)
+  - Stream Deck integration (future)
+  - Custom macro recording (future)
+- Behavior change allowed: YES (new feature)
+
+Targets:
+
+- Surfaces: macapp
+- Files:
+  - `macapp/MeetingListenerApp/Sources/HotKeyManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AppState.swift` (action integration)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (key binding UI)
+- Branch/PR: feature/broadcast-hotkeys
+
+Acceptance criteria:
+
+- [ ] F1 starts session (if idle)
+- [ ] F2 stops session (if active)
+- [ ] F3 inserts timestamp marker in transcript
+- [ ] F4 toggles audio mute
+- [ ] F5 triggers export
+- [ ] Hot-keys work when app is not foreground
+- [ ] Settings UI shows current bindings, allows change
+- [ ] Conflict warning if binding clashes with system
+- [ ] Visual overlay shows available hot-keys (help mode)
+
+Evidence log:
+
+- [2026-02-12 23:55] Created from AUDIT_04_BROADCAST_READINESS.md | Evidence:
+  - Reference: docs/audit/AUDIT_04_BROADCAST_READINESS.md Section 7.2
+  - Interpretation: Inferred — hot-keys essential for operator UX
+
+Status updates:
+
+- [2026-02-12 23:55] **OPEN** 🔵 — awaiting implementation
+
+---
+
+### TCK-20260212-007 :: Broadcast Production Patch B3 — ASR Confidence Display
+
+Type: FEATURE  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-12 23:58 (local time)  
+Status: **OPEN** 🔵  
+Priority: P1
+
+Description:  
+Add real-time ASR confidence display for operator quality monitoring. Shows word-level confidence scores with color coding: green (>85%), yellow (70-85%), red (<70%). Enables operators to spot ASR degradation and switch to manual captioning if needed.
+
+Scope contract:
+
+- In-scope:
+  - Extend ASR providers to emit confidence scores
+  - Confidence meter UI (horizontal bar or numeric)
+  - Color-coded indicators
+  - Rolling average (5-second window)
+  - Warning alerts on low confidence
+- Out-of-scope:
+  - Word-level highlighting in transcript (future)
+  - Automatic failover to backup ASR (future)
+  - WER estimation (requires reference transcript)
+- Behavior change allowed: YES (UI enhancement)
+
+Targets:
+
+- Surfaces: macapp, server
+- Files:
+  - `server/services/asr_providers.py` (confidence field)
+  - `server/api/ws_live_listener.py` (confidence in protocol)
+  - `macapp/MeetingListenerApp/Sources/ConfidenceMeter.swift` (new)
+- Branch/PR: feature/broadcast-confidence-display
+
+Acceptance criteria:
+
+- [ ] Confidence score included in ASR WebSocket messages
+- [ ] UI shows confidence meter (0-100%)
+- [ ] Color: green >85%, yellow 70-85%, red <70%
+- [ ] 5-second rolling average displayed
+- [ ] Alert sound/visual on confidence <70% for >5s
+- [ ] Manual test: compare confidence with actual accuracy
+
+Status updates:
+
+- [2026-02-12 23:58] **OPEN** 🔵 — awaiting implementation
+
+---
+
+### TCK-20260212-008 :: Broadcast Production Patch B4 — NTP Timestamp Synchronization
+
+Type: FEATURE  
+Owner: Pranay (agent: Amp)  
+Created: 2026-02-13 00:00 (local time)  
+Status: **OPEN** 🔵  
+Priority: P1
+
+Description:  
+Implement NTP timestamp synchronization for multi-system coordination. Replaces monotonic relative timestamps with absolute UTC time, enabling synchronized transcripts across multiple machines and alignment with external video sources.
+
+Scope contract:
+
+- In-scope:
+  - NTP client implementation (SNTP protocol)
+  - Configurable NTP servers (pool.ntp.org default)
+  - Offset calculation and application
+  - UTC timestamps in transcript output
+  - Fallback to monotonic if NTP unreachable
+- Out-of-scope:
+  - LTC/VITC hardware timecode (requires hardware)
+  - PTP (Precision Time Protocol) for local networks
+  - Timezone conversion (UTC only)
+- Behavior change allowed: YES (configurable, defaults off)
+
+Targets:
+
+- Surfaces: macapp
+- Files:
+  - `macapp/MeetingListenerApp/Sources/NTPClient.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift` (timestamp integration)
+- Branch/PR: feature/broadcast-ntp-sync
+
+Acceptance criteria:
+
+- [ ] NTP offset calculated within 100ms accuracy
+  - [ ] Timestamps in transcript are UTC with millisecond precision
+  - [ ] Fallback to monotonic if NTP fails
+  - [ ] Settings: NTP server, sync interval, enable/disable
+  - [ ] Manual test: 2 machines show <200ms timestamp drift
+
+Status updates:
+
+- [2026-02-13 00:00] **OPEN** 🔵 — awaiting implementation
+
