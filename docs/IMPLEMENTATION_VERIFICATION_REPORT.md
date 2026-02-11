@@ -158,15 +158,25 @@ def _auto_select_provider():
 
 ### TCK-20260211-010: Degrade Ladder
 **Files:**
-- `server/services/degrade_ladder.py` (already existed, ready for integration)
+- `server/services/degrade_ladder.py` (core implementation)
+- `server/api/ws_live_listener.py` (integration)
 
 **Key Features:**
 - ✅ 5 levels: NORMAL → WARNING → DEGRADE → EMERGENCY → FAILOVER
 - ✅ RTF thresholds: 0.8, 1.0, 1.2
 - ✅ Automatic recovery (RTF < 0.7 for 30s)
 - ✅ Actions: chunk resize, model downgrade, VAD toggle, failover
+- ✅ Integrated into _asr_loop (checks every 5 chunks)
+- ✅ Status updates sent to client on level change
+- ✅ Degrade status included in 1Hz metrics
 
-**Status:** ✅ Implemented, ready for integration into ASR loop
+**Integration Points:**
+- Initialize on session start with provider/config
+- Track RTF: processing_time / audio_duration
+- Report provider errors for failover
+- Send WebSocket status updates to client
+
+**Status:** ✅ Fully integrated into ASR pipeline
 
 ---
 
@@ -220,6 +230,7 @@ Python: ✅ Syntax valid
 - [x] Python syntax valid
 - [x] Key methods implemented
 - [x] Integration points connected
+- [x] Degrade ladder integrated into ASR pipeline
 
 ---
 
