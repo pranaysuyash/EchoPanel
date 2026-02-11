@@ -563,27 +563,42 @@ final class AppState: ObservableObject {
             sessionStart = Date()
             sessionEnd = nil
 
-            // Start System Audio capture if needed
-            if audioSource == .system || audioSource == .both {
+            // Initialize broadcast features
+            setupBroadcastFeaturesForSession()
+
+            // Start audio capture (with redundancy if enabled)
+            if BroadcastFeatureManager.shared.useRedundantAudio {
+                // Use redundant dual-path capture
                 do {
-                    try await audioCapture.startCapture()
+                    try await BroadcastFeatureManager.shared.redundantAudioManager.startRedundantCapture()
                 } catch {
-                    setSessionError(.systemCaptureFailed(detail: error.localizedDescription))
+                    setSessionError(.systemCaptureFailed(detail: "Redundant audio failed: \(error.localizedDescription)"))
                     return
                 }
-            }
-            
-            // Start Mic capture if needed
-            if audioSource == .microphone || audioSource == .both {
-                do {
-                    try micCapture.startCapture()
-                } catch {
-                    setSessionError(.microphoneCaptureFailed(detail: error.localizedDescription))
-                    // Stop system capture if it was started
-                    if audioSource == .both {
-                        await audioCapture.stopCapture()
+            } else {
+                // Legacy single-path capture
+                // Start System Audio capture if needed
+                if audioSource == .system || audioSource == .both {
+                    do {
+                        try await audioCapture.startCapture()
+                    } catch {
+                        setSessionError(.systemCaptureFailed(detail: error.localizedDescription))
+                        return
                     }
-                    return
+                }
+                
+                // Start Mic capture if needed
+                if audioSource == .microphone || audioSource == .both {
+                    do {
+                        try micCapture.startCapture()
+                    } catch {
+                        setSessionError(.microphoneCaptureFailed(detail: error.localizedDescription))
+                        // Stop system capture if it was started
+                        if audioSource == .both {
+                            await audioCapture.stopCapture()
+                        }
+                        return
+                    }
                 }
             }
 
@@ -646,11 +661,16 @@ final class AppState: ObservableObject {
         ])
 
         Task {
-            if audioSource == .system || audioSource == .both {
-                await audioCapture.stopCapture()
-            }
-            if audioSource == .microphone || audioSource == .both {
-                micCapture.stopCapture()
+            // Stop audio capture (redundant or legacy)
+            if BroadcastFeatureManager.shared.useRedundantAudio {
+                await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
+            } else {
+                if audioSource == .system || audioSource == .both {
+                    await audioCapture.stopCapture()
+                }
+                if audioSource == .microphone || audioSource == .both {
+                    micCapture.stopCapture()
+                }
             }
             let didReceiveFinal = await streamer.stopAndAwaitFinalSummary(timeout: 10)
             if didReceiveFinal {
@@ -1147,6 +1167,9 @@ final class AppState: ObservableObject {
             lastPartialIndexBySource[sourceKey] = nil
             bumpTranscriptRevision()
             
+            // Update confidence tracking for broadcast features
+            BroadcastFeatureManager.shared.updateConfidence(fromSegment: segment)
+            
             // H6 Fix: Append to persistent transcript log
             let payload: [String: Any] = [
                 "text": trimmedText,
@@ -1406,6 +1429,104 @@ final class AppState: ObservableObject {
     }
 
     // BackendConfig reads host/port from UserDefaults.
+
+    // MARK: - Broadcast Features Integration
+
+    /// Set up broadcast features for a new session
+    private func setupBroadcastFeaturesForSession() {
+        let broadcast = BroadcastFeatureManager.shared
+        
+        // Set up redundant audio callbacks
+        broadcast.redundantAudioManager.onPCMFrame = { [weak self] frame, source in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.debugBytes += frame.count
+                if self.debugEnabled {
+                    self.updateDebugLine()
+                }
+                self.markInputFrame(source: source)
+                self.lastAudioTimestamp = Date()
+                if self.noAudioDetected {
+                    self.noAudioDetected = false
+                    self.silenceMessage = ""
+                }
+            }
+            self.streamer.sendPCMFrame(frame, source: source)
+        }
+        
+        // Set up hot-key actions
+        broadcast.onHotKeyAction = { [weak self] action in
+            Task { @MainActor in
+                self?.handleBroadcastHotKeyAction(action)
+            }
+        }
+        
+        // Initialize features if enabled
+        if broadcast.useHotKeys {
+            broadcast.hotKeyManager.startMonitoring()
+        }
+    }
+    
+    /// Handle broadcast hot-key actions
+    private func handleBroadcastHotKeyAction(_ action: HotKeyManager.HotKeyAction) {
+        let broadcast = BroadcastFeatureManager.shared
+        guard broadcast.useHotKeys else { return }
+        
+        switch action {
+        case .startSession:
+            if sessionState == .idle {
+                startSession()
+            }
+            
+        case .stopSession:
+            if sessionState == .listening || sessionState == .starting {
+                stopSession()
+            }
+            
+        case .insertMarker:
+            insertTimestampMarker()
+            
+        case .toggleMute:
+            // Toggle mute (implementation depends on audio routing)
+            NSLog("Broadcast: Toggle mute via hot-key")
+            
+        case .exportTranscript:
+            exportJSON()
+            
+        case .togglePause:
+            // Pause/resume would need dedicated state management
+            NSLog("Broadcast: Toggle pause via hot-key")
+            
+        case .emergencyFailover:
+            broadcast.emergencyAudioFailover()
+            
+        case .toggleRedundancy:
+            // Toggle redundancy for next session
+            broadcast.useRedundantAudio.toggle()
+            NSLog("Broadcast: Redundancy toggled to \(broadcast.useRedundantAudio)")
+        }
+    }
+    
+    /// Insert a timestamp marker in the transcript
+    private func insertTimestampMarker() {
+        guard sessionState == .listening else { return }
+        
+        let marker = TranscriptSegment(
+            text: "[MARKER: \(timerText)]",
+            t0: TimeInterval(elapsedSeconds),
+            t1: TimeInterval(elapsedSeconds),
+            isFinal: true,
+            confidence: 1.0,
+            source: "marker"
+        )
+        
+        transcriptSegments.append(marker)
+        bumpTranscriptRevision()
+        
+        StructuredLogger.shared.info("Timestamp marker inserted", metadata: [
+            "elapsed": elapsedSeconds
+        ])
+    }
 }
 
 private extension AppState {

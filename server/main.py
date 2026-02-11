@@ -60,12 +60,22 @@ async def lifespan(app: FastAPI):
     
     # TCK-20260211-009: Auto-select provider based on capabilities
     _auto_select_provider()
+    
+    # PR4: Initialize model with warmup (eager loading)
+    try:
+        from server.services.model_preloader import initialize_model_at_startup
+        model_ready = await initialize_model_at_startup()
+        if not model_ready:
+            logger.warning("Model warmup incomplete, first request may be slower")
+    except Exception as e:
+        logger.error(f"Model preloading failed: {e}")
+        # Continue anyway - will load on first request
 
-    # Initialize ASR providers
+    # Initialize ASR providers (legacy check)
     try:
         provider = ASRProviderRegistry.get_provider()
         if provider and provider.is_available:
-            logger.info(f"ASR provider '{provider.name}' initialized successfully.")
+            logger.info(f"ASR provider '{provider.name}' available.")
         else:
             logger.warning("No ASR provider available. Some features may not work.")
     except Exception as e:
@@ -93,7 +103,7 @@ async def health_check() -> dict:
     """
     Health check that reflects ASR readiness.
 
-    - Returns 200 only when an ASR provider is available.
+    - Returns 200 only when an ASR provider is available and model is warmed up.
     - Returns 503 with a reason when the server is up but can't transcribe.
     """
     logger.debug("Health check requested.")
@@ -102,15 +112,33 @@ async def health_check() -> dict:
         config = _get_default_config()
         provider = ASRProviderRegistry.get_provider(config=config)
         provider_name = provider.name if provider else None
-
-        if provider and provider.is_available:
+        
+        # PR4: Check model preloader status
+        from server.services.model_preloader import get_model_manager
+        manager = get_model_manager()
+        model_health = manager.health()
+        
+        # Deep health: provider must be available AND model warmed up
+        if provider and provider.is_available and model_health.ready:
             return {
                 "status": "ok",
                 "service": "echopanel",
                 "provider": provider_name,
                 "model": config.model_name,
+                "model_ready": True,
+                "model_state": model_health.state.name,
+                "load_time_ms": model_health.load_time_ms,
+                "warmup_time_ms": model_health.warmup_time_ms,
             }
-
+        
+        # Not ready - determine why
+        if not model_health.ready:
+            reason = f"Model {model_health.state.name.lower()}"
+            if model_health.last_error:
+                reason += f": {model_health.last_error}"
+        else:
+            reason = "ASR provider not available"
+        
         raise HTTPException(
             status_code=503,
             detail={
@@ -118,7 +146,8 @@ async def health_check() -> dict:
                 "service": "echopanel",
                 "provider": provider_name,
                 "model": config.model_name,
-                "reason": "ASR provider not available (missing deps or still loading)",
+                "model_state": model_health.state.name,
+                "reason": reason,
             },
         )
     except HTTPException:
@@ -139,6 +168,30 @@ async def get_capabilities() -> dict:
         return get_optimal_config()
     except Exception as e:
         logger.error(f"Failed to get capabilities: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": str(e)}
+        )
+
+
+@app.get("/model-status")
+async def get_model_status() -> dict:
+    """
+    Get model preloader status and statistics.
+    
+    PR4: Exposes model warmup status to clients.
+    """
+    try:
+        from server.services.model_preloader import get_model_manager
+        manager = get_model_manager()
+        
+        return {
+            "status": "ok",
+            "health": manager.health().to_dict(),
+            "stats": manager.get_stats(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get model status: {e}")
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": str(e)}

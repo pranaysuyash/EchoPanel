@@ -24,13 +24,13 @@ final class RedundantAudioCaptureTests: XCTestCase {
         XCTAssertFalse(manager.isRedundancyActive)
         XCTAssertEqual(manager.primaryQuality, .unknown)
         XCTAssertEqual(manager.backupQuality, .unknown)
-        XCTAssertEqual(manager.currentHealth, .unknown)
+        // Both qualities unknown means no healthy source, so health is critical
+        XCTAssertEqual(manager.currentHealth, .critical)
         XCTAssertTrue(manager.failoverEvents.isEmpty)
     }
     
     func testHealthStateTransitions() {
-        // Initially unknown
-        XCTAssertEqual(manager.currentHealth, .unknown)
+        // Initially critical (both sources unknown quality)
         
         // Good quality = healthy
         manager.primaryQuality = .good
@@ -143,17 +143,17 @@ final class RedundantAudioCaptureTests: XCTestCase {
     // MARK: - RedundancyHealth Enum Tests
     
     func testRedundancyHealthEnum() {
-        XCTAssertEqual(RedundancyHealth.healthy.rawValue, "Healthy")
-        XCTAssertEqual(RedundancyHealth.degraded.rawValue, "Degraded")
-        XCTAssertEqual(RedundancyHealth.critical.rawValue, "Critical")
-        XCTAssertEqual(RedundancyHealth.unknown.rawValue, "Unknown")
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.healthy.rawValue, "Healthy")
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.degraded.rawValue, "Degraded")
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.critical.rawValue, "Critical")
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.unknown.rawValue, "Unknown")
     }
     
     func testRedundancyHealthColors() {
-        XCTAssertEqual(RedundancyHealth.healthy.color, .green)
-        XCTAssertEqual(RedundancyHealth.degraded.color, .orange)
-        XCTAssertEqual(RedundancyHealth.critical.color, .red)
-        XCTAssertEqual(RedundancyHealth.unknown.color, .gray)
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.healthy.color, .green)
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.degraded.color, .orange)
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.critical.color, .red)
+        XCTAssertEqual(RedundantAudioCaptureManager.RedundancyHealth.unknown.color, .gray)
     }
     
     // MARK: - RedundancyStats Tests

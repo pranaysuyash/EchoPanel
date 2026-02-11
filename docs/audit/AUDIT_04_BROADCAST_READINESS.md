@@ -1,8 +1,12 @@
 # Broadcast Industry Readiness Audit (Phase 4G)
 
-**Scope**: Evaluate EchoPanel for live production captioning/transcription use cases in broadcast media workflows.  
-**Focus Areas**: Capture reliability, failure modes, operator UX, compliance, and multi-language requirements.  
-**Date**: 2026-02-10  
+**Scope**: Evaluate EchoPanel for live production captioning/transcription use cases in broadcast media workflows.
+**Focus Areas**: Capture reliability, failure modes, operator UX, compliance, and multi-language requirements.
+**Date**: 2026-02-10
+**Last reviewed**: 2026-02-11 (Audit Queue Runner)
+**Status**: OPEN
+**Current Readiness Score**: 42/100 (NOT BROADCAST-READY)
+
 **Evidence Sources**:
 - `/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift`
 - `/Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/MicrophoneCaptureManager.swift`
@@ -487,7 +491,90 @@ Current architecture requires constant backend connection. Broadcast requires:
 
 ---
 
-## 13. Reliability Patches Required
+## 13. Implementation Status (Updated 2026-02-11)
+
+### Patch B1: Dual-Path Audio Redundancy
+**Status:** NOT STARTED ❌
+**Priority:** P0
+**Evidence:** No RedundantAudioCaptureManager or dual-path implementation found
+
+---
+
+### Patch B2: Real-Time SRT/VTT Streaming Output
+**Status:** NOT STARTED ❌
+**Priority:** P0
+**Evidence:** No SRT/VTT output format or caption streaming service found
+
+---
+
+### Patch B3: Confidence Display Overlay
+**Status:** NOT STARTED ❌
+**Priority:** P1
+**Evidence:** No confidence meter, overlay, or display found in UI
+
+---
+
+### Patch B4: NTP Timestamp Synchronization
+**Status:** NOT STARTED ❌
+**Priority:** P1
+**Evidence:** No NTP client, timecode sync, or synchronized timestamps found
+
+---
+
+### Additional Broadcast Features
+
+| Feature | Status | Evidence |
+|----------|--------|----------|
+| Hot-key operator controls | NOT STARTED ❌ | No hotkey/shortcut handlers found |
+| Device hot-swap support | NOT STARTED ❌ | No USB reconnect or swap logic found |
+| CEA-608 Closed Captions | NOT SUPPORTED ❌ | No CEA-608 implementation |
+| CEA-708 Digital Captions | NOT SUPPORTED ❌ | No CEA-708 implementation |
+| EBU-TT Timed Text | NOT SUPPORTED ❌ | No EBU-TT implementation |
+| SMPTE standards | NOT SUPPORTED ❌ | No SMPTE timecode or ancillary data |
+
+---
+
+### Evidence Log (2026-02-11):
+
+```bash
+# Checked Patch B1: Dual-path redundancy
+rg 'RedundantAudioCapture\|dual.*path\|primary.*backup' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked Patch B2: SRT/VTT streaming
+rg 'SRT\|VTT\|caption.*output\|caption.*stream' /Users/pranay/Projects/EchoPanel/server/ --type py
+# Result: No matches
+
+# Checked Patch B3: Confidence display
+rg 'confidence.*meter\|confidence.*overlay\|confidence.*display' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked Patch B4: NTP synchronization
+rg 'NTP\|ntp.*client\|synchronized.*timestamp\|timecode' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked hot-key operator controls
+rg 'hotkey\|hot.*key\|keyboard.*shortcut\|operator.*control' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked device hot-swap support
+rg 'device.*swap\|hot.*swap\|USB.*reconnect' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked broadcast standard outputs
+rg 'CEA-608\|CEA-708\|EBU-TT\|SMPTE' /Users/pranay/Projects/EchoPanel/ --type md --type swift --type py
+# Result: No matches
+```
+
+**Interpretation:**
+- 0 of 4 primary patches are implemented
+- 0 of 3 additional broadcast features are implemented
+- EchoPanel remains at 42/100 broadcast readiness
+- Major architecture work required for broadcast industry compliance
+
+---
+
+## 14. Original Reliability Patches Required
 
 ### Patch B1: Dual-Path Audio Redundancy (Priority: P0)
 
@@ -611,7 +698,9 @@ func getSynchronizedTimestamp() -> UInt64 {
 
 ---
 
-## 14. Recommendations Summary
+## 15. Recommendations Summary (Original)
+
+### For Immediate Pilot Use (Score: 60/100 achievable)
 
 ### For Immediate Pilot Use (Score: 60/100 achievable)
 
@@ -631,6 +720,34 @@ func getSynchronizedTimestamp() -> UInt64 {
 
 ### Out of Scope (Future Releases)
 
+---
+
+## 16. Next Steps (Prioritized by Impact)
+
+### Immediate (P0 - Critical for broadcast):
+1. **Implement Patch B1 (dual-path audio):** Create RedundantAudioCaptureManager for primary/backup sources
+2. **Implement Patch B2 (SRT/VTT streaming):** Add caption output service for broadcast integration
+
+### High Priority (P1):
+3. **Implement Patch B3 (confidence display):** Add confidence meter to UI for operator monitoring
+4. **Implement Patch B4 (NTP synchronization):** Add NTP client for multi-system timecode sync
+5. **Add hot-key controls:** Implement keyboard shortcuts for operator workflow
+
+### Medium Priority (P2):
+6. **Add device hot-swap support:** Handle USB audio reconnect with <100ms recovery
+7. **Implement PII redaction:** Real-time redaction pipeline for compliance
+8. **Support broadcast standards:** Implement at least one standard (CEA-608 or EBU-TT)
+
+### Suggested Work Order:
+- Sprint 1-2: Patch B1 + Patch B2 (reliability + broadcast integration)
+- Sprint 3: Patch B3 + Patch B4 (operator tools + sync)
+- Sprint 4: Hot-keys + device hot-swap (workflow UX)
+- Sprint 5-6: PII redaction + broadcast standards (compliance)
+
+**Target:** Achieve 80/100 broadcast readiness score within 6 sprints
+
+### Out of Scope (Future Releases)
+
 - Genlock/Blackburst hardware integration
 - Multi-language parallel ASR
 - Interpreter track routing
@@ -639,7 +756,7 @@ func getSynchronizedTimestamp() -> UInt64 {
 
 ---
 
-## 15. Evidence Log
+## 17. Original Evidence Log (2026-02-10)
 
 ### Commands Run
 ```bash
@@ -666,7 +783,7 @@ cat server/services/provider_faster_whisper.py | head -100
 
 ---
 
-## Related Documents
+## 18. Related Documents
 
 - [AUDIT_01_STREAMING.md](AUDIT_01_STREAMING.md) - Phase 1C: Streaming Reliability
 - [AUDIT_02_PROVIDERS.md](AUDIT_02_PROVIDERS.md) - Phase 2D: ASR Provider Layer
@@ -676,7 +793,7 @@ cat server/services/provider_faster_whisper.py | head -100
 
 ---
 
-## Appendix: Broadcast Industry Standards Reference
+## 19. Appendix: Broadcast Industry Standards Reference
 
 | Standard | Description | EchoPanel Status |
 |----------|-------------|------------------|
@@ -690,5 +807,6 @@ cat server/services/provider_faster_whisper.py | head -100
 
 ---
 
-*Audit completed: 2026-02-10*  
+*Audit completed: 2026-02-10*
+*Last review: 2026-02-11 (Audit Queue Runner)*
 *Next review: Post-Patch B1/B2 implementation*

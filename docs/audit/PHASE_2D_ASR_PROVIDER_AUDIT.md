@@ -1,8 +1,10 @@
 # Phase 2D Audit: ASR Provider Layer (Residency, Streaming Semantics, Apple Silicon Throughput)
 
-**Date:** 2026-02-11  
-**Auditor:** Multi-Persona Analysis (ASR Architect, Apple Silicon Specialist, Streaming Systems, Reliability, MLOps)  
-**Scope:** ASR provider layer and its integration with streaming pipeline  
+**Date:** 2026-02-11
+**Auditor:** Multi-Persona Analysis (ASR Architect, Apple Silicon Specialist, Streaming Systems, Reliability, MLOps)
+**Scope:** ASR provider layer and its integration with streaming pipeline
+**Status:** OPEN
+**Last reviewed:** 2026-02-11 (Audit Queue Runner)
 
 ---
 
@@ -536,7 +538,145 @@ async def test_residency():
 
 ---
 
-## J) Patch Plan (7 PRs)
+## I) Implementation Status (Updated 2026-02-11)
+
+### PR1: Add Inference Lock to Whisper.cpp Provider
+**Status:** NOT STARTED ❌
+
+**Evidence:** No _infer_lock or threading.Lock found in provider_whisper_cpp.py
+
+---
+
+### PR2: Implement Provider Residency Validation Harness
+**Status:** NOT STARTED ❌
+
+**Evidence:** scripts/benchmark_asr_provider.py does not exist
+
+---
+
+### PR3: Add Provider Health Metrics to WebSocket
+**Status:** PARTIAL ⚠️
+
+**Evidence:**
+- ✅ Health method exists in ASRProvider base class (asr_providers.py)
+- ✅ ASRHealth dataclass defined with realtime_factor, avg_infer_ms, etc.
+- ❌ provider.health() not called in ws_live_listener.py metrics loop
+- ❌ Only queue metrics emitted in WebSocket messages
+
+---
+
+### PR4: Add Provider Eviction to Registry
+**Status:** NOT STARTED ❌
+
+**Evidence:** No LRU cache or eviction logic found in ASRProviderRegistry (asr_providers.py)
+
+---
+
+### PR5: Integrate Pre-ASR VAD Hook
+**Status:** NOT STARTED ❌
+
+**Evidence:** No pre-ASR VAD filtering found in server pipeline
+
+---
+
+### PR6: Add Provider Cleanup on Shutdown
+**Status:** NOT STARTED ❌
+
+**Evidence:** main.py lifespan shutdown (line 77-78) doesn't call provider.close()
+
+---
+
+### PR7: Document Voxtral Crash Recovery Behavior
+**Status:** NOT STARTED ❌
+
+**Evidence:** docs/ASR_PROVIDERS.md does not exist
+
+---
+
+### Additional Findings (Not in Original PRs)
+
+#### ✅ Capability Detection Implemented (TCK-20260211-009)
+**Status:** IMPLEMENTED ✅
+
+**Evidence:**
+- server/services/capability_detector.py exists (17566 bytes)
+- main.py calls _auto_select_provider() on startup (line 62)
+- Detects machine tier (RAM, CPU, MPS, CUDA)
+- Returns provider recommendations with fallbacks
+
+#### ✅ Degrade Ladder Implemented (TCK-20260211-010)
+**Status:** IMPLEMENTED ✅
+
+**Evidence:**
+- server/services/degrade_ladder.py exists (21405 bytes)
+- ws_live_listener.py initializes degrade_ladder for each session
+- Degrade ladder checks RTF every 5 chunks (line 384-389)
+- Emits status messages on level changes (line 462-475)
+- Reports provider errors to degrade ladder (line 404-407)
+
+#### ✅ Health Method Exists in Base Class
+**Status:** IMPLEMENTED ✅
+
+**Evidence:**
+- ASRProvider base class has async health() method (asr_providers.py)
+- ASRHealth dataclass defined with comprehensive metrics
+- Provider health method returns cached health state by default
+
+---
+
+### Evidence Log (2026-02-11):
+
+```bash
+# Checked PR1: Inference lock in Whisper.cpp
+rg '_infer_lock\|threading.Lock' /Users/pranay/Projects/EchoPanel/server/services/provider_whisper_cpp.py -B 3 -A 5
+# Result: No matches
+
+# Checked PR2: Provider residency validation
+ls -la /Users/pranay/Projects/EchoPanel/scripts/benchmark_asr_provider.py
+# Result: No such file
+
+# Checked PR3: Provider health metrics
+rg 'provider.health\|provider_health' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 3 -A 5
+# Result: No matches (health() not called in metrics loop)
+
+# Checked PR4: Provider eviction
+rg 'lru\|evict\|max.*provider' /Users/pranay/Projects/EchoPanel/server/services/asr_providers.py -B 3 -A 5
+# Result: No matches
+
+# Checked PR5: Pre-ASR VAD integration
+rg 'vad.*pre\|has_speech.*before\|skip.*silent' /Users/pranay/Projects/EchoPanel/server/ --type py -B 3 -A 5
+# Result: No matches
+
+# Checked PR6: Provider cleanup on shutdown
+rg 'lifespan.*shutdown\|provider.close\|on_shutdown' /Users/pranay/Projects/EchoPanel/server/main.py -B 3 -A 5
+# Result: No provider.close() call found
+
+# Checked PR7: Voxtral crash documentation
+ls -la /Users/pranay/Projects/EchoPanel/docs/ASR_PROVIDERS.md
+# Result: No such file
+
+# Verified degrade ladder exists
+ls -la /Users/pranay/Projects/EchoPanel/server/services/degrade_ladder.py
+# Exists (21405 bytes)
+
+# Verified capability detector exists
+ls -la /Users/pranay/Projects/EchoPanel/server/services/capability_detector.py
+# Exists (17566 bytes)
+
+# Checked health method in base class
+rg 'async def health' /Users/pranay/Projects/EchoPanel/server/services/asr_providers.py -B 3 -A 5
+# Found health() method in ASRProvider base class
+```
+
+**Interpretation:**
+- 0 of 7 original PRs are complete
+- 1 PR is partial (PR3 - health method exists but not exposed)
+- 3 major features NOT in audit are implemented (capability detection, degrade ladder, health method)
+- Critical gaps remain: Whisper.cpp thread safety, no provider eviction, no cleanup on shutdown
+
+---
+
+## J) Original Patch Plan (7 PRs)
 
 ### PR1: Add Inference Lock to Whisper.cpp Provider
 - **Impact:** H (prevents crashes with 2 sources)
@@ -596,7 +736,29 @@ async def test_residency():
 
 ---
 
-## Summary
+## K) Next Steps (Prioritized by Impact)
+
+### Immediate (P0 - Critical Safety):
+1. **Implement PR1 (inference lock):** Add threading.Lock to Whisper.cpp provider to prevent crashes with 2 sources
+2. **Implement PR3 fix (expose health metrics):** Call provider.health() in WebSocket metrics loop
+
+### High Priority (P1):
+3. **Implement PR6 (provider cleanup):** Call provider.close() in main.py lifespan shutdown
+4. **Implement PR4 (provider eviction):** Add LRU cache with max 2 providers to prevent memory growth
+
+### Medium Priority (P2):
+5. **Implement PR5 (pre-ASR VAD):** Integrate VAD hook to skip silent chunks before inference
+6. **Implement PR2 (residency validation):** Create benchmark_asr_provider.py harness
+7. **Implement PR7 (documentation):** Create ASR_PROVIDERS.md documenting crash recovery
+
+### Suggested Work Order:
+- Week 1: PR1 + PR3 fix (prevent crashes, improve observability)
+- Week 2: PR6 + PR4 (proper cleanup, memory management)
+- Week 3: PR5 + PR2 + PR7 (performance, testing, documentation)
+
+---
+
+## L) Summary
 
 ### Critical Findings
 

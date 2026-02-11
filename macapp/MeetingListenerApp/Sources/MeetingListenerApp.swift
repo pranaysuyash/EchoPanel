@@ -333,9 +333,34 @@ struct SettingsView: View {
     @AppStorage("backendHost") private var backendHost = "127.0.0.1"
     @AppStorage("backendPort") private var backendPort = 8000
     @State private var backendToken: String = ""
+    @State private var selectedTab = 0
     private let modelRecommendation = ASRModelRecommendation.forCurrentMac()
     
     var body: some View {
+        TabView(selection: $selectedTab) {
+            generalSettingsTab
+                .tabItem {
+                    Label("General", systemImage: "gear")
+                }
+                .tag(0)
+            
+            broadcastSettingsTab
+                .tabItem {
+                    Label("Broadcast", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .tag(1)
+        }
+        .frame(width: 500, height: 450)
+        .onAppear {
+            _ = KeychainHelper.migrateFromUserDefaults()
+            backendToken = KeychainHelper.loadBackendToken() ?? ""
+        }
+        .onChange(of: backendToken) { token in
+            _ = KeychainHelper.saveBackendToken(token)
+        }
+    }
+    
+    private var generalSettingsTab: some View {
         Form {
             Section("Audio") {
                 Picker("Source", selection: $appState.audioSource) {
@@ -420,14 +445,12 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 430)
-        .onAppear {
-            _ = KeychainHelper.migrateFromUserDefaults()
-            backendToken = KeychainHelper.loadBackendToken() ?? ""
-        }
-        .onChange(of: backendToken) { token in
-            _ = KeychainHelper.saveBackendToken(token)
-        }
+        .padding()
+    }
+    
+    private var broadcastSettingsTab: some View {
+        BroadcastSettingsView()
+            .padding()
     }
 }
 

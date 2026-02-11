@@ -1,8 +1,10 @@
 # Phase 1C Audit: Streaming Reliability + Backpressure (End-to-End)
 
-**Date:** 2026-02-10  
-**Auditor:** Multi-Persona Analysis (Audio Systems, Protocol, UI/Reliability, Abuse, Truthfulness)  
-**Scope:** Live session reliability end-to-end—capture, transport, ingest, queues, ASR, backpressure, UI truthfulness  
+**Date:** 2026-02-10
+**Auditor:** Multi-Persona Analysis (Audio Systems, Protocol, UI/Reliability, Abuse, Truthfulness)
+**Scope:** Live session reliability end-to-end—capture, transport, ingest, queues, ASR, backpressure, UI truthfulness
+**Status:** OPEN
+**Last reviewed:** 2026-02-11 (Audit Queue Runner)
 
 ---
 
@@ -438,7 +440,123 @@
 
 ---
 
-## I) Patch Plan (4–8 PR-Sized Items)
+## I) Implementation Status (Updated 2026-02-11)
+
+### PR1: Client-Side Send Timeout
+**Status:** NOT STARTED ❌
+
+**Evidence:** No timeout found on WebSocket.send() call in WebSocketStreamer.swift
+
+---
+
+### PR2: Pause/Resume Capture on Backpressure
+**Status:** NOT STARTED ❌
+
+**Evidence:** No pauseCapture/resumeCapture methods found in AudioCaptureManager or MicrophoneCaptureManager
+
+---
+
+### PR3: Auto-Reduce Sources on Overload
+**Status:** NOT STARTED ❌
+
+**Evidence:** No auto-reduce logic found in AppState.swift
+
+---
+
+### PR4: Cap ASR Buffer Size
+**Status:** NOT STARTED ❌
+
+**Evidence:** No max_buffer_seconds cap found in provider_faster_whisper.py or provider_voxtral_realtime.py
+
+---
+
+### PR5: Add NLP Timeout
+**Status:** IMPLEMENTED ✅
+
+**Evidence:**
+- ws_live_listener.py:418-420: asyncio.wait_for(extract_entities, timeout=10.0)
+- ws_live_listener.py:431-433: asyncio.wait_for(extract_cards, timeout=15.0)
+- ws_live_listener.py:522-528: asyncio.wait_for for ASR flush timeout
+- ws_live_listener.py:535-540: asyncio.wait_for for analysis task cancellation
+
+---
+
+### PR6: Accurate Realtime Factor
+**Status:** PARTIAL ⚠️
+
+**Evidence:**
+- ✅ Accurate RTF tracking exists for degrade ladder (ws_live_listener.py:374-376): `rtf = processing_time / audio_duration`
+- ❌ Metrics loop still uses old formula (ws_live_listener.py:508): `realtime_factor = avg_infer_time / chunk_seconds`
+- The comment says "Assuming 2s chunks" but actual chunks may vary
+- Client receives potentially misleading realtime_factor in metrics
+
+---
+
+### PR7: Explicit ASR Stall Detection
+**Status:** NOT STARTED ❌
+
+**Evidence:** No asr_stalled status or stall detection logic found
+
+---
+
+### PR8: Soak Test Harness Improvements
+**Status:** EXISTS ✅
+
+**Evidence:**
+- tests/test_streaming_correctness.py exists (8759 bytes)
+- scripts/soak_test.py exists (10152 bytes)
+- May need improvements for real speech audio and automated reporting
+
+---
+
+### Evidence Log (2026-02-11):
+
+```bash
+# Checked PR1: Client send timeout
+rg 'timeout.*send\|send.*timeout' /Users/pranay/Projects/EchoPanel/macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift -B 5 -A 5
+# Result: No matches
+
+# Checked PR2: Pause/resume capture
+rg 'pauseCapture\|resumeCapture' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked PR3: Auto-reduce sources
+rg 'reduce.*source\|switch.*primary' /Users/pranay/Projects/EchoPanel/macapp/ --type swift
+# Result: No matches
+
+# Checked PR4: ASR buffer cap
+rg 'max_buffer\|buffer.*cap\|buffer.*limit' /Users/pranay/Projects/EchoPanel/server/services/ --type py
+# Result: No matches
+
+# Checked PR5: NLP timeout
+rg 'wait_for.*extract\|extract.*timeout' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 3 -A 5
+# Result: Found multiple asyncio.wait_for calls with timeouts
+
+# Checked PR6: Realtime factor
+rg 'realtime_factor' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 5 -A 5
+# Result: Metrics loop uses old formula (avg_infer_time / chunk_seconds)
+# Note: Accurate RTF tracked for degrade ladder but not exposed in metrics
+
+# Checked PR7: ASR stall detection
+rg 'asr_stalled\|stall.*detection\|last.*asr.*output' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 3 -A 5
+# Result: No matches
+
+# Verified test files exist
+ls -la /Users/pranay/Projects/EchoPanel/tests/test_streaming_correctness.py
+# Exists (8759 bytes)
+ls -la /Users/pranay/Projects/EchoPanel/scripts/soak_test.py
+# Exists (10152 bytes)
+```
+
+**Interpretation:**
+- 2 of 8 PRs are complete (PR5, PR8)
+- 1 PR is partial (PR6 - accurate RTF tracked but not exposed)
+- 5 PRs are not started (PR1-4, PR7)
+- Most critical gaps remain: client send blocking, no capture pause/resume, unbounded ASR buffer
+
+---
+
+## J) Original Patch Plan (4–8 PR-Sized Items)
 
 ### PR1: Client-Side Send Timeout
 - **Impact:** H
@@ -522,7 +640,29 @@
 
 ---
 
-## Summary
+## K) Next Steps (Prioritized by Impact)
+
+### Immediate (P0 - Critical Reliability):
+1. **Implement PR1 (send timeout):** Add 100ms timeout to WebSocket.send() in WebSocketStreamer.swift
+2. **Implement PR4 (ASR buffer cap):** Add max_buffer_seconds to providers to prevent OOM
+3. **Implement PR6 fix (metrics realtime_factor):** Update metrics loop to use actual audio duration
+
+### High Priority (P1):
+4. **Implement PR2 (pause/resume capture):** Add capture pause on backpressure, resume when healthy
+5. **Implement PR7 (ASR stall detection):** Add stall detection when no ASR output for 5s
+
+### Medium Priority (P2):
+6. **Implement PR3 (auto-reduce sources):** Automatically stop secondary source when overloaded
+7. **Improve PR8 (soak test):** Add real speech audio and automated reporting
+
+### Suggested Work Order:
+- Week 1: PR1 + PR4 + PR6 fix (prevent crashes and improve metrics accuracy)
+- Week 2: PR2 + PR7 (add backpressure awareness)
+- Week 3: PR3 + PR8 improvements (polish and testing)
+
+---
+
+## L) Summary
 
 ### Current State (Observed)
 
