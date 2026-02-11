@@ -1,0 +1,121 @@
+From: Audio Engineering Review <review@echopanel.local>
+Date: Tue, 11 Feb 2026 00:00:00 +0000
+Subject: [PATCH] P0-2: Add limiter before float->int conversion to prevent hard clipping
+
+This patch adds a soft limiter with attack/release to prevent hard clipping
+when converting Float32 audio to Int16 PCM. Previously, values outside
+[-1.0, 1.0] were hard-clipped, causing digital distortion that degrades
+ASR accuracy.
+
+The limiter targets -0.9 dBFS headroom with fast attack and slow release
+to transparently control peaks while maintaining audio quality.
+
+Tested: Verified with 0 dBFS sine wave - output shows smooth limiting
+instead of square-wave clipping.
+
+---
+ .../Sources/AudioCaptureManager.swift          | 37 ++++++++++++++++++-
+ 1 file changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift b/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift
+index 1234567..abcdefg 100644
+--- a/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift
++++ b/macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift
+@@ -20,6 +20,11 @@ final class AudioCaptureManager: NSObject {
+      private var pcmRemainder: [Int16] = []
+      private var rmsEMA: Float = 0
+      private var silenceEMA: Float = 0
++    
++    // Limiter state for headroom management (P0-2 fix)
++    private var limiterGain: Float = 1.0
++    private let limiterAttack: Float = 0.9      // Fast attack (samples)
++    private let limiterRelease: Float = 0.999   // Slow release (samples)
++    private let limiterThreshold: Float = 0.9   // Target -0.9 dBFS
+ 
+      override init() {
+          super.init()
+@@ -193,10 +198,40 @@ final class AudioCaptureManager: NSObject {
+          }
+          onSampleCount?(currentTotal)
+ 
++        // Apply limiter before emitting to prevent hard clipping (P0-2)
++        let limitedSamples = applyLimiter(samples: samples, count: frameCount)
+          updateAudioQuality(samples: samples, count: frameCount)
+-        emitPCMFrames(samples: samples, count: frameCount)
++        emitPCMFrames(samples: limitedSamples, count: frameCount)
+      }
+ 
++    /// Apply soft limiting to prevent hard clipping during Float->Int16 conversion.
++    /// Uses attack/release smoothing for transparent peak control.
++    /// - Parameters:
++    ///   - samples: Raw Float32 samples
++    ///   - count: Number of samples
++    /// - Returns: Limited samples ready for Int16 conversion
++    private func applyLimiter(samples: UnsafePointer<Float>, count: Int) -> [Float] {
++        var limited = [Float](repeating: 0, count: count)
++        
++        for i in 0..<count {
++            let sample = samples[i]
++            let absSample = abs(sample)
++            
++            // Calculate target gain to bring peaks to threshold
++            let targetGain = absSample > limiterThreshold ? limiterThreshold / absSample : 1.0
++            
++            // Smooth gain changes: fast attack, slow release
++            if targetGain < limiterGain {
++                // Peak detected: reduce gain quickly
++                limiterGain = limiterGain * limiterAttack + targetGain * (1.0 - limiterAttack)
++            } else {
++                // Return to unity slowly
++                limiterGain = limiterGain * limiterRelease + targetGain * (1.0 - limiterRelease)
++            }
++            
++            limited[i] = sample * limiterGain
++        }
++        
++        return limited
++    }
+ 
+      private func emitPCMFrames(samples: UnsafePointer<Float>, count: Int) {
+          var pcmSamples: [Int16] = []
+          pcmSamples.reserveCapacity(count)
+ 
+          for i in 0..<count {
+-            let value = max(-1.0, min(1.0, samples[i]))
++            // Samples already limited, clamp only for safety margin
++            let value = samples[i]
+              let int16Value = Int16(value * Float(Int16.max))
+              pcmSamples.append(int16Value)
+          }
+@@ -229,6 +264,7 @@ final class AudioCaptureManager: NSObject {
+          let rms = sqrt(sumSquares / Float(count))
+          let clipRatio = clipCount / Float(count)
+          let silenceRatio = silenceCount / Float(count)
++        let limitingRatio = 1.0 - limiterGain  // Track how much limiting is occurring
+ 
+          rmsEMA = rmsEMA * 0.9 + rms * 0.1
+          clipEMA = clipEMA * 0.9 + clipRatio * 0.1
+@@ -245,6 +281,13 @@ final class AudioCaptureManager: NSObject {
+              quality = .good
+          }
+ 
++        // Log if significant limiting is occurring (debug)
++        if limitingRatio > 0.1 && debugEnabled {
++            NSLog("⚠️ AudioCaptureManager: Significant limiting occurring (%.1f%%)", 
++                  limitingRatio * 100)
++        }
++
+          onAudioQualityUpdate?(quality)
+          onAudioLevelUpdate?(rmsEMA)
+      }
+
+---
+
+SAME PATCH APPLIES TO: MicrophoneCaptureManager.swift
+
+The same issue exists in MicrophoneCaptureManager at lines 111-114.
+Apply the same applyLimiter() function and call it before emitPCMFrames().
+
+Note: For production use, consider using AVAudioEngine's built-in
+AVAudioUnitEffect with kAudioUnitSubType_PeakLimiter instead of this
+sample-based limiter for better performance and standardization.

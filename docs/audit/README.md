@@ -23,6 +23,7 @@ Comprehensive technical audits organized by date and scope.
 
 | Date | File | Topic | Lines |
 |------|------|-------|-------|
+| 2026-02-12 | [SENIOR_ARCHITECT_REVIEW_2026-02-12.md](./SENIOR_ARCHITECT_REVIEW_2026-02-12.md) | Full-stack architecture, security, performance, concrete patches | 648 |
 | 2026-02-12 | [PHASE_2D_ASR_PROVIDER_AUDIT.md](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | ASR providers, residency, streaming, Apple Silicon, 11 failure modes | 900+ |
 | 2026-02-11 | [PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | Streaming reliability, backpressure policy, 14 failure modes | 1100+ |
 | 2026-02-11 | [PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) | State machines, protocol contracts, race conditions | 691 |
@@ -67,6 +68,7 @@ Comprehensive technical audits organized by date and scope.
 ## By Category
 
 ### 🔴 Critical (P0)
+- [Senior Architect Review](./SENIOR_ARCHITECT_REVIEW_2026-02-12.md) - Full-stack architecture, security, performance, 20 findings
 - [Phase 2D: ASR Provider Layer](./PHASE_2D_ASR_PROVIDER_AUDIT.md) - Residency, streaming semantics, Apple Silicon
 - [Phase 1C: Streaming + Backpressure](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) - Queue inventory, overload policy, 14 failure modes
 - [Phase 0A: System Contracts](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) - State machines, protocol truth

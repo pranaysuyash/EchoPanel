@@ -15,6 +15,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from server.services.analysis_stream import extract_cards, extract_entities, generate_rolling_summary
 from server.services.asr_stream import stream_asr
 from server.services.diarization import diarize_pcm, merge_transcript_with_speakers
+from server.services.concurrency_controller import (
+    get_concurrency_controller,
+    BackpressureLevel,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -247,30 +251,48 @@ async def put_audio(
     source: str = "",
     websocket: Optional[WebSocket] = None,
 ) -> None:
-    """Enqueue audio chunk, dropping oldest if queue is full.
+    """Enqueue audio chunk using concurrency controller with backpressure.
     
-    P1 fix (BP-1): Now logs drops and can send backpressure warning to client.
+    PR5: Uses ConcurrencyController for bounded queues with priority.
     """
     if not chunk:
         return
-    try:
-        q.put_nowait(chunk)
-        # V1: Track bytes received
+    
+    # PR5: Use concurrency controller for backpressure
+    controller = get_concurrency_controller()
+    
+    # Check if this source should be dropped under extreme load
+    if controller.should_drop_source(source):
+        if state is not None:
+            state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
+            logger.warning(f"Dropping {source} due to extreme overload")
+        return
+    
+    # Submit chunk (will drop oldest if queue full)
+    success = await controller.submit_chunk(chunk, source)
+    
+    if success:
+        # Also add to original queue for compatibility
+        try:
+            q.put_nowait(chunk)
+        except asyncio.QueueFull:
+            # Already handled by controller
+            pass
+        
+        # Track metrics
         if state is not None:
             from server.services.metrics_registry import get_registry
             get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
-    except asyncio.QueueFull:
-        # Drop oldest to avoid lag spiral
-        _ = q.get_nowait()
-        q.put_nowait(chunk)
+    else:
+        # Submission failed (queue full and couldn't make space)
         if state is not None:
             state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-            # Always log drops (not just DEBUG) for observability
             logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
-            # V1: Track in metrics registry
+            
             from server.services.metrics_registry import get_registry
             get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
-            # P1 fix: Send backpressure warning to client (throttled)
+            
+            # Send backpressure warning
             if websocket is not None and not state.backpressure_warned:
                 state.backpressure_warned = True
                 asyncio.create_task(ws_send(state, websocket, {
@@ -487,6 +509,18 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             await websocket.close()
                             return
                         
+                        # PR5: Acquire session slot (concurrency limiting)
+                        controller = get_concurrency_controller()
+                        session_acquired = await controller.acquire_session(timeout=5.0)
+                        if not session_acquired:
+                            await ws_send(state, websocket, {
+                                "type": "status",
+                                "state": "error",
+                                "message": "Server at capacity, please try again later"
+                            })
+                            await websocket.close()
+                            return
+                        
                         state.sample_rate = sample_rate
                         state.started = True
                         
@@ -654,6 +688,12 @@ async def ws_live_listener(websocket: WebSocket) -> None:
             logger.debug("ws_live_listener: disconnect")
         return
     finally:
+        # PR5: Release session slot
+        if state.started:
+            controller = get_concurrency_controller()
+            controller.release_session()
+            logger.debug(f"Released session slot for {state.session_id}")
+        
         # P2-13: Close audio dump files
         _close_audio_dumps(state)
         

@@ -233,6 +233,13 @@ final class WebSocketStreamer: NSObject {
             break
         }
     }
+    
+    // MARK: - Public Message Handler (for ResilientWebSocket integration)
+    
+    /// Handle raw message data from any source (used by ResilientWebSocket adapter)
+    func handleMessageData(_ data: Data) {
+        handleJSON(data)
+    }
 
     private func handleJSON(_ data: Data) {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
