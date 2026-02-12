@@ -1149,6 +1149,7 @@ Tracking items:
 | F-021 | AUD-007 | implementation gap | U2 | docs/flows/AUD-007.md | server/services/diarization.py, server/main.py | Startup diarization prewarm executes in bounded background task | DONE |
 | F-022 | MOD provider selection | improvement | U2 | docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md | server/main.py | Auto-selection prefers whisper.cpp on Apple Silicon when available, unless disabled by env flag | DONE |
 | F-023 | execution receipt | blocked runtime precondition | U3 | docs/audit/artifacts/hf-prefetch-receipt-20260212T085317Z.json, docs/audit/artifacts/hf-eval-receipt-20260212T085334Z.json | scripts/*.py | Live token-backed run completed in this environment | BLOCKED |
+| F-024 | INT-008 / INT-009 model pool breadth | improvement | U4 | docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md, docs/audit/artifacts/hf-candidate-discovery-20260212T090623Z.json | scripts/discover_hf_candidates.py | Candidate discovery extends beyond pinned manifest with ranked receipts | DONE |
 
 Unit Reality + Options log:
 
@@ -1171,6 +1172,16 @@ Unit Reality + Options log:
   - Option B (comprehensive): background prewarm on startup + safe whisper.cpp preference hook with env override.
     - Pros: concrete latency reduction path with operator control.
     - Cons: additional startup logic and tests.
+  - Decision: Option B.
+
+- U4 (F-024) Reality:
+  - Pinned manifest gives reproducibility but constrains exploration for INT-008/INT-009 model discovery.
+  - Option A (minimal): manually browse HF and copy IDs into docs.
+    - Pros: no code changes.
+    - Cons: not reproducible, no scored receipts.
+  - Option B (comprehensive): add discovery CLI that queries HF API by track heuristics and emits ranked receipts.
+    - Pros: repeatable exploration and fast shortlist refresh.
+    - Cons: ranking heuristics require periodic tuning.
   - Decision: Option B.
 
 Evidence log:
@@ -1213,7 +1224,29 @@ Evidence log:
   - Output: `401 Unauthorized` and receipt `docs/audit/artifacts/hf-eval-receipt-20260212T085334Z.json`
   - Interpretation: Observed — prefetch works for public model without token; hosted eval endpoint requires authentication in this environment.
 
+- [2026-02-12 09:05] Verified token availability in shell + keychain | Evidence:
+  - Command: `if [ -n "$ECHOPANEL_HF_TOKEN" ]; then echo "ECHOPANEL_HF_TOKEN=set"; else echo "ECHOPANEL_HF_TOKEN=unset"; fi; if [ -n "$HF_TOKEN" ]; then echo "HF_TOKEN=set"; else echo "HF_TOKEN=unset"; fi`
+  - Output: `ECHOPANEL_HF_TOKEN=unset`, `HF_TOKEN=unset`
+  - Command: `security find-generic-password -s com.echopanel.MeetingListenerApp -a hfToken`
+  - Output: `The specified item could not be found in the keychain.`
+  - Interpretation: Observed — HF token currently unavailable in both shell env and app keychain.
+
+- [2026-02-12 09:06] Implemented broader HF candidate discovery (not limited to pinned manifest) | Evidence:
+  - Code:
+    - Added `scripts/discover_hf_candidates.py` for INT-008/INT-009 ranked candidate discovery via HF API
+  - Commands:
+    - `.venv/bin/python -m py_compile scripts/discover_hf_candidates.py`
+    - `.venv/bin/python scripts/discover_hf_candidates.py --track all --limit 15`
+  - Output:
+    - Receipt `docs/audit/artifacts/hf-candidate-discovery-20260212T090623Z.json`
+    - Top INT-008 shortlist includes `fastino/gliner2-base-v1`, `fastino/gliner2-large-v1`, `urchade/gliner_multi-v2.1`
+    - Top INT-009 shortlist includes `BAAI/bge-m3`, `jinaai/jina-embeddings-v3`, `nomic-ai/nomic-embed-text-v1.5`, `google/embeddinggemma-300m`
+  - Docs:
+    - Updated `docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md` with discovery and token-check commands
+  - Interpretation: Observed — candidate exploration now extends beyond pinned manifest with reproducible receipts.
+
 Status updates:
 
 - [2026-02-12 08:48] **IN_PROGRESS** 🟡 — ticket created and HF acceleration implementation started
 - [2026-02-12 08:51] **DONE** ✅ — implementation complete with tests and dry-run receipts; live token-backed run blocked by missing shell token
+- [2026-02-12 09:06] **DONE** ✅ — U4 complete (`F-024`) with discovery tooling + candidate receipt

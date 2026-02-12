@@ -1,0 +1,462 @@
+{
+  "generated_at": "2026-02-12T09:06:23.343630+00:00",
+  "limit": 15,
+  "results": {
+    "int008": [
+      {
+        "downloads": 2014703,
+        "gated": false,
+        "likes": 695,
+        "model_id": "dslim/bert-base-NER",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 7.015,
+        "sha": "d1a3e8f13f8c3566299d95fcfc9a8d2382a9affc",
+        "track": "int008"
+      },
+      {
+        "downloads": 123460,
+        "gated": false,
+        "likes": 56,
+        "model_id": "fastino/gliner2-base-v1",
+        "pipeline_tag": null,
+        "private": false,
+        "rationale": [
+          "gliner-family",
+          "topic-entity-extraction"
+        ],
+        "score": 6.329,
+        "sha": "2f8ad2430eb1549a92eb3e6090c12ca7db826ca0",
+        "track": "int008"
+      },
+      {
+        "downloads": 401422,
+        "gated": false,
+        "likes": 159,
+        "model_id": "Babelscape/wikineural-multilingual-ner",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 6.154,
+        "sha": "bed6ee7a45d2827b6c90a4fd7983f0241ae0a5c1",
+        "track": "int008"
+      },
+      {
+        "downloads": 86083,
+        "gated": false,
+        "likes": 37,
+        "model_id": "fastino/gliner2-large-v1",
+        "pipeline_tag": null,
+        "private": false,
+        "rationale": [
+          "gliner-family",
+          "topic-entity-extraction"
+        ],
+        "score": 6.127,
+        "sha": "bec53eea59866d31b5fb827ae2c8fef183d4032e",
+        "track": "int008"
+      },
+      {
+        "downloads": 562774,
+        "gated": false,
+        "likes": 25,
+        "model_id": "flair/ner-english-fast",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 6.1,
+        "sha": "f75577be7dbb6f47ea7681664560349e870aef18",
+        "track": "int008"
+      },
+      {
+        "downloads": 40196,
+        "gated": false,
+        "likes": 150,
+        "model_id": "urchade/gliner_multi_pii-v1",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "gliner-family",
+          "topic-entity-extraction"
+        ],
+        "score": 5.948,
+        "sha": "1fcf13e85f4eef5394e1fcd406cf2ca9ea82351d",
+        "track": "int008"
+      },
+      {
+        "downloads": 355477,
+        "gated": false,
+        "likes": 11,
+        "model_id": "KB/bert-base-swedish-cased-ner",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.811,
+        "sha": "5226665bfceabcfe48ed424744c4b89e7731a2ad",
+        "track": "int008"
+      },
+      {
+        "downloads": 201517,
+        "gated": false,
+        "likes": 46,
+        "model_id": "Jean-Baptiste/camembert-ner-with-dates",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.72,
+        "sha": "a0b8a16ab23abdc19ba19d38a86e4128a09bbd79",
+        "track": "int008"
+      },
+      {
+        "downloads": 171585,
+        "gated": false,
+        "likes": 78,
+        "model_id": "Davlan/bert-base-multilingual-cased-ner-hrl",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.708,
+        "sha": "e756de7f7b8f64fea0c3d7c3872f1322fab747b1",
+        "track": "int008"
+      },
+      {
+        "downloads": 20473,
+        "gated": false,
+        "likes": 147,
+        "model_id": "urchade/gliner_multi-v2.1",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "gliner-family",
+          "topic-entity-extraction"
+        ],
+        "score": 5.653,
+        "sha": "443d26d654e0324125a96bebd8e796c14ff2efe6",
+        "track": "int008"
+      },
+      {
+        "downloads": 134468,
+        "gated": false,
+        "likes": 119,
+        "model_id": "Jean-Baptiste/camembert-ner",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.648,
+        "sha": "ef35fe7767c1dad71f5c853838cdd80d0b3441ed",
+        "track": "int008"
+      },
+      {
+        "downloads": 123888,
+        "gated": false,
+        "likes": 159,
+        "model_id": "dslim/bert-large-NER",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.643,
+        "sha": "6fe43d9ec0bba0f67e367ecd74399216fc409c7f",
+        "track": "int008"
+      },
+      {
+        "downloads": 172583,
+        "gated": false,
+        "likes": 36,
+        "model_id": "flair/ner-english",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.626,
+        "sha": "b13c26b4f49340c82d47644a51804db29bec8d3f",
+        "track": "int008"
+      },
+      {
+        "downloads": 184896,
+        "gated": false,
+        "likes": 19,
+        "model_id": "flair/ner-english-ontonotes",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.587,
+        "sha": "ffa7600048695dade4afcb02d5ff48aee7a018ee",
+        "track": "int008"
+      },
+      {
+        "downloads": 143415,
+        "gated": false,
+        "likes": 28,
+        "model_id": "Davlan/xlm-roberta-base-ner-hrl",
+        "pipeline_tag": "token-classification",
+        "private": false,
+        "rationale": [
+          "token-classification",
+          "ner-family"
+        ],
+        "score": 5.518,
+        "sha": "253f557bd8249b8515114cfd7f71974fe5fa4d2f",
+        "track": "int008"
+      }
+    ],
+    "int009": [
+      {
+        "downloads": 156435842,
+        "gated": false,
+        "likes": 4460,
+        "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 9.107,
+        "sha": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+        "track": "int009"
+      },
+      {
+        "downloads": 18459713,
+        "gated": false,
+        "likes": 1131,
+        "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 8.03,
+        "sha": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+        "track": "int009"
+      },
+      {
+        "downloads": 13939984,
+        "gated": false,
+        "likes": 2739,
+        "model_id": "BAAI/bge-m3",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 8.004,
+        "sha": "5617a9f61b028005a4858fdac845db406aefb181",
+        "track": "int009"
+      },
+      {
+        "downloads": 5277944,
+        "gated": false,
+        "likes": 1129,
+        "model_id": "jinaai/jina-embeddings-v3",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.486,
+        "sha": "f1944de8402dcd5f2b03f822a4bc22a7f2de2eb9",
+        "track": "int009"
+      },
+      {
+        "downloads": 4697865,
+        "gated": false,
+        "likes": 411,
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.325,
+        "sha": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "track": "int009"
+      },
+      {
+        "downloads": 3734632,
+        "gated": false,
+        "likes": 769,
+        "model_id": "nomic-ai/nomic-embed-text-v1.5",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.294,
+        "sha": "e5cf08aadaa33385f5990def41f7a23405aec398",
+        "track": "int009"
+      },
+      {
+        "downloads": 4010866,
+        "gated": false,
+        "likes": 402,
+        "model_id": "BAAI/bge-base-en-v1.5",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.254,
+        "sha": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+        "track": "int009"
+      },
+      {
+        "downloads": 3246346,
+        "gated": false,
+        "likes": 873,
+        "model_id": "Qwen/Qwen3-Embedding-0.6B",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.247,
+        "sha": "c54f2e6e80b2d7b7de06f51cec4959f6b3e03418",
+        "track": "int009"
+      },
+      {
+        "downloads": 3558500,
+        "gated": false,
+        "likes": 292,
+        "model_id": "sentence-transformers/all-MiniLM-L12-v2",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.168,
+        "sha": "936af83a2ecce5fe87a09109ff5cbcefe073173a",
+        "track": "int009"
+      },
+      {
+        "downloads": 4625931,
+        "gated": false,
+        "likes": 625,
+        "model_id": "BAAI/bge-large-en-v1.5",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.064,
+        "sha": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+        "track": "int009"
+      },
+      {
+        "downloads": 3283549,
+        "gated": false,
+        "likes": 145,
+        "model_id": "sentence-transformers/paraphrase-MiniLM-L6-v2",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.057,
+        "sha": "c9a2bfebc254878aee8c3aca9e6844d5bbb102d1",
+        "track": "int009"
+      },
+      {
+        "downloads": 3741325,
+        "gated": false,
+        "likes": 1140,
+        "model_id": "intfloat/multilingual-e5-large",
+        "pipeline_tag": "feature-extraction",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.037,
+        "sha": "0dc5580a448e4284468b8909bae50fa925907bc5",
+        "track": "int009"
+      },
+      {
+        "downloads": 2147728,
+        "gated": false,
+        "likes": 552,
+        "model_id": "nomic-ai/nomic-embed-text-v1",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "feature-extraction",
+          "embedding-family"
+        ],
+        "score": 7.017,
+        "sha": "eb6b20cd65fcbdf7a2bc4ebac97908b3b21da981",
+        "track": "int009"
+      },
+      {
+        "downloads": 2105915,
+        "gated": false,
+        "likes": 334,
+        "model_id": "intfloat/multilingual-e5-base",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "sentence-similarity",
+          "embedding-family"
+        ],
+        "score": 6.954,
+        "sha": "835193815a3936a24a0ee7dc9e3d48c1fbb19c55",
+        "track": "int009"
+      },
+      {
+        "downloads": 1966556,
+        "gated": false,
+        "likes": 281,
+        "model_id": "intfloat/multilingual-e5-small",
+        "pipeline_tag": "sentence-similarity",
+        "private": false,
+        "rationale": [
+          "sentence-similarity",
+          "embedding-family"
+        ],
+        "score": 6.906,
+        "sha": "c007d7ef6fd86656326059b28395a7a03a7c5846",
+        "track": "int009"
+      }
+    ]
+  },
+  "track": "all",
+  "type": "hf_candidate_discovery"
+}
