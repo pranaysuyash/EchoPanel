@@ -15,7 +15,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MeetingListenerApp",
-            path: "Sources"
+            path: "Sources",
+            exclude: ["MeetingListenerApp"]
         ),
         .testTarget(
             name: "MeetingListenerAppTests",

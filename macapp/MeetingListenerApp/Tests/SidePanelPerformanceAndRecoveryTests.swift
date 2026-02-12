@@ -107,4 +107,32 @@ final class BackendRecoveryUXTests: XCTestCase {
         )
         XCTAssertEqual(appState.backendUXState, .ready)
     }
+
+    func testBackendHealthTimeoutDefaultsAndOverrides() {
+        let key = "backendHealthTimeoutSeconds"
+        let defaults = UserDefaults.standard
+        let originalObject = defaults.object(forKey: key)
+
+        defer {
+            if let value = originalObject {
+                defaults.set(value, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        defaults.removeObject(forKey: key)
+        XCTAssertEqual(BackendConfig.healthCheckTimeout, 2.0, accuracy: 0.0001)
+
+        defaults.set(4.5, forKey: key)
+        XCTAssertEqual(BackendConfig.healthCheckTimeout, 4.5, accuracy: 0.0001)
+
+        defaults.set(0.05, forKey: key)
+        XCTAssertEqual(BackendConfig.healthCheckTimeout, 0.2, accuracy: 0.0001)
+    }
+
+    func testWebSocketURLDoesNotContainQueryToken() {
+        let components = URLComponents(url: BackendConfig.webSocketURL, resolvingAgainstBaseURL: false)
+        XCTAssertNil(components?.query)
+    }
 }

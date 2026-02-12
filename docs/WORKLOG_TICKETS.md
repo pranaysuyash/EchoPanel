@@ -555,7 +555,7 @@ Next actions:
 Type: IMPROVEMENT
 Owner: Pranay (agent: Reliability Engineer)
 Created: 2026-02-11 21:30 (local time)
-Status: **OPEN** 🔵
+Status: **DONE** ✅
 Priority: P1
 
 Description:
@@ -581,28 +581,37 @@ Targets:
 
 Acceptance criteria:
 
-- [ ] A single, well-documented implementation exists (either as a shared component or reconciled classes)
-- [ ] `CircuitBreaker` remains `Observable` and supports the existing SwiftUI `CircuitBreakerStatusView`
-- [ ] Structured logging and error metadata are preserved
-- [ ] `CircuitBreakerManager` or an equivalent global access pattern is retained
-- [ ] Unit tests added with coverage for circuit breaker logic and edge cases
-- [ ] Integration test exercising WebSocket reconnection and the circuit breaker behavior
-- [ ] Migration notes added to docs and PR description
+- [x] A single, well-documented implementation exists (either as a shared component or reconciled classes)
+- [x] `CircuitBreaker` remains `Observable` and supports the existing SwiftUI `CircuitBreakerStatusView`
+- [x] Structured logging and error metadata are preserved
+- [x] `CircuitBreakerManager` or an equivalent global access pattern is retained
+- [x] Unit tests added with coverage for circuit breaker logic and edge cases
+- [x] Integration test exercising WebSocket reconnection and the circuit breaker behavior
+- [x] Migration notes added to docs and PR description
 
 Evidence log:
 
 - [2026-02-11 21:30] Observed staged deletion of `CircuitBreaker.swift`; restored file to working tree to prevent accidental removal.
 - [2026-02-11 21:32] Created this ticket to track consolidation and preservation work.
+- [2026-02-12 11:45] Consolidated implementation and verified behavior | Evidence:
+  - Code:
+    - `ResilientWebSocket.swift` now uses shared `CircuitBreaker` (WS-local duplicate removed)
+    - `CircuitBreaker.swift` kept observable state + manager integration + structured logs
+  - Tests:
+    - `cd macapp/MeetingListenerApp && swift test --filter CircuitBreakerConsolidationTests` → 3 passed
+    - `cd macapp/MeetingListenerApp && swift test` → 64 passed
+  - Docs:
+    - `docs/CIRCUIT_BREAKER_IMPLEMENTATION.md` rewritten with consolidated architecture and migration notes
+  - Interpretation: Observed — consolidation complete and locally verified
 
 Status updates:
 
 - [2026-02-11 21:30] **OPEN** 🔵 — awaiting assignment / implementation plan
+- [2026-02-12 11:45] **DONE** ✅ — consolidation implemented, tests/docs updated
 
 Next actions:
 
-1. Assign owner and target milestone (ask @team)
-2. Design merged API and update tests
-3. Implement changes in a small, reviewable PR and include migration notes
+None.
 
 ### TCK-20260211-014 :: Flow Atlas Extraction — Comprehensive End-to-End Flow Documentation
 
@@ -755,16 +764,19 @@ Tracking items:
 
 | item_id | source_flow | category | dependency | evidence_doc | evidence_code | acceptance | status |
 |---|---|---|---|---|---|---|---|
-| F-001 | SEC-005 | implementation gap | U4 | docs/flow-atlas-20260211.md | BackendConfig.swift, WebSocketStreamer.swift | WS client no longer transmits token in query | OPEN |
-| F-002 | AUD-008 | implementation gap | U5 | docs/flows/AUD-008.md | DeviceHotSwapManager.swift | Recovery timeout + observer cleanup covered by tests | OPEN |
-| F-003 | EXT-009 | implementation gap | U6 | docs/flows/EXT-009.md | MeetingListenerApp.swift, KeychainHelper.swift | Keychain save failures are user-visible and logged | OPEN |
-| F-004 | EXT-006/007 | implementation gap | U6 | docs/flows/EXT-006.md, docs/flows/EXT-007.md | AppState.swift | Export failures/success surfaced in UI state | OPEN |
-| F-005 | OBS-004/EXT-012 | implementation gap | U3 | docs/flow-atlas-20260211.md, docs/flows/EXT-012.md | BackendManager.swift | Health timeout configurable, default preserved | OPEN |
+| F-001 | SEC-005 | implementation gap | U4 | docs/flow-atlas-20260211.md | BackendConfig.swift, WebSocketStreamer.swift | WS client no longer transmits token in query | DONE |
+| F-002 | AUD-008 | implementation gap | U5 | docs/flows/AUD-008.md | DeviceHotSwapManager.swift | Recovery timeout + observer cleanup covered by tests | DONE |
+| F-003 | EXT-009 | implementation gap | U6 | docs/flows/EXT-009.md | MeetingListenerApp.swift, OnboardingView.swift, AppState.swift | Keychain save failures are user-visible and logged | DONE |
+| F-004 | EXT-006/007 | implementation gap | U6 | docs/flows/EXT-006.md, docs/flows/EXT-007.md, docs/flows/EXT-008.md | AppState.swift, SidePanelView.swift | Export failures/success surfaced in UI state | DONE |
+| F-005 | OBS-004/EXT-012 | implementation gap | U3 | docs/flow-atlas-20260211.md, docs/flows/EXT-012.md | BackendManager.swift, BackendConfig.swift | Health timeout configurable, default preserved | DONE |
 | F-006 | MOD-014 | implementation gap | U1 | docs/flow-atlas-20260211.md | model_preloader.py, main.py | Explicit unload + shutdown hook + tests | DONE |
 | F-007 | SEC-009 | implementation gap | U2 | docs/flow-atlas-20260211.md | ws_live_listener.py | Debug dump bounded cleanup policy + tests | DONE |
 | F-008 | AUD-009 | large-scope | U8 | docs/flows/AUD-009.md | capture + ws paths | Telemetry/flag groundwork only | OPEN |
 | F-009 | AUD-010 | large-scope | U8 | docs/flows/AUD-010.md | audio capture pipeline | Telemetry/flag groundwork only | OPEN |
-| F-010 | TCK-20260211-013 | implementation gap | U7 | docs/WORKLOG_TICKETS.md | CircuitBreaker.swift, ResilientWebSocket.swift | Consolidated behavior + docs + tests | OPEN |
+| F-010 | TCK-20260211-013 | implementation gap | U7 | docs/WORKLOG_TICKETS.md, docs/CIRCUIT_BREAKER_IMPLEMENTATION.md | CircuitBreaker.swift, ResilientWebSocket.swift | Consolidated behavior + docs + tests | DONE |
+| F-011 | NET-001..005 | doc drift | U9 | docs/flows/NET-001.md .. docs/flows/NET-005.md | WebSocketStreamer.swift, BackendConfig.swift, AppState.swift | NET flow docs reflect implemented connection/auth/send/receive/disconnect behavior | OPEN |
+| F-012 | UI-001..010 | doc drift | U9 | docs/flows/UI-001.md .. docs/flows/UI-010.md | SidePanelView.swift, SidePanelStateLogic.swift, MeetingListenerApp.swift | UI flow docs reflect implemented menu/panel/search/focus/surface/pin/lens/follow-live behavior | OPEN |
+| F-013 | EXT-001 | doc drift | U9 | docs/flows/EXT-001.md | MeetingListenerApp.swift | Onboarding reopen behavior documented as implemented where evidenced | DONE |
 
 Unit Reality + Options log:
 
@@ -790,6 +802,77 @@ Unit Reality + Options log:
     - Pros: keeps debugging utility while reducing privacy/disk risks.
     - Cons: additional code/tests.
   - Decision: Option B.
+
+- U3 (F-005) Reality:
+  - Client backend health polling used a fixed `2.0` second timeout in `BackendManager.checkHealth()`.
+  - Flow docs identified timeout behavior as implemented but non-configurable.
+  - Gap classification: implementation gap.
+  - Option A (minimal): replace literal with config-backed value, keep existing default and call sites.
+    - Pros: small patch, no UX disruption, backward-compatible.
+    - Cons: still advanced-config only (UserDefaults key), no dedicated settings control yet.
+  - Option B (comprehensive): add settings UI, validation, and surfaced timeout value in diagnostics.
+    - Pros: fully user-discoverable configuration.
+    - Cons: larger UI/state/test scope, not required to close finding.
+  - Decision: Option A.
+
+- U4 (F-001) Reality:
+  - WebSocket URL construction embedded auth token in query string when token existed.
+  - Server already accepts header tokens (`x-echopanel-token`, `Authorization: Bearer`) with query fallback.
+  - Gap classification: implementation gap.
+  - Option A (minimal): stop putting token in URL and attach token via request headers.
+    - Pros: closes token-in-query exposure with low compatibility risk.
+    - Cons: query-token fallback remains on server until explicit deprecation.
+  - Option B (comprehensive): remove query-token support server-side immediately.
+    - Pros: tighter security contract.
+    - Cons: breaking risk for old clients.
+  - Decision: Option A.
+
+- U5 (F-002) Reality:
+  - `DeviceHotSwapManager` recovery called external restart callback directly with no timeout boundary.
+  - Only one observer token was retained; disconnect observer could not be explicitly removed by lifecycle cleanup.
+  - Gap classification: implementation gap.
+  - Option A (minimal): add timeout-only guard around callback.
+    - Pros: smallest code delta.
+    - Cons: leaves observer lifecycle partial and harder to reason about teardown.
+  - Option B (comprehensive): add callback timeout + explicit connect/disconnect observer bookkeeping + cancellation-safe stop cleanup + regression tests.
+    - Pros: fixes both reliability and lifecycle hygiene with bounded behavior.
+    - Cons: broader change and new test surface.
+  - Decision: Option B.
+
+- U6 (F-003/F-004) Reality:
+  - Keychain token save in settings/onboarding ignored `Bool` failure result, producing silent persistence failure.
+  - Export JSON/Markdown/Debug paths mostly logged failures to console without explicit UI outcome.
+  - Gap classification: implementation gap.
+  - Option A (minimal): add logs only and keep current UI behavior.
+    - Pros: low risk.
+    - Cons: still silent to users for critical failure paths.
+  - Option B (comprehensive): add explicit user notice state in `AppState`, wire export success/cancel/failure outcomes, and show credential save errors inline + in app notice.
+    - Pros: users receive immediate actionable feedback; easier support/debugging.
+    - Cons: larger UI/state update and additional tests.
+  - Decision: Option B.
+
+- U7 (F-010) Reality:
+  - There are two circuit-breaker implementations in app sources: a rich observable `CircuitBreaker` and a WS-local `WebSocketCircuitBreaker`.
+  - WS path currently bypasses shared observability-oriented implementation, creating drift risk and duplicated semantics.
+  - Gap classification: implementation gap.
+  - Option A (minimal): keep both implementations and only clarify docs.
+    - Pros: zero runtime risk.
+    - Cons: duplication remains and behavior can diverge again.
+  - Option B (comprehensive): unify WS reconnection to use shared `CircuitBreaker`, retain existing `CircuitBreakerManager`/UI contracts, add targeted tests, and update implementation doc.
+    - Pros: one implementation surface with preserved external behavior.
+    - Cons: requires careful API adaptation + reconnection regression checks.
+  - Decision: Option B, in a constrained patch that preserves thresholds/timeouts and retry behavior.
+
+- U9 (F-011/F-012/F-013) Reality:
+  - Full `docs/flows/` sweep found multiple NET/UI/EXT docs marked `Hypothesized` or explicit gaps where matching code paths already exist.
+  - Gap classification: doc drift.
+  - Option A (minimal): update status/evidence wording in affected docs only.
+    - Pros: fast alignment with current implementation.
+    - Cons: leaves generated-doc style inconsistencies.
+  - Option B (comprehensive): normalize all affected flow docs to a consistent verified template.
+    - Pros: cleaner long-term flow corpus.
+    - Cons: larger documentation-only patch.
+  - Decision: Option A, then expand if needed.
 
 Evidence log:
 
@@ -830,14 +913,111 @@ Evidence log:
     - Updated flow/risk status for SEC-009 (`docs/flow-atlas-20260211.md`)
   - Interpretation: Observed — debug dump lifecycle is now bounded with regression coverage
 
+- [2026-02-12 11:24] Completed U3 (`F-005`) configurable backend health timeout | Evidence:
+  - Code:
+    - Added `BackendConfig.healthCheckTimeout` (`backendHealthTimeoutSeconds`, default `2.0`) and switched health polling to use it
+    - Added regression test for default/override/clamp behavior in `BackendRecoveryUXTests`
+  - Commands:
+    - `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests`
+  - Output:
+    - `Executed 2 tests, with 0 failures`
+  - Docs:
+    - Updated flow failure-mode evidence (`docs/flows/EXT-012.md`)
+  - Interpretation: Observed — timeout is configurable while preserving default behavior
+
+- [2026-02-12 11:30] Completed U4 (`F-001`) WebSocket auth header migration | Evidence:
+  - Code:
+    - Removed query-token behavior from `BackendConfig.webSocketURL`
+    - Added `BackendConfig.webSocketRequest` to attach `Authorization` and `x-echopanel-token` headers
+    - Updated `WebSocketStreamer` to connect with request headers
+  - Tests:
+    - Command: `.venv/bin/pytest -q tests/test_ws_integration.py tests/test_ws_live_listener.py`
+    - Output: `6 passed, 3 warnings in 1.72s`
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests`
+    - Output: `Executed 3 tests, with 0 failures`
+  - Docs:
+    - Updated `docs/flows/EXT-004.md` and `docs/flow-atlas-20260211.md`
+  - Interpretation: Observed — client now uses header auth transport while server keeps backward compatibility
+
+- [2026-02-12 11:36] Completed full flow-corpus ingestion (not flow-atlas only) | Evidence:
+  - Command: `rg --files docs/flows | sort`
+  - Output: 69 flow files across `AUD`, `EXT`, `MOD`, `NET`, `OBS`, `STO`, `UI`
+  - Command: `for f in docs/flows/*.md; do ... status extraction ...; done`
+  - Output: Partial/Hypothesized set includes `AUD-008`, `AUD-009`, `AUD-010`, `NET-001..005`, `UI-001..010`
+  - Code cross-check:
+    - Confirmed implementation evidence exists for core UI keyboard/surface/focus/pin/lens/follow-live and menu/onboarding reopen paths
+    - Confirmed implementation evidence exists for NET connection/auth/send/receive/disconnect paths
+  - Interpretation: Observed — additional doc-drift findings `F-011/F-012/F-013` added from full flow files
+
+- [2026-02-12 11:22] Resolved Swift verification unblocker (duplicate producers + circuit-breaker symbol collision) | Evidence:
+  - Commands:
+    - `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests` (initial run failed with duplicate producers)
+    - `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests` (post-fix passed)
+  - Code:
+    - Excluded nested duplicate source tree in package target (`Package.swift`)
+    - Renamed WS-local circuit breaker type to avoid collision with shared `CircuitBreaker` (`ResilientWebSocket.swift`)
+    - Added missing `SwiftUI` import in `CircuitBreaker.swift`
+  - Interpretation: Observed — Swift test execution is locally unblocked
+
+- [2026-02-12 11:39] Completed U5 (`F-002`) hot-swap timeout + observer lifecycle cleanup | Evidence:
+  - Code:
+    - Added bounded restart callback timeout (`restartCaptureWithTimeout`)
+    - Added explicit connect/disconnect observer tracking and teardown (`removeDeviceObservers`, `stopMonitoring`)
+    - Added cancellation-safe cleanup on stop and retry delay configurability
+  - Tests:
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter DeviceHotSwapManagerTests`
+    - Output: `Executed 3 tests, with 0 failures`
+  - Docs:
+    - Updated failure-mode handling and test gap in `docs/flows/AUD-008.md`
+  - Interpretation: Observed — hot-swap recovery is bounded and observer lifecycle cleanup is explicit
+
+- [2026-02-12 11:39] Completed U6 (`F-003`, `F-004`) settings/export user-visible failure surfacing | Evidence:
+  - Code:
+    - Added user notice model + lifecycle in `AppState` and surfaced export success/cancel/failure via `recordExport*`
+    - Added side panel notice banner with dismiss action
+    - Added inline token save error rendering in `SettingsView` and `OnboardingView`, plus structured logging hook (`recordCredentialSaveFailure`)
+  - Tests:
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter AppStateNoticeTests`
+    - Output: `Executed 3 tests, with 0 failures`
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests`
+    - Output: `Executed 3 tests, with 0 failures`
+  - Docs:
+    - Updated `docs/flows/EXT-006.md`, `docs/flows/EXT-007.md`, `docs/flows/EXT-008.md`, `docs/flows/EXT-009.md`
+  - Interpretation: Observed — previously silent settings/export failures are now user-visible and logged
+
+- [2026-02-12 11:45] Completed U7 (`F-010`) circuit-breaker consolidation | Evidence:
+  - Code:
+    - Consolidated WS reconnection to shared `CircuitBreaker` implementation (removed WS-local duplicate type)
+    - Updated `ReconnectionConfiguration` to carry shared breaker and preserved threshold/timeout behavior profiles
+    - Kept existing `CircuitBreakerManager` and `CircuitBreakerStatusView` contracts
+  - Tests:
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter CircuitBreakerConsolidationTests`
+    - Output: `Executed 3 tests, with 0 failures`
+    - Command: `cd macapp/MeetingListenerApp && swift test`
+    - Output: `Executed 64 tests, with 0 failures`
+  - Docs:
+    - Updated `docs/CIRCUIT_BREAKER_IMPLEMENTATION.md` with consolidated architecture + migration notes
+  - Interpretation: Observed — circuit-breaker duplication removed without behavioral regression in local tests
+
+- [2026-02-12 11:46] Completed U9 subset (`F-013`) onboarding reopen doc alignment | Evidence:
+  - Docs:
+    - Updated `docs/flows/EXT-001.md` failure-mode and follow-up sections to reflect implemented "Show Onboarding" menu path
+  - Code cross-check:
+    - `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift` includes explicit onboarding reopen action
+  - Interpretation: Observed — EXT onboarding reopen doc drift resolved
+
 Status updates:
 
 - [2026-02-12 10:49] **IN_PROGRESS** 🟡 — ticket created and remediation loop started
 - [2026-02-12 10:50] **IN_PROGRESS** 🟡 — executing U1 (model unload lifecycle)
 - [2026-02-12 11:18] **IN_PROGRESS** 🟡 — U1 complete, U2 complete, moving to U3
+- [2026-02-12 11:24] **IN_PROGRESS** 🟡 — U3 complete, moving to U4 (WS auth header migration)
+- [2026-02-12 11:39] **IN_PROGRESS** 🟡 — U5 and U6 complete, moving to U7/U9 sequencing
+- [2026-02-12 11:45] **IN_PROGRESS** 🟡 — U7 complete, proceeding with U9/U8 backlog
+- [2026-02-12 11:46] **IN_PROGRESS** 🟡 — U9 partial (`F-013`) done; NET/UI doc-drift items remain
 
 Next actions:
 
-1. Implement U3 (`F-005`) configurable backend health timeout in Swift with tests.
-2. Implement U4 (`F-001`) WebSocket auth header migration with compatibility checks.
-3. Continue dependency order through U5-U7, then stage U8 groundwork.
+1. Continue U9 doc-drift alignment (`F-011/F-012/F-013`) for NET/UI/EXT flow files.
+2. Stage U8 groundwork (`F-008/F-009`) as telemetry/feature-flag only, leaving behavior defaults unchanged.
+3. Re-evaluate remaining open items for `DONE` vs `BLOCKED` evidence closure.

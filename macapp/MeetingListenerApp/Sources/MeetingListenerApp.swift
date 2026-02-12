@@ -333,6 +333,7 @@ struct SettingsView: View {
     @AppStorage("backendHost") private var backendHost = "127.0.0.1"
     @AppStorage("backendPort") private var backendPort = 8000
     @State private var backendToken: String = ""
+    @State private var backendTokenSaveError: String?
     @State private var selectedTab = 0
     private let modelRecommendation = ASRModelRecommendation.forCurrentMac()
     
@@ -354,9 +355,15 @@ struct SettingsView: View {
         .onAppear {
             _ = KeychainHelper.migrateFromUserDefaults()
             backendToken = KeychainHelper.loadBackendToken() ?? ""
+            backendTokenSaveError = nil
         }
         .onChange(of: backendToken) { token in
-            _ = KeychainHelper.saveBackendToken(token)
+            if KeychainHelper.saveBackendToken(token) {
+                backendTokenSaveError = nil
+            } else {
+                backendTokenSaveError = "Couldn't save backend token to Keychain. Verify Keychain access and try again."
+                appState.recordCredentialSaveFailure(field: "backend token")
+            }
         }
     }
     
@@ -406,6 +413,11 @@ struct SettingsView: View {
                 }
                 SecureField("Optional WS auth token", text: $backendToken)
                     .textFieldStyle(.roundedBorder)
+                if let backendTokenSaveError {
+                    Text(backendTokenSaveError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
                 Text(BackendConfig.isLocalHost ? "Local backend uses ws/http." : "Remote backend defaults to wss/https.")
                     .font(.caption)
                     .foregroundColor(.secondary)

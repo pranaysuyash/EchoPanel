@@ -1,5 +1,11 @@
 import Foundation
 
+/**
+ * Metrics structure for real-time streaming health monitoring.
+ *
+ * Contains information about queue depths, processing times, and system health
+ * to enable backpressure handling and performance optimization.
+ */
 // PR2: SourceMetrics struct for health monitoring
 struct SourceMetrics {
     let source: String
@@ -33,6 +39,31 @@ struct CorrelationIDs {
     }
 }
 
+/**
+ * WebSocket-based streaming client for real-time audio transmission to ASR backend.
+ *
+ * ## Architecture
+ * This class manages the WebSocket connection to the backend ASR service,
+ * handling real-time audio streaming, connection resilience, and metrics reporting.
+ *
+ * ## Real-time Streaming
+ * - Sends audio frames as PCM data in real-time
+ * - Handles partial and final ASR results
+ * - Manages session lifecycle (start/stop)
+ * - Supports multiple audio sources with tagging
+ *
+ * ## Resilience Features
+ * - Automatic reconnection with exponential backoff
+ * - Circuit breaker pattern to prevent infinite retry loops
+ * - Message buffering during disconnections
+ * - Ping/pong health checks
+ *
+ * ## Metrics and Monitoring
+ * - Reports real-time processing metrics
+ * - Tracks queue depth and fill ratios
+ * - Monitors dropped frames and processing times
+ * - Provides connection health indicators
+ */
 final class WebSocketStreamer: NSObject {
     var onStatus: ((StreamStatus, String) -> Void)?
     var onASRPartial: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)? // + source
@@ -41,14 +72,15 @@ final class WebSocketStreamer: NSObject {
     var onEntitiesUpdate: (([EntityItem]) -> Void)?
     var onFinalSummary: ((String, [String: Any]) -> Void)?
     var onMetrics: ((SourceMetrics) -> Void)? // PR2: Metrics callback
-    
+
     // V1: Correlation ID access for logging
     var correlationIDs: CorrelationIDs? { _correlationIDs }
     private var _correlationIDs: CorrelationIDs?
 
     private let session = URLSession(configuration: .default)
     private var task: URLSessionWebSocketTask?
-    private var url: URL { BackendConfig.webSocketURL }
+    private var webSocketRequest: URLRequest { BackendConfig.webSocketRequest }
+    private var url: URL { webSocketRequest.url ?? BackendConfig.webSocketURL }
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var pingTimer: Timer?
 
@@ -57,7 +89,7 @@ final class WebSocketStreamer: NSObject {
     private var reconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 10
     private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
-    
+
     // P0: Bounded send queue to prevent blocking capture thread on network stall
     private let sendQueue = OperationQueue()
     private let maxQueuedSends = 100
@@ -81,7 +113,7 @@ final class WebSocketStreamer: NSObject {
         reconnectDelay = 1
 
         task?.cancel(with: .goingAway, reason: nil)
-        task = session.webSocketTask(with: url)
+        task = session.webSocketTask(with: webSocketRequest)
         task?.resume()
         receiveLoop()
         schedulePing()

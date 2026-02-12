@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @ObservedObject private var backendManager = BackendManager.shared
     @State private var currentStep: OnboardingStep = .welcome
     @State private var hfToken: String = ""
+    @State private var hfTokenSaveError: String?
     @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
     let onStartListening: () -> Void
@@ -86,7 +87,12 @@ struct OnboardingView: View {
             hfToken = KeychainHelper.loadHFToken() ?? ""
         }
         .onChange(of: hfToken) { newToken in
-            _ = KeychainHelper.saveHFToken(newToken)
+            if KeychainHelper.saveHFToken(newToken) {
+                hfTokenSaveError = nil
+            } else {
+                hfTokenSaveError = "Couldn't save HuggingFace token to Keychain. Verify Keychain access and try again."
+                appState.recordCredentialSaveFailure(field: "HuggingFace token")
+            }
         }
         .onDisappear {
             // If the user closes the window, keep the app consistent.
@@ -216,6 +222,12 @@ struct OnboardingView: View {
                 
                 SecureField("hf_...", text: $hfToken)
                 .textFieldStyle(.roundedBorder)
+
+                if let hfTokenSaveError {
+                    Text(hfTokenSaveError)
+                        .font(.caption2)
+                        .foregroundColor(.red)
+                }
                 
                 Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
                     .font(.caption)

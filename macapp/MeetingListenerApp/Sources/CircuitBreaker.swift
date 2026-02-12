@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Circuit breaker pattern for preventing restart loops in BackendManager.
 /// Tracks failures and opens the circuit after threshold to prevent cascading failures.
@@ -57,8 +58,6 @@ final class CircuitBreaker: ObservableObject {
     
     private var failures: [Date] = []
     private var halfOpenTimer: Timer?
-    private let lock = NSLock()
-    
     // MARK: - Initialization
     
     init(
@@ -81,7 +80,7 @@ final class CircuitBreaker: ObservableObject {
     /// Execute with explicit operation name for logging
     func execute<T>(operation: () async throws -> T, name: String = "operation") async throws -> T {
         // Check if we can proceed
-        guard await canExecute() else {
+        guard canExecute() else {
             StructuredLogger.shared.error("Circuit breaker blocked \(name)", metadata: [
                 "state": state.rawValue,
                 "failure_count": failureCount
@@ -91,19 +90,16 @@ final class CircuitBreaker: ObservableObject {
         
         do {
             let result = try await operation()
-            await recordSuccess()
+            recordSuccess()
             return result
         } catch {
-            await recordFailure(error)
+            recordFailure(error)
             throw error
         }
     }
     
     /// Check if circuit allows execution
-    func canExecute() async -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        
+    func canExecute() -> Bool {
         cleanOldFailures()
         
         switch state {
@@ -127,9 +123,6 @@ final class CircuitBreaker: ObservableObject {
     
     /// Manually reset the circuit breaker
     func reset() {
-        lock.lock()
-        defer { lock.unlock() }
-        
         failures.removeAll()
         failureCount = 0
         lastFailureTime = nil
@@ -143,19 +136,13 @@ final class CircuitBreaker: ObservableObject {
     
     /// Force open the circuit (for maintenance mode)
     func forceOpen() {
-        lock.lock()
-        defer { lock.unlock() }
-        
         transitionTo(.open)
         StructuredLogger.shared.warning("Circuit breaker forced open", metadata: [:])
     }
     
     // MARK: - Private Methods
     
-    private func recordSuccess() async {
-        lock.lock()
-        defer { lock.unlock() }
-        
+    func recordSuccess() {
         if state == .halfOpen {
             // Success in half-open, close the circuit
             failures.removeAll()
@@ -166,10 +153,7 @@ final class CircuitBreaker: ObservableObject {
         }
     }
     
-    private func recordFailure(_ error: Error) async {
-        lock.lock()
-        defer { lock.unlock() }
-        
+    func recordFailure(_ error: Error) {
         let now = Date()
         failures.append(now)
         lastFailureTime = now
@@ -208,7 +192,7 @@ final class CircuitBreaker: ObservableObject {
         // Schedule half-open timer if transitioning to open
         if newState == .open {
             halfOpenTimer?.invalidate()
-            halfOpenTimer = Timer.scheduledTimer(withTimeInterval: resetTimeout, repeats: false) { [weak self] _ in
+            halfOpenTimer = Timer.scheduledTimer(withTimeInterval: resetTimeout, repeats: false) { _ in
                 Task { @MainActor in
                     // Timer just marks that we can try half-open next time
                     // Actual transition happens in canExecute()
@@ -232,6 +216,7 @@ final class CircuitBreaker: ObservableObject {
 
 extension BackendManager {
     /// Circuit breaker for server restart attempts
+    @MainActor
     var restartCircuitBreaker: CircuitBreaker {
         // Use associated object or singleton pattern
         CircuitBreakerManager.shared.backendRestartBreaker

@@ -7,72 +7,39 @@
 //  max retry limits, and message buffering for safety.
 //
 
+/**
+ * Resilient WebSocket implementation with advanced fault tolerance features.
+ *
+ * ## Architecture
+ * This file implements multiple resilience patterns to ensure reliable
+ * WebSocket communication in challenging network conditions:
+ *
+ * - Circuit breaker pattern to prevent infinite retry loops during sustained outages
+ * - Exponential backoff with jitter to prevent thundering herd problems
+ * - Message buffering to preserve data during temporary disconnections
+ * - Ping/pong health checks to detect dead connections quickly
+ *
+ * ## Circuit Breaker Implementation
+ * The circuit breaker operates in three states:
+ * - CLOSED: Normal operation, requests allowed
+ * - OPEN: Failure threshold exceeded, requests blocked
+ * - HALF_OPEN: Testing if service recovered
+ *
+ * ## Message Buffering
+ * Implements a circular buffer with TTL (time-to-live) to queue messages
+ * during disconnections and flush them upon reconnection.
+ *
+ * ## Backpressure Handling
+ * Integrates with the broader backpressure system through metrics reporting
+ * and connection state awareness.
+ */
+
 import Foundation
 import Combine
 
 // MARK: - Circuit Breaker
 
-/// Circuit breaker pattern to prevent infinite retry loops
-enum CircuitState {
-    case closed      // Normal operation, requests allowed
-    case open        // Failure threshold exceeded, requests blocked
-    case halfOpen    // Testing if service recovered
-}
-
-final class CircuitBreaker {
-    private let failureThreshold: Int
-    private let recoveryTimeout: TimeInterval
-    
-    private(set) var state: CircuitState = .closed
-    private var failureCount = 0
-    private var lastFailureTime: Date?
-    
-    init(failureThreshold: Int = 5, recoveryTimeout: TimeInterval = 60) {
-        self.failureThreshold = failureThreshold
-        self.recoveryTimeout = recoveryTimeout
-    }
-    
-    /// Check if request should be allowed
-    var canExecute: Bool {
-        switch state {
-        case .closed:
-            return true
-        case .open:
-            // Check if recovery timeout has passed
-            if let lastFailure = lastFailureTime,
-               Date().timeIntervalSince(lastFailure) >= recoveryTimeout {
-                state = .halfOpen
-                return true
-            }
-            return false
-        case .halfOpen:
-            return true
-        }
-    }
-    
-    /// Record a successful request
-    func recordSuccess() {
-        failureCount = 0
-        state = .closed
-    }
-    
-    /// Record a failed request
-    func recordFailure() {
-        failureCount += 1
-        lastFailureTime = Date()
-        
-        if failureCount >= failureThreshold {
-            state = .open
-        }
-    }
-    
-    /// Reset to closed state
-    func reset() {
-        state = .closed
-        failureCount = 0
-        lastFailureTime = nil
-    }
-}
+// Uses shared CircuitBreaker implementation from CircuitBreaker.swift.
 
 // MARK: - Message Buffer
 
@@ -158,6 +125,7 @@ struct ExponentialBackoff {
 
 // MARK: - Reconnection Configuration
 
+@MainActor
 struct ReconnectionConfiguration {
     let maxAttempts: Int
     let backoff: ExponentialBackoff
@@ -174,7 +142,8 @@ struct ReconnectionConfiguration {
         ),
         circuitBreaker: CircuitBreaker(
             failureThreshold: 5,
-            recoveryTimeout: 60
+            resetTimeout: 60,
+            failureWindow: 86400
         ),
         messageBufferCapacity: 1000,
         messageBufferTTL: 30  // 30 seconds
@@ -189,7 +158,8 @@ struct ReconnectionConfiguration {
         ),
         circuitBreaker: CircuitBreaker(
             failureThreshold: 3,
-            recoveryTimeout: 30
+            resetTimeout: 30,
+            failureWindow: 3600
         ),
         messageBufferCapacity: 500,
         messageBufferTTL: 15
@@ -260,7 +230,7 @@ final class ResilientWebSocket: NSObject {
     private var connectionId: String = ""
     
     // MARK: - Initialization
-    init(url: URL, configuration: ReconnectionConfiguration = .default) {
+    init(url: URL, configuration: ReconnectionConfiguration) {
         self.url = url
         self.configuration = configuration
         self.session = URLSession(configuration: .default)
@@ -270,6 +240,10 @@ final class ResilientWebSocket: NSObject {
         )
         super.init()
     }
+
+    convenience init(url: URL) {
+        self.init(url: url, configuration: .default)
+    }
     
     // MARK: - Connection Control
     
@@ -277,8 +251,8 @@ final class ResilientWebSocket: NSObject {
         guard !state.isConnected else { return }
         
         // Check circuit breaker
-        guard circuitBreaker.canExecute else {
-            state = .circuitOpen(until: Date().addingTimeInterval(60))
+        guard circuitBreaker.canExecute() else {
+            state = .circuitOpen(until: Date().addingTimeInterval(circuitBreaker.resetTimeout))
             scheduleCircuitBreakerCheck()
             return
         }
@@ -407,7 +381,7 @@ final class ResilientWebSocket: NSObject {
         onError?(error)
         
         // Record failure in circuit breaker
-        circuitBreaker.recordFailure()
+        circuitBreaker.recordFailure(error)
         
         // Attempt reconnect if appropriate
         attemptReconnect(error: error)
@@ -444,8 +418,8 @@ final class ResilientWebSocket: NSObject {
         }
         
         // Check circuit breaker
-        guard circuitBreaker.canExecute else {
-            state = .circuitOpen(until: Date().addingTimeInterval(60))
+        guard circuitBreaker.canExecute() else {
+            state = .circuitOpen(until: Date().addingTimeInterval(circuitBreaker.resetTimeout))
             scheduleCircuitBreakerCheck()
             return
         }
@@ -500,7 +474,7 @@ final class ResilientWebSocket: NSObject {
     private func scheduleCircuitBreakerCheck() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self else { return }
-            if self.circuitBreaker.canExecute && !self.state.isConnected {
+            if self.circuitBreaker.canExecute() && !self.state.isConnected {
                 self.connect()
             }
         }

@@ -1,6 +1,8 @@
 import Foundation
 
 enum BackendConfig {
+    private static let defaultHealthCheckTimeout: TimeInterval = 2.0
+
     static var host: String {
         UserDefaults.standard.string(forKey: "backendHost") ?? "127.0.0.1"
     }
@@ -23,17 +25,12 @@ enum BackendConfig {
         isLocalHost ? "http" : "https"
     }
 
-    private static func buildURL(path: String, includeToken: Bool = false) -> URL {
+    private static func buildURL(path: String) -> URL {
         var components = URLComponents()
         components.scheme = path.hasPrefix("/ws/") ? webSocketScheme : httpScheme
         components.host = host
         components.port = port
         components.path = path
-        if includeToken,
-           let token = KeychainHelper.loadBackendToken(),
-           !token.isEmpty {
-            components.queryItems = [URLQueryItem(name: "token", value: token)]
-        }
         guard let url = components.url else {
             fatalError("Invalid backend URL components for path: \(path)")
         }
@@ -41,11 +38,27 @@ enum BackendConfig {
     }
 
     static var webSocketURL: URL {
-        buildURL(path: "/ws/live-listener", includeToken: true)
+        buildURL(path: "/ws/live-listener")
+    }
+
+    static var webSocketRequest: URLRequest {
+        var request = URLRequest(url: webSocketURL)
+        if let token = KeychainHelper.loadBackendToken(),
+           !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "x-echopanel-token")
+        }
+        return request
     }
 
     static var healthURL: URL {
         buildURL(path: "/health")
+    }
+
+    static var healthCheckTimeout: TimeInterval {
+        let configured = UserDefaults.standard.double(forKey: "backendHealthTimeoutSeconds")
+        guard configured > 0 else { return defaultHealthCheckTimeout }
+        return min(max(configured, 0.2), 30.0)
     }
 
     static var documentsListURL: URL {

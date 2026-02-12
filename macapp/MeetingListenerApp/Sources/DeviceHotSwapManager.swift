@@ -39,22 +39,34 @@ final class DeviceHotSwapManager: ObservableObject {
     
     // MARK: - Private Properties
     
-    private var deviceObserver: NSObjectProtocol?
+    private var deviceConnectedObserver: NSObjectProtocol?
+    private var deviceDisconnectedObserver: NSObjectProtocol?
     private var recoveryTask: Task<Void, Never>?
     private var lastDeviceID: String?
     private var checkTimer: Timer?
     private var audioEngine: AVAudioEngine?
     
-    private let recoveryDelay: TimeInterval = 1.0
-    private let maxRecoveryAttempts = 3
+    private let recoveryDelay: TimeInterval
+    private let retryDelay: TimeInterval
+    private let maxRecoveryAttempts: Int
+    private let restartCaptureTimeout: TimeInterval
     
     var onDeviceDisconnected: (() -> Void)?
     var onDeviceReconnected: (() -> Void)?
-    var onShouldRestartCapture: (() async throws -> Void)?
+    var onShouldRestartCapture: (@Sendable () async throws -> Void)?
     
     // MARK: - Initialization
     
-    init() {
+    init(
+        recoveryDelay: TimeInterval = 1.0,
+        retryDelay: TimeInterval = 0.5,
+        maxRecoveryAttempts: Int = 3,
+        restartCaptureTimeout: TimeInterval = 5.0
+    ) {
+        self.recoveryDelay = max(0, recoveryDelay)
+        self.retryDelay = max(0, retryDelay)
+        self.maxRecoveryAttempts = max(1, maxRecoveryAttempts)
+        self.restartCaptureTimeout = max(0.1, restartCaptureTimeout)
         // macOS uses different APIs than iOS for device monitoring
         NSLog("DeviceHotSwapManager: Initialized (macOS)")
     }
@@ -72,13 +84,12 @@ final class DeviceHotSwapManager: ObservableObject {
     }
     
     func stopMonitoring() {
-        if let observer = deviceObserver {
-            NotificationCenter.default.removeObserver(observer)
-            deviceObserver = nil
-        }
+        removeDeviceObservers()
         checkTimer?.invalidate()
         checkTimer = nil
         recoveryTask?.cancel()
+        recoveryTask = nil
+        isRecovering = false
         NSLog("DeviceHotSwapManager: Stopped monitoring")
     }
     
@@ -124,8 +135,10 @@ final class DeviceHotSwapManager: ObservableObject {
     // MARK: - Private Methods
     
     private func setupDeviceMonitoring() {
+        guard deviceConnectedObserver == nil && deviceDisconnectedObserver == nil else { return }
+
         // Monitor for device connection changes
-        deviceObserver = NotificationCenter.default.addObserver(
+        deviceConnectedObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name.AVCaptureDeviceWasConnected,
             object: nil,
             queue: .main
@@ -136,7 +149,7 @@ final class DeviceHotSwapManager: ObservableObject {
         }
         
         // Also monitor for disconnections
-        NotificationCenter.default.addObserver(
+        deviceDisconnectedObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name.AVCaptureDeviceWasDisconnected,
             object: nil,
             queue: .main
@@ -217,19 +230,21 @@ final class DeviceHotSwapManager: ObservableObject {
             
             var success = false
             var attempts = 0
+            var lastRecoveryError: Error?
             
             while !success && attempts < self.maxRecoveryAttempts && !Task.isCancelled {
                 attempts += 1
                 NSLog("DeviceHotSwapManager: Recovery attempt \(attempts)/\(self.maxRecoveryAttempts)")
                 
                 do {
-                    try await self.onShouldRestartCapture?()
+                    try await self.restartCaptureWithTimeout()
                     success = true
                 } catch {
+                    lastRecoveryError = error
                     NSLog("DeviceHotSwapManager: Recovery attempt failed - \(error.localizedDescription)")
                     self.lastError = error.localizedDescription
                     if attempts < self.maxRecoveryAttempts {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        try? await Task.sleep(nanoseconds: self.durationToNanoseconds(self.retryDelay))
                     }
                 }
             }
@@ -246,10 +261,80 @@ final class DeviceHotSwapManager: ObservableObject {
                     self.deviceStatus = .failed
                     StructuredLogger.shared.error("Device hot-swap recovery failed", metadata: [
                         "max_attempts": self.maxRecoveryAttempts,
-                        "last_error": self.lastError ?? "unknown"
+                        "last_error": self.lastError ?? "unknown",
+                        "error_type": String(describing: type(of: lastRecoveryError ?? RecoveryError.restartCallbackMissing))
                     ])
                 }
                 self.isRecovering = false
+            }
+        }
+    }
+
+    private func restartCaptureWithTimeout() async throws {
+        guard let restartCapture = onShouldRestartCapture else {
+            throw RecoveryError.restartCallbackMissing
+        }
+
+        let restartTask = Task.detached {
+            try await restartCapture()
+        }
+        let timeoutSeconds = restartCaptureTimeout
+        let timeoutNanoseconds = durationToNanoseconds(timeoutSeconds)
+        let timeoutTask = Task.detached {
+            try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            throw RecoveryError.restartTimedOut(seconds: timeoutSeconds)
+        }
+
+        defer { timeoutTask.cancel() }
+
+        // Whichever finishes first (restart completion/failure or timeout) wins.
+        // Cancellation keeps the loser from leaking into the next retry.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                defer { timeoutTask.cancel() }
+                _ = try await restartTask.value
+            }
+            group.addTask {
+                defer { restartTask.cancel() }
+                _ = try await timeoutTask.value
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
+
+    private func removeDeviceObservers() {
+        if let observer = deviceConnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceConnectedObserver = nil
+        }
+        if let observer = deviceDisconnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceDisconnectedObserver = nil
+        }
+    }
+
+    private func durationToNanoseconds(_ value: TimeInterval) -> UInt64 {
+        UInt64(max(0, value) * 1_000_000_000)
+    }
+
+    var activeObserverCountForTesting: Int {
+        var count = 0
+        if deviceConnectedObserver != nil { count += 1 }
+        if deviceDisconnectedObserver != nil { count += 1 }
+        return count
+    }
+    
+    enum RecoveryError: LocalizedError {
+        case restartCallbackMissing
+        case restartTimedOut(seconds: TimeInterval)
+        
+        var errorDescription: String? {
+            switch self {
+            case .restartCallbackMissing:
+                return "Restart callback is not configured."
+            case .restartTimedOut(let seconds):
+                return "Restart callback timed out after \(String(format: "%.1f", seconds))s."
             }
         }
     }

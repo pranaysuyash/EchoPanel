@@ -6,6 +6,44 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+/**
+ * Main application state manager for EchoPanel's real-time streaming audio processing.
+ *
+ * ## Architecture Overview
+ * AppState coordinates the entire real-time streaming pipeline:
+ * - Audio capture from system and/or microphone sources
+ * - WebSocket communication with backend ASR services
+ * - Real-time transcript management and UI updates
+ * - Session lifecycle management
+ * - Error handling and resilience patterns
+ *
+ * ## Real-time Streaming Concepts
+ * The class implements streaming-first architecture where audio frames are processed
+ * incrementally rather than in batches. This enables:
+ * - Low-latency transcription with partial results
+ * - Continuous processing during long sessions
+ * - Immediate feedback to users
+ *
+ * ## Resilience Patterns
+ * - Circuit breaker integration via WebSocketStreamer
+ * - Backpressure handling with metrics-based decisions
+ * - Graceful degradation under load conditions
+ * - Automatic reconnection with exponential backoff
+ *
+ * ## Audio Source Management
+ * Supports multiple audio sources with different priorities:
+ * - System audio (browser tabs, applications)
+ * - Microphone input (user speech)
+ * - Combined mode (both sources simultaneously)
+ *
+ * ## State Management
+ * Manages complex session states including:
+ * - Permission acquisition
+ * - Connection establishment
+ * - Streaming operation
+ * - Session finalization
+ * - Error recovery
+ */
 @MainActor
 final class AppState: ObservableObject {
     enum PermissionState {
@@ -64,6 +102,17 @@ final class AppState: ObservableObject {
         case failed(detail: String)
     }
 
+    enum UserNoticeLevel: Equatable {
+        case info
+        case success
+        case error
+    }
+
+    struct UserNotice: Equatable {
+        let message: String
+        let level: UserNoticeLevel
+    }
+
     struct SourceProbe: Identifiable {
         let id: String
         let label: String
@@ -97,6 +146,7 @@ final class AppState: ObservableObject {
     @Published var streamStatus: StreamStatus = .reconnecting
     @Published var statusMessage: String = ""
     @Published var runtimeErrorState: AppRuntimeErrorState?
+    @Published var userNotice: UserNotice?
     @Published private(set) var transcriptRevision: Int = 0
     
     // Permission Tracking
@@ -203,6 +253,7 @@ final class AppState: ObservableObject {
     private var debugScreenFrames: Int = 0
     private var autoSaveCancellable: AnyCancellable?
     private var lastContextRefreshAt: Date?
+    private var userNoticeClearTask: Task<Void, Never>?
 
     init() {
         streamer = WebSocketStreamer()
@@ -805,12 +856,23 @@ final class AppState: ObservableObject {
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = "echopanel-session.json"
         panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
+            guard response == .OK, let url = panel.url else {
+                Task { @MainActor in
+                    self.recordExportCancelled(format: "JSON")
+                }
+                return
+            }
             let payload = self.exportPayload()
             do {
                 let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: url)
+                Task { @MainActor in
+                    self.recordExportSuccess(format: "JSON")
+                }
             } catch {
+                Task { @MainActor in
+                    self.recordExportFailure(format: "JSON", error: error)
+                }
                 NSLog("Export JSON failed: %@", error.localizedDescription)
             }
         }
@@ -822,11 +884,22 @@ final class AppState: ObservableObject {
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = "echopanel-notes.md"
         panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
+            guard response == .OK, let url = panel.url else {
+                Task { @MainActor in
+                    self.recordExportCancelled(format: "Markdown")
+                }
+                return
+            }
             let markdown = self.finalSummaryMarkdown.isEmpty ? self.renderLiveMarkdown() : self.finalSummaryMarkdown
             do {
                 try markdown.write(to: url, atomically: true, encoding: .utf8)
+                Task { @MainActor in
+                    self.recordExportSuccess(format: "Markdown")
+                }
             } catch {
+                Task { @MainActor in
+                    self.recordExportFailure(format: "Markdown", error: error)
+                }
                 NSLog("Export Markdown failed: %@", error.localizedDescription)
             }
         }
@@ -844,9 +917,13 @@ final class AppState: ObservableObject {
                     savePanel.nameFieldStringValue = "echopanel-session-\(sessionId.prefix(8)).zip"
                     
                     let response = await savePanel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow())
-                    guard response == .OK, let url = savePanel.url else { return }
+                    guard response == .OK, let url = savePanel.url else {
+                        self.recordExportCancelled(format: "Debug bundle")
+                        return
+                    }
                     
                     try await bundle.exportBundle(to: url)
+                    self.recordExportSuccess(format: "Debug bundle")
                     
                     StructuredLogger.shared.info("Debug bundle exported", metadata: [
                         "session_id": sessionId,
@@ -857,6 +934,9 @@ final class AppState: ObservableObject {
                     try await exportLegacyDebugBundle()
                 }
             } catch {
+                await MainActor.run {
+                    self.recordExportFailure(format: "Debug bundle", error: error)
+                }
                 StructuredLogger.shared.error("Debug export failed", error: error)
                 NSLog("Debug export failed: \(error)")
             }
@@ -899,11 +979,64 @@ final class AppState: ObservableObject {
             panel.allowedContentTypes = [UTType.zip]
             panel.nameFieldStringValue = "echopanel-debug.zip"
             panel.begin { response in
-                guard response == .OK, let url = panel.url else { return }
-                try? FileManager.default.copyItem(at: zipURL, to: url)
+                guard response == .OK, let url = panel.url else {
+                    self.recordExportCancelled(format: "Debug bundle")
+                    return
+                }
+                do {
+                    try FileManager.default.copyItem(at: zipURL, to: url)
+                    self.recordExportSuccess(format: "Debug bundle")
+                } catch {
+                    self.recordExportFailure(format: "Debug bundle", error: error)
+                }
                 // Cleanup
                 try? FileManager.default.removeItem(at: bundleDir)
                 try? FileManager.default.removeItem(at: zipURL)
+            }
+        }
+    }
+
+    func recordExportSuccess(format: String) {
+        setUserNotice("\(format) export saved.", level: .success)
+    }
+
+    func recordExportCancelled(format: String) {
+        setUserNotice("\(format) export cancelled.", level: .info)
+    }
+
+    func recordExportFailure(format: String, error: Error) {
+        setUserNotice("\(format) export failed: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+        StructuredLogger.shared.error("Export failed", error: error, metadata: [
+            "format": format
+        ])
+    }
+
+    func recordCredentialSaveFailure(field: String) {
+        setUserNotice("Failed to save \(field). Check Keychain access and try again.", level: .error, autoClearAfter: 0)
+        StructuredLogger.shared.error("Credential save failed", metadata: [
+            "field": field
+        ])
+    }
+
+    func clearUserNotice() {
+        userNoticeClearTask?.cancel()
+        userNoticeClearTask = nil
+        userNotice = nil
+    }
+
+    func setUserNotice(_ message: String, level: UserNoticeLevel, autoClearAfter: TimeInterval = 6.0) {
+        userNoticeClearTask?.cancel()
+        userNoticeClearTask = nil
+        userNotice = UserNotice(message: message, level: level)
+
+        guard autoClearAfter > 0 else { return }
+        userNoticeClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(autoClearAfter * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self?.userNotice?.message == message else { return }
+                self?.userNotice = nil
+                self?.userNoticeClearTask = nil
             }
         }
     }

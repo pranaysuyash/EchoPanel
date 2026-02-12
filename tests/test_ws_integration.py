@@ -131,3 +131,22 @@ def test_ws_auth_accepts_query_token(monkeypatch):
         data = websocket.receive_json()
         assert data["type"] == "status"
         assert data["state"] == "streaming"
+
+
+def test_ws_auth_accepts_header_tokens(monkeypatch):
+    monkeypatch.setenv("ECHOPANEL_WS_AUTH_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    headers = {
+        "authorization": "Bearer secret-token",
+        "x-echopanel-token": "secret-token",
+    }
+    with client.websocket_connect("/ws/live-listener", headers=headers) as websocket:
+        data = websocket.receive_json()
+        assert data["type"] == "status"
+        assert data["state"] == "connected"
+
+        websocket.send_json({"type": "start", "session_id": "test_auth_header_session"})
+        data = websocket.receive_json()
+        assert data["type"] == "status"
+        assert data["state"] == "streaming"

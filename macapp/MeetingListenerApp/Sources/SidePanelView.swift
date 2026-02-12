@@ -165,6 +165,9 @@ struct SidePanelView: View {
                     if appState.noAudioDetected {
                         noAudioBanner
                     }
+                    if let userNotice = appState.userNotice {
+                        userNoticeBanner(userNotice)
+                    }
 
                     content(panelWidth: panelWidth)
                         .layoutPriority(1)

@@ -11,6 +11,7 @@
 EchoPanel is a macOS menu bar application with local FastAPI backend that performs real-time speech-to-text transcription, speaker diarization, NLP analysis (NER, summarization, action extraction), and RAG (Retrieval-Augmented Generation) for meeting notes.
 
 **Architecture**:
+
 - **Client (Swift)**: macOS menu bar app with side panel UI, audio capture, WebSocket client
 - **Server (Python)**: FastAPI backend with ASR providers (faster-whisper, whisper.cpp, voxtral), diarization, NLP, RAG
 - **Communication**: WebSocket (localhost with optional auth) for real-time streaming
@@ -24,172 +25,173 @@ EchoPanel is a macOS menu bar application with local FastAPI backend that perfor
 
 ### External Flows (User Journey) - 18 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| EXT-001 | First Launch Onboarding | Implemented | P0 |
-| EXT-002 | Screen Recording Permission Request | Implemented | P0 |
-| EXT-003 | Microphone Permission Request | Implemented | P0 |
-| EXT-004 | Session Start | Implemented | P0 |
-| EXT-005 | Session Stop & Finalization | Implemented | P0 |
-| EXT-006 | Export JSON | Implemented | P1 |
-| EXT-007 | Export Markdown | Implemented | P1 |
-| EXT-008 | Export Debug Bundle | Implemented | P1 |
-| EXT-009 | Settings Configuration | Implemented | P1 |
-| EXT-010 | Session History Browse | Implemented | P1 |
-| EXT-011 | Session Recovery from Crash | Implemented | P0 |
-| EXT-012 | Backend Server Start | Implemented | P0 |
-| EXT-013 | Backend Auto-Restart/Recovery | Implemented | P0 |
-| EXT-014 | Global Hotkey Actions | Implemented | P2 |
-| EXT-015 | Context Document Indexing (RAG) | Implemented | P2 |
-| EXT-016 | Context Query (RAG Search) | Implemented | P2 |
-| EXT-017 | Menu Bar Quick Actions | Implemented | P1 |
-| EXT-018 | Side Panel View Mode Switching | Implemented | P2 |
+| Flow ID | Name                                | Status      | Priority |
+| ------- | ----------------------------------- | ----------- | -------- |
+| EXT-001 | First Launch Onboarding             | Implemented | P0       |
+| EXT-002 | Screen Recording Permission Request | Implemented | P0       |
+| EXT-003 | Microphone Permission Request       | Implemented | P0       |
+| EXT-004 | Session Start                       | Implemented | P0       |
+| EXT-005 | Session Stop & Finalization         | Implemented | P0       |
+| EXT-006 | Export JSON                         | Implemented | P1       |
+| EXT-007 | Export Markdown                     | Implemented | P1       |
+| EXT-008 | Export Debug Bundle                 | Implemented | P1       |
+| EXT-009 | Settings Configuration              | Implemented | P1       |
+| EXT-010 | Session History Browse              | Implemented | P1       |
+| EXT-011 | Session Recovery from Crash         | Implemented | P0       |
+| EXT-012 | Backend Server Start                | Implemented | P0       |
+| EXT-013 | Backend Auto-Restart/Recovery       | Implemented | P0       |
+| EXT-014 | Global Hotkey Actions               | Implemented | P2       |
+| EXT-015 | Context Document Indexing (RAG)     | Implemented | P2       |
+| EXT-016 | Context Query (RAG Search)          | Implemented | P2       |
+| EXT-017 | Menu Bar Quick Actions              | Implemented | P1       |
+| EXT-018 | Side Panel View Mode Switching      | Implemented | P2       |
 
 ### Audio Pipeline Flows - 10 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| AUD-001 | System Audio Capture (ScreenCaptureKit) | Implemented | P0 |
-| AUD-002 | Microphone Audio Capture (AVAudioEngine) | Implemented | P0 |
-| AUD-003 | Dual-Source Redundant Capture with Auto-Failover | Implemented | P0 |
-| AUD-004 | Client-to-Server WebSocket Transmission | Implemented | P0 |
-| AUD-005 | Server-Side Audio Queueing & Backpressure | Implemented | P0 |
-| AUD-006 | Server-Side ASR Processing (faster-whisper) | Implemented | P0 |
-| AUD-007 | Session-End Diarization (pyannote) | Implemented | P2 |
-| AUD-008 | Device Hot-Swap Recovery | Implemented | P1 |
-| AUD-009 | Clock Drift Compensation | Hypothesized | P1 |
-| AUD-010 | Client-Side VAD (Silero) | Partial | P1 |
+| Flow ID | Name                                             | Status       | Priority |
+| ------- | ------------------------------------------------ | ------------ | -------- |
+| AUD-001 | System Audio Capture (ScreenCaptureKit)          | Implemented  | P0       |
+| AUD-002 | Microphone Audio Capture (AVAudioEngine)         | Implemented  | P0       |
+| AUD-003 | Dual-Source Redundant Capture with Auto-Failover | Implemented  | P0       |
+| AUD-004 | Client-to-Server WebSocket Transmission          | Implemented  | P0       |
+| AUD-005 | Server-Side Audio Queueing & Backpressure        | Implemented  | P0       |
+| AUD-006 | Server-Side ASR Processing (faster-whisper)      | Implemented  | P0       |
+| AUD-007 | Session-End Diarization (pyannote)               | Implemented  | P2       |
+| AUD-008 | Device Hot-Swap Recovery                         | Implemented  | P1       |
+| AUD-009 | Clock Drift Compensation                         | Hypothesized | P1       |
+| AUD-010 | Client-Side VAD (Silero)                         | Partial      | P1       |
 
 ### Model Lifecycle Flows - 15 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| MOD-001 | Capability Detection with Tier-Based Recommendations | Implemented | P0 |
-| MOD-002 | Registry Pattern with Thread-Safe Caching | Implemented | P1 |
-| MOD-003 | Eager Load + 3-Phase Warmup (Load → Warm → Ready) | Implemented | P0 |
-| MOD-004 | Lazy Model Loading on First Inference | Implemented | P1 |
-| MOD-005 | Fixed-Size Chunked Batch Inference | Implemented | P0 |
-| MOD-006 | Auto Device Selection (Metal/CUDA/CPU) | Implemented | P0 |
-| MOD-007 | 5-Level Degrade Ladder (NORMAL → WARNING → DEGRADE → EMERGENCY → FAILOVER) | Implemented | P1 |
-| MOD-008 | Comprehensive Health Metrics | Implemented | P1 |
-| MOD-009 | VAD Pre-Filtering with Silero | Implemented | P1 |
-| MOD-010 | Thread-Safe Inference Serialization | Implemented | P1 |
-| MOD-011 | 5-State Model Machine (UNINITIALIZED → LOADING → WARMING_UP → READY → ERROR) | Implemented | P0 |
-| MOD-012 | Voxtral Streaming Session with Auto-Recovery | Implemented | P1 |
-| MOD-013 | Fallback Provider Switching | Implemented | P1 |
-| MOD-014 | Memory Management | Implemented (explicit unload on shutdown) | P2 |
-| MOD-015 | Model Versioning/Updates | Not Implemented | P2 |
+| Flow ID | Name                                                                         | Status                                    | Priority |
+| ------- | ---------------------------------------------------------------------------- | ----------------------------------------- | -------- |
+| MOD-001 | Capability Detection with Tier-Based Recommendations                         | Implemented                               | P0       |
+| MOD-002 | Registry Pattern with Thread-Safe Caching                                    | Implemented                               | P1       |
+| MOD-003 | Eager Load + 3-Phase Warmup (Load → Warm → Ready)                            | Implemented                               | P0       |
+| MOD-004 | Lazy Model Loading on First Inference                                        | Implemented                               | P1       |
+| MOD-005 | Fixed-Size Chunked Batch Inference                                           | Implemented                               | P0       |
+| MOD-006 | Auto Device Selection (Metal/CUDA/CPU)                                       | Implemented                               | P0       |
+| MOD-007 | 5-Level Degrade Ladder (NORMAL → WARNING → DEGRADE → EMERGENCY → FAILOVER)   | Implemented                               | P1       |
+| MOD-008 | Comprehensive Health Metrics                                                 | Implemented                               | P1       |
+| MOD-009 | VAD Pre-Filtering with Silero                                                | Implemented                               | P1       |
+| MOD-010 | Thread-Safe Inference Serialization                                          | Implemented                               | P1       |
+| MOD-011 | 5-State Model Machine (UNINITIALIZED → LOADING → WARMING_UP → READY → ERROR) | Implemented                               | P0       |
+| MOD-012 | Voxtral Streaming Session with Auto-Recovery                                 | Implemented                               | P1       |
+| MOD-013 | Fallback Provider Switching                                                  | Implemented                               | P1       |
+| MOD-014 | Memory Management                                                            | Implemented (explicit unload on shutdown) | P2       |
+| MOD-015 | Model Versioning/Updates                                                     | Not Implemented                           | P2       |
 
 ### Data & Storage Flows - 15 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| STO-001 | Session Lifecycle Storage | Implemented | P0 |
-| STO-002 | Transcript Append-Only Storage | Implemented | P0 |
-| STO-003 | Session Auto-Save Snapshot | Implemented | P0 |
-| STO-004 | Crash Recovery Marker | Implemented | P0 |
-| STO-005 | RAG Document Indexing | Implemented | P1 |
-| STO-006 | Keychain Secrets Storage | Implemented | P0 |
-| STO-007 | Session Bundle Export | Implemented | P1 |
-| STO-008 | Structured Logging Storage | Implemented | P1 |
-| STO-009 | JSON/Markdown Export | Implemented | P1 |
-| STO-010 | Audio Debug Dump (Server-Side) | Implemented | P2 |
-| STO-011 | Session History Listing | Implemented | P1 |
-| STO-012 | Session Deletion | Implemented | P1 |
-| STO-013 | Audio Storage (Raw PCM) | Hypothesized | P2 |
-| STO-014 | Encryption | Hypothesized | P1 |
-| STO-015 | Backup/Restore | Hypothesized | P2 |
+| Flow ID | Name                           | Status       | Priority |
+| ------- | ------------------------------ | ------------ | -------- |
+| STO-001 | Session Lifecycle Storage      | Implemented  | P0       |
+| STO-002 | Transcript Append-Only Storage | Implemented  | P0       |
+| STO-003 | Session Auto-Save Snapshot     | Implemented  | P0       |
+| STO-004 | Crash Recovery Marker          | Implemented  | P0       |
+| STO-005 | RAG Document Indexing          | Implemented  | P1       |
+| STO-006 | Keychain Secrets Storage       | Implemented  | P0       |
+| STO-007 | Session Bundle Export          | Implemented  | P1       |
+| STO-008 | Structured Logging Storage     | Implemented  | P1       |
+| STO-009 | JSON/Markdown Export           | Implemented  | P1       |
+| STO-010 | Audio Debug Dump (Server-Side) | Implemented  | P2       |
+| STO-011 | Session History Listing        | Implemented  | P1       |
+| STO-012 | Session Deletion               | Implemented  | P1       |
+| STO-013 | Audio Storage (Raw PCM)        | Hypothesized | P2       |
+| STO-014 | Encryption                     | Hypothesized | P1       |
+| STO-015 | Backup/Restore                 | Hypothesized | P2       |
 
 ### Intelligence Flows - 12 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| INT-001 | Real-Time Entity Extraction Flow | Implemented | P0 |
-| INT-002 | Real-Time Card (Action/Decision/Risk) Extraction Flow | Implemented | P0 |
-| INT-003 | Rolling Summary Generation Flow | Implemented (extractive only) | P1 |
-| INT-004 | RAG Document Indexing Flow | Implemented (lexical-only, NO embeddings) | P1 |
-| INT-005 | RAG Query Retrieval Flow | Implemented (lexical BM25/TF-IDF, NO semantic search) | P1 |
-| INT-006 | Session-End Final Analysis Flow | Implemented | P0 |
-| INT-007 | Real-Time Analysis Loop | Implemented | P0 |
-| INT-008 | Topic Extraction Flow | Hypothesized (GLiNER not implemented) | P2 |
-| INT-009 | Embedding Generation Flow | Hypothesized (NO embeddings) | P2 |
-| INT-010 | Incremental Analysis Update Flow | Partial (sliding window only) | P1 |
-| INT-011 | Citation/Grounding Flow | Implemented (basic only) | P1 |
-| INT-012 | Post-Session Archival Analysis Flow | Hypothesized | P2 |
+| Flow ID | Name                                                  | Status                                                | Priority |
+| ------- | ----------------------------------------------------- | ----------------------------------------------------- | -------- |
+| INT-001 | Real-Time Entity Extraction Flow                      | Implemented                                           | P0       |
+| INT-002 | Real-Time Card (Action/Decision/Risk) Extraction Flow | Implemented                                           | P0       |
+| INT-003 | Rolling Summary Generation Flow                       | Implemented (extractive only)                         | P1       |
+| INT-004 | RAG Document Indexing Flow                            | Implemented (lexical-only, NO embeddings)             | P1       |
+| INT-005 | RAG Query Retrieval Flow                              | Implemented (lexical BM25/TF-IDF, NO semantic search) | P1       |
+| INT-006 | Session-End Final Analysis Flow                       | Implemented                                           | P0       |
+| INT-007 | Real-Time Analysis Loop                               | Implemented                                           | P0       |
+| INT-008 | Topic Extraction Flow                                 | Hypothesized (GLiNER not implemented)                 | P2       |
+| INT-009 | Embedding Generation Flow                             | Hypothesized (NO embeddings)                          | P2       |
+| INT-010 | Incremental Analysis Update Flow                      | Partial (sliding window only)                         | P1       |
+| INT-011 | Citation/Grounding Flow                               | Implemented (basic only)                              | P1       |
+| INT-012 | Post-Session Archival Analysis Flow                   | Hypothesized                                          | P2       |
 
 ### Observability & Reliability Flows - 23 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| OBS-001 | Structured Logging Flow (Swift Client) | Implemented | P0 |
-| OBS-002 | Metrics Collection Flow (Python Server) | Implemented | P1 |
-| OBS-003 | Correlation ID Propagation Flow | Implemented | P0 |
-| OBS-004 | Backend Health Check Flow | Implemented | P0 |
-| OBS-005 | Backend Crash Detection & Restart Flow | Implemented | P0 |
-| OBS-006 | WebSocket Connection Health Monitoring | Implemented | P0 |
-| OBS-007 | Metrics Emission Flow (1Hz) | Implemented | P0 |
-| OBS-008 | Session Lifecycle Event Logging | Implemented | P0 |
-| OBS-009 | Backpressure Monitoring & Alerting Flow | Implemented | P0 |
-| OBS-010 | Frame Drop Detection & Reporting Flow | Implemented | P0 |
-| OBS-011 | Timeout Enforcement Flow | Implemented | P0 |
-| OBS-012 | Exponential Backoff Restart Flow | Implemented | P0 |
-| OBS-013 | Error Classification & User Surfacing Flow | Implemented | P0 |
-| OBS-014 | Session Bundle Creation & Export Flow | Implemented | P1 |
-| OBS-015 | Audio Queue Backpressure Flow | Implemented | P0 |
-| OBS-016 | Concurrency Limiting Flow | Implemented | P0 |
-| OBS-017 | Degradation Detection & Management Flow (Degrade Ladder) | Implemented | P0 |
-| OBS-018 | Performance Metrics Tracking Flow (RTF, Latency) | Implemented | P0 |
-| OBS-019 | Health Check Polling Flow (Client Side) | Implemented | P1 |
-| OBS-020 | Session Finalization Metrics Flow | Implemented | P0 |
-| OBS-021 | Log File Rotation Flow | Implemented | P1 |
-| OBS-022 | Watchdog Timer Flow (Health Check Timer) | Implemented | P0 |
-| OBS-023 | Source Drop Decision Flow (Extreme Overload) | Implemented | P0 |
+| Flow ID | Name                                                     | Status      | Priority |
+| ------- | -------------------------------------------------------- | ----------- | -------- |
+| OBS-001 | Structured Logging Flow (Swift Client)                   | Implemented | P0       |
+| OBS-002 | Metrics Collection Flow (Python Server)                  | Implemented | P1       |
+| OBS-003 | Correlation ID Propagation Flow                          | Implemented | P0       |
+| OBS-004 | Backend Health Check Flow                                | Implemented | P0       |
+| OBS-005 | Backend Crash Detection & Restart Flow                   | Implemented | P0       |
+| OBS-006 | WebSocket Connection Health Monitoring                   | Implemented | P0       |
+| OBS-007 | Metrics Emission Flow (1Hz)                              | Implemented | P0       |
+| OBS-008 | Session Lifecycle Event Logging                          | Implemented | P0       |
+| OBS-009 | Backpressure Monitoring & Alerting Flow                  | Implemented | P0       |
+| OBS-010 | Frame Drop Detection & Reporting Flow                    | Implemented | P0       |
+| OBS-011 | Timeout Enforcement Flow                                 | Implemented | P0       |
+| OBS-012 | Exponential Backoff Restart Flow                         | Implemented | P0       |
+| OBS-013 | Error Classification & User Surfacing Flow               | Implemented | P0       |
+| OBS-014 | Session Bundle Creation & Export Flow                    | Implemented | P1       |
+| OBS-015 | Audio Queue Backpressure Flow                            | Implemented | P0       |
+| OBS-016 | Concurrency Limiting Flow                                | Implemented | P0       |
+| OBS-017 | Degradation Detection & Management Flow (Degrade Ladder) | Implemented | P0       |
+| OBS-018 | Performance Metrics Tracking Flow (RTF, Latency)         | Implemented | P0       |
+| OBS-019 | Health Check Polling Flow (Client Side)                  | Implemented | P1       |
+| OBS-020 | Session Finalization Metrics Flow                        | Implemented | P0       |
+| OBS-021 | Log File Rotation Flow                                   | Implemented | P1       |
+| OBS-022 | Watchdog Timer Flow (Health Check Timer)                 | Implemented | P0       |
+| OBS-023 | Source Drop Decision Flow (Extreme Overload)             | Implemented | P0       |
 
 ### Security & Privacy Flows - 15 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| SEC-001 | Screen Recording Permission Flow | Implemented | P0 |
-| SEC-002 | Microphone Permission Flow | Implemented | P0 |
-| SEC-003 | Backend Token Keychain Storage | Implemented | P0 |
-| SEC-004 | HuggingFace Token Keychain Storage | Implemented | P0 |
-| SEC-005 | WebSocket Authentication | Implemented | Partial (token-in-query for WS) | P0 |
-| SEC-006 | Documents API Authentication | Implemented | P0 |
-| SEC-007 | Network Security (TLS) | Partial Implemented (auto-switch based on host) | P0 |
-| SEC-008 | Audio Data Movement | Implemented | P0 |
-| SEC-009 | Debug Audio Dump (Privacy Risk) | Implemented (env var gated + bounded cleanup) | P2 |
-| SEC-010 | Log Redaction (PII Protection) | Implemented | P0 |
-| SEC-011 | Session Bundle Privacy Controls | Implemented | P0 |
-| SEC-012 | Diarization Model Privacy | Implemented | P0 |
-| SEC-013 | Data Retention & Cleanup | Hypothesized (partial implementation) | P2 |
-| SEC-014 | Authorization & Access Control | Partial Implemented (token-based, no RBAC) | P1 |
-| SEC-015 | Local Documents Privacy | Implemented | P0 |
+| Flow ID | Name                               | Status                                          | Priority                                                                |
+| ------- | ---------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- | --- |
+| SEC-001 | Screen Recording Permission Flow   | Implemented                                     | P0                                                                      |
+| SEC-002 | Microphone Permission Flow         | Implemented                                     | P0                                                                      |
+| SEC-003 | Backend Token Keychain Storage     | Implemented                                     | P0                                                                      |
+| SEC-004 | HuggingFace Token Keychain Storage | Implemented                                     | P0                                                                      |
+| SEC-005 | WebSocket Authentication           | Implemented                                     | Header-based auth for WS client (`Authorization` + `x-echopanel-token`) | P0  |
+| SEC-006 | Documents API Authentication       | Implemented                                     | P0                                                                      |
+| SEC-007 | Network Security (TLS)             | Partial Implemented (auto-switch based on host) | P0                                                                      |
+| SEC-008 | Audio Data Movement                | Implemented                                     | P0                                                                      |
+| SEC-009 | Debug Audio Dump (Privacy Risk)    | Implemented (env var gated + bounded cleanup)   | P2                                                                      |
+| SEC-010 | Log Redaction (PII Protection)     | Implemented                                     | P0                                                                      |
+| SEC-011 | Session Bundle Privacy Controls    | Implemented                                     | P0                                                                      |
+| SEC-012 | Diarization Model Privacy          | Implemented                                     | P0                                                                      |
+| SEC-013 | Data Retention & Cleanup           | Hypothesized (partial implementation)           | P2                                                                      |
+| SEC-014 | Authorization & Access Control     | Partial Implemented (token-based, no RBAC)      | P1                                                                      |
+| SEC-015 | Local Documents Privacy            | Implemented                                     | P0                                                                      |
 
 ### UI Flows - 5 flows
 
-| Flow ID | Name | Status | Priority |
-|----------|------|--------|----------|
-| UI-001 | Menu Bar Interaction | Hypothesized | P1 |
-| UI-002 | Side Panel Display | Hypothesized | P1 |
-| UI-003 | Transcript Rendering | Hypothesized | P1 |
-| UI-004 | Search and Navigation | Hypothesized | P1 |
-| UI-005 | Export UI Actions | Hypothesized | P1 |
+| Flow ID | Name                  | Status       | Priority |
+| ------- | --------------------- | ------------ | -------- |
+| UI-001  | Menu Bar Interaction  | Hypothesized | P1       |
+| UI-002  | Side Panel Display    | Hypothesized | P1       |
+| UI-003  | Transcript Rendering  | Hypothesized | P1       |
+| UI-004  | Search and Navigation | Hypothesized | P1       |
+| UI-005  | Export UI Actions     | Hypothesized | P1       |
 
 ### Summary Statistics
 
-| Category | Implemented | Partial | Hypothesized | Not Implemented | Total |
-|-----------|-----------|---------|----------------|-------|-------|
-| External Flows | 18 | 0 | 0 | 0 | 18 |
-| Audio Pipeline Flows | 10 | 1 | 1 | 0 | 12 |
-| Model Lifecycle Flows | 13 | 1 | 1 | 1 | 16 |
-| Data & Storage Flows | 12 | 0 | 3 | 0 | 15 |
-| Intelligence Flows | 7 | 1 | 4 | 0 | 12 |
-| Observability Flows | 23 | 0 | 0 | 0 | 23 |
-| Security Flows | 14 | 2 | 0 | 1 | 15 |
-| UI Flows | 0 | 0 | 5 | 0 | 5 |
-| **TOTAL** | **97** | **4** | **14** | **1** | **116** |
+| Category              | Implemented | Partial | Hypothesized | Not Implemented | Total   |
+| --------------------- | ----------- | ------- | ------------ | --------------- | ------- |
+| External Flows        | 18          | 0       | 0            | 0               | 18      |
+| Audio Pipeline Flows  | 10          | 1       | 1            | 0               | 12      |
+| Model Lifecycle Flows | 13          | 1       | 1            | 1               | 16      |
+| Data & Storage Flows  | 12          | 0       | 3            | 0               | 15      |
+| Intelligence Flows    | 7           | 1       | 4            | 0               | 12      |
+| Observability Flows   | 23          | 0       | 0            | 0               | 23      |
+| Security Flows        | 14          | 2       | 0            | 1               | 15      |
+| UI Flows              | 0           | 0       | 5            | 0               | 5       |
+| **TOTAL**             | **97**      | **4**   | **14**       | **1**           | **116** |
 
 **Breakdown**:
+
 - Implemented: 97 flows (87%)
 - Partial: 4 flows (4%)
 - Hypothesized: 9 flows (8%)
@@ -201,48 +203,48 @@ EchoPanel is a macOS menu bar application with local FastAPI backend that perfor
 
 ### Client-Side Components (Swift)
 
-| Component | File | Purpose |
-|----------|------|---------|
-| **AppState** | `AppState.swift` | Central state manager, session lifecycle, transcript management |
-| **BackendManager** | `BackendManager.swift` | Python server process management, health checks, crash recovery |
-| **AudioCaptureManager** | `AudioCaptureManager.swift` | System audio capture via ScreenCaptureKit, limiter, resampling |
-| **MicrophoneCaptureManager** | `MicrophoneCaptureManager.swift` | Microphone capture via AVAudioEngine, limiter, resampling |
-| **RedundantAudioCaptureManager** | `RedundantAudioCaptureManager.swift` | Dual-source capture with auto-failover |
-| **DeviceHotSwapManager** | `DeviceHotSwapManager.swift` | USB audio device hot-swap detection and recovery |
-| **WebSocketStreamer** | `WebSocketStreamer.swift` | WebSocket client, connection management, backpressure |
-| **StructuredLogger** | `StructuredLogger.swift` | Structured logging with redaction, rotation, multi-sink |
-| **KeychainHelper** | `KeychainHelper.swift` | macOS Keychain storage for tokens |
-| **SessionBundle** | `SessionBundle.swift` | Debug bundle creation and export |
-| **SessionStore** | `SessionStore.swift` | Session persistence, auto-save, recovery marker |
-| **SidePanelView** | `SidePanelView.swift` | Side panel UI with three-cut renderers |
-| **OnboardingView** | `OnboardingView.swift` | First-launch onboarding flow |
-| **SessionHistoryView** | `SessionHistoryView.swift` | Session history browser |
-| **HotKeyManager** | `HotKeyManager.swift` | Global hotkey monitoring and handling |
-| **BroadcastFeatureManager** | `BroadcastFeatureManager.swift` | Broadcast mode coordination |
-| **Models** | `Models.swift` | Data models (TranscriptSegment, ActionItem, etc.) |
+| Component                        | File                                 | Purpose                                                         |
+| -------------------------------- | ------------------------------------ | --------------------------------------------------------------- |
+| **AppState**                     | `AppState.swift`                     | Central state manager, session lifecycle, transcript management |
+| **BackendManager**               | `BackendManager.swift`               | Python server process management, health checks, crash recovery |
+| **AudioCaptureManager**          | `AudioCaptureManager.swift`          | System audio capture via ScreenCaptureKit, limiter, resampling  |
+| **MicrophoneCaptureManager**     | `MicrophoneCaptureManager.swift`     | Microphone capture via AVAudioEngine, limiter, resampling       |
+| **RedundantAudioCaptureManager** | `RedundantAudioCaptureManager.swift` | Dual-source capture with auto-failover                          |
+| **DeviceHotSwapManager**         | `DeviceHotSwapManager.swift`         | USB audio device hot-swap detection and recovery                |
+| **WebSocketStreamer**            | `WebSocketStreamer.swift`            | WebSocket client, connection management, backpressure           |
+| **StructuredLogger**             | `StructuredLogger.swift`             | Structured logging with redaction, rotation, multi-sink         |
+| **KeychainHelper**               | `KeychainHelper.swift`               | macOS Keychain storage for tokens                               |
+| **SessionBundle**                | `SessionBundle.swift`                | Debug bundle creation and export                                |
+| **SessionStore**                 | `SessionStore.swift`                 | Session persistence, auto-save, recovery marker                 |
+| **SidePanelView**                | `SidePanelView.swift`                | Side panel UI with three-cut renderers                          |
+| **OnboardingView**               | `OnboardingView.swift`               | First-launch onboarding flow                                    |
+| **SessionHistoryView**           | `SessionHistoryView.swift`           | Session history browser                                         |
+| **HotKeyManager**                | `HotKeyManager.swift`                | Global hotkey monitoring and handling                           |
+| **BroadcastFeatureManager**      | `BroadcastFeatureManager.swift`      | Broadcast mode coordination                                     |
+| **Models**                       | `Models.swift`                       | Data models (TranscriptSegment, ActionItem, etc.)               |
 
 ### Server-Side Components (Python)
 
-| Component | File | Purpose |
-|----------|------|---------|
-| **main** | `main.py` | FastAPI app entry, health endpoint, model preloading |
-| **ws_live_listener** | `server/api/ws_live_listener.py` | WebSocket endpoint, session management, audio queueing |
-| **documents** | `server/api/documents.py` | RAG documents API (index, query, delete) |
-| **asr_providers** | `server/services/asr_providers.py` | ASR provider registry and interface |
-| **provider_faster_whisper** | `server/services/provider_faster_whisper.py` | faster-whisper provider implementation |
-| **provider_whisper_cpp** | `server/services/provider_whisper_cpp.py` | whisper.cpp provider with Metal support |
-| **provider_voxtral_realtime** | `server/services/provider_voxtral_realtime.py` | Voxtral streaming provider |
-| **asr_stream** | `server/services/asr_stream.py` | ASR streaming interface and chunking |
-| **vad_filter** | `server/services/vad_filter.py` | Silero VAD pre-filtering |
-| **diarization** | `server/services/diarization.py` | Pyannote speaker diarization |
-| **analysis_stream** | `server/services/analysis_stream.py` | NLP extraction (NER, cards, summary) |
-| **rag_store** | `server/services/rag_store.py` | RAG storage with BM25/TF-IDF (lexical only) |
-| **metrics_registry** | `server/services/metrics_registry.py` | Metrics collection (counters, gauges, histograms) |
-| **concurrency_controller** | `server/services/concurrency_controller.py` | Session concurrency limiting |
-| **degrade_ladder** | `server/services/degrade_ladder.py` | 5-level degradation management |
-| **vad_asr_wrapper** | `server/services/vad_asr_wrapper.py` | VAD + ASR wrapper (not integrated) |
-| **capability_detector** | `server/services/capability_detector.py` | Hardware capability detection for auto-provider |
-| **model_preloader** | `server/services/model_preloader.py` | Model eager loading and warmup |
+| Component                     | File                                           | Purpose                                                |
+| ----------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| **main**                      | `main.py`                                      | FastAPI app entry, health endpoint, model preloading   |
+| **ws_live_listener**          | `server/api/ws_live_listener.py`               | WebSocket endpoint, session management, audio queueing |
+| **documents**                 | `server/api/documents.py`                      | RAG documents API (index, query, delete)               |
+| **asr_providers**             | `server/services/asr_providers.py`             | ASR provider registry and interface                    |
+| **provider_faster_whisper**   | `server/services/provider_faster_whisper.py`   | faster-whisper provider implementation                 |
+| **provider_whisper_cpp**      | `server/services/provider_whisper_cpp.py`      | whisper.cpp provider with Metal support                |
+| **provider_voxtral_realtime** | `server/services/provider_voxtral_realtime.py` | Voxtral streaming provider                             |
+| **asr_stream**                | `server/services/asr_stream.py`                | ASR streaming interface and chunking                   |
+| **vad_filter**                | `server/services/vad_filter.py`                | Silero VAD pre-filtering                               |
+| **diarization**               | `server/services/diarization.py`               | Pyannote speaker diarization                           |
+| **analysis_stream**           | `server/services/analysis_stream.py`           | NLP extraction (NER, cards, summary)                   |
+| **rag_store**                 | `server/services/rag_store.py`                 | RAG storage with BM25/TF-IDF (lexical only)            |
+| **metrics_registry**          | `server/services/metrics_registry.py`          | Metrics collection (counters, gauges, histograms)      |
+| **concurrency_controller**    | `server/services/concurrency_controller.py`    | Session concurrency limiting                           |
+| **degrade_ladder**            | `server/services/degrade_ladder.py`            | 5-level degradation management                         |
+| **vad_asr_wrapper**           | `server/services/vad_asr_wrapper.py`           | VAD + ASR wrapper (not integrated)                     |
+| **capability_detector**       | `server/services/capability_detector.py`       | Hardware capability detection for auto-provider        |
+| **model_preloader**           | `server/services/model_preloader.py`           | Model eager loading and warmup                         |
 
 ---
 
@@ -250,114 +252,114 @@ EchoPanel is a macOS menu bar application with local FastAPI backend that perfor
 
 ### WebSocket Events (Client → Server)
 
-| Event | Type | Purpose | Evidence |
-|-------|------|---------|----------|
-| `start` | control | Initiates session, passes session_id, sample_rate, format | WS_CONTRACT.md:32-45 |
-| `audio` | data | Sends PCM16 audio chunks as base64 JSON | WS_CONTRACT.md:47-54 |
-| `stop` | control | Ends session, triggers finalization | WS_CONTRACT.md:62-68 |
-| Binary frame | data | Legacy: raw PCM16 bytes (treated as source="system") | WS_CONTRACT.md:58-60 |
+| Event        | Type    | Purpose                                                   | Evidence             |
+| ------------ | ------- | --------------------------------------------------------- | -------------------- |
+| `start`      | control | Initiates session, passes session_id, sample_rate, format | WS_CONTRACT.md:32-45 |
+| `audio`      | data    | Sends PCM16 audio chunks as base64 JSON                   | WS_CONTRACT.md:47-54 |
+| `stop`       | control | Ends session, triggers finalization                       | WS_CONTRACT.md:62-68 |
+| Binary frame | data    | Legacy: raw PCM16 bytes (treated as source="system")      | WS_CONTRACT.md:58-60 |
 
 ### WebSocket Events (Server → Client)
 
-| Event | Type | Purpose | Evidence |
-|-------|------|---------|----------|
-| `status` | notification | Connection state, error messages, backpressure warnings | ws_live_listener.py:576-593 |
-| `asr_partial` | data | Partial transcription result (currently not emitted by faster-whisper) | ws_live_listener.py:84-94 |
-| `asr_final` | data | Final transcription with text, timestamps, confidence, source | ws_live_listener.py:84-94 |
-| `entities_update` | notification | Named entities (people, orgs, dates, projects, topics) | ws_live_listener.py:422-423 |
-| `cards_update` | notification | Actions, decisions, risks extracted from transcript | ws_live_listener.py:439-445 |
-| `final_summary` | notification | Session-end transcript, analysis, diarization, markdown | ws_live_listener.py:787-804 |
-| `metrics` | notification | 1Hz metrics (queue depth, RTF, dropped frames, correlation IDs) | ws_live_listener.py:540-571 |
+| Event             | Type         | Purpose                                                                | Evidence                    |
+| ----------------- | ------------ | ---------------------------------------------------------------------- | --------------------------- |
+| `status`          | notification | Connection state, error messages, backpressure warnings                | ws_live_listener.py:576-593 |
+| `asr_partial`     | data         | Partial transcription result (currently not emitted by faster-whisper) | ws_live_listener.py:84-94   |
+| `asr_final`       | data         | Final transcription with text, timestamps, confidence, source          | ws_live_listener.py:84-94   |
+| `entities_update` | notification | Named entities (people, orgs, dates, projects, topics)                 | ws_live_listener.py:422-423 |
+| `cards_update`    | notification | Actions, decisions, risks extracted from transcript                    | ws_live_listener.py:439-445 |
+| `final_summary`   | notification | Session-end transcript, analysis, diarization, markdown                | ws_live_listener.py:787-804 |
+| `metrics`         | notification | 1Hz metrics (queue depth, RTF, dropped frames, correlation IDs)        | ws_live_listener.py:540-571 |
 
 ### Client State Machine
 
-| State | Transitions | Evidence |
-|-------|-----------|----------|
-| `idle` | idle → starting → listening → finalizing → idle | AppState.swift:94-99 |
-| `starting` | starting → listening (on streaming ACK) or error | AppState.swift:495, 280 |
-| `listening` | listening → finalizing (on stop) or error | AppState.swift:653 |
-| `finalizing` | finalizing → idle (on complete) or error | AppState.swift:653 |
-| `error` | error → idle (on reset) | AppState.swift:484 |
+| State        | Transitions                                      | Evidence                |
+| ------------ | ------------------------------------------------ | ----------------------- |
+| `idle`       | idle → starting → listening → finalizing → idle  | AppState.swift:94-99    |
+| `starting`   | starting → listening (on streaming ACK) or error | AppState.swift:495, 280 |
+| `listening`  | listening → finalizing (on stop) or error        | AppState.swift:653      |
+| `finalizing` | finalizing → idle (on complete) or error         | AppState.swift:653      |
+| `error`      | error → idle (on reset)                          | AppState.swift:484      |
 
 ### Permission States
 
-| State | Meaning | Evidence |
-|-------|---------|----------|
-| `unknown` | Permission not yet checked | AppState.swift:12 |
+| State            | Meaning                     | Evidence          |
+| ---------------- | --------------------------- | ----------------- |
+| `unknown`        | Permission not yet checked  | AppState.swift:12 |
 | `nonInteractive` | During init before UI ready | AppState.swift:13 |
-| `authorized` | Permission granted | AppState.swift:15 |
-| `denied` | Permission denied | AppState.swift:15 |
+| `authorized`     | Permission granted          | AppState.swift:15 |
+| `denied`         | Permission denied           | AppState.swift:15 |
 
 ### Backend Server States
 
-| State | Meaning | Evidence |
-|-------|---------|----------|
-| `stopped` | Server not running | BackendManager.swift:16 |
-| `starting` | Server process started, health check pending | BackendManager.swift:17 |
-| `running` | Server healthy, ASR ready | BackendManager.swift:19 |
-| `runningNeedsSetup` | Server running but ASR/model not ready | BackendManager.swift:20 |
-| `error` | Server failed to start/start | BackendManager.swift:21 |
+| State               | Meaning                                      | Evidence                |
+| ------------------- | -------------------------------------------- | ----------------------- |
+| `stopped`           | Server not running                           | BackendManager.swift:16 |
+| `starting`          | Server process started, health check pending | BackendManager.swift:17 |
+| `running`           | Server healthy, ASR ready                    | BackendManager.swift:19 |
+| `runningNeedsSetup` | Server running but ASR/model not ready       | BackendManager.swift:20 |
+| `error`             | Server failed to start/start                 | BackendManager.swift:21 |
 
 ### Backend Recovery Phases
 
-| Phase | Meaning | Evidence |
-|-------|---------|----------|
-| `idle` | No recovery needed | BackendManager.swift:24 |
+| Phase            | Meaning                                    | Evidence                |
+| ---------------- | ------------------------------------------ | ----------------------- |
+| `idle`           | No recovery needed                         | BackendManager.swift:24 |
 | `retryScheduled` | Restart scheduled with exponential backoff | BackendManager.swift:25 |
-| `failed` | Max restart attempts reached | BackendManager.swift:26 |
+| `failed`         | Max restart attempts reached               | BackendManager.swift:26 |
 
 ### WebSocket Stream States
 
-| State | Meaning | Evidence |
-|-------|---------|----------|
-| `streaming` | Actively processing audio and emitting transcripts | WebSocketStreamer.swift:40 |
-| `reconnecting` | Connection lost, attempting to reconnect | WebSocketStreamer.swift:41 |
-| `error` | Connection failed, will not auto-reconnect | WebSocketStreamer.swift:42 |
+| State          | Meaning                                            | Evidence                   |
+| -------------- | -------------------------------------------------- | -------------------------- |
+| `streaming`    | Actively processing audio and emitting transcripts | WebSocketStreamer.swift:40 |
+| `reconnecting` | Connection lost, attempting to reconnect           | WebSocketStreamer.swift:41 |
+| `error`        | Connection failed, will not auto-reconnect         | WebSocketStreamer.swift:42 |
 
 ### Audio Quality States
 
-| State | Meaning | Threshold | Evidence |
-|-------|---------|-----------|----------|
-| `unknown` | No audio data received | - | AudioCaptureManager.swift:96 |
-| `poor` | RMS < 0.01 or clipping detected | <0.01, >10% | AudioCaptureManager.swift:96-100 |
-| `good` | Normal audio levels | 0.01-0.3, <10% | AudioCaptureManager.swift:96-100 |
-| `limited` | Limiter active (gain < 0.9) | 0.9 max gain | AudioCaptureManager.swift:96-100 |
+| State     | Meaning                         | Threshold      | Evidence                         |
+| --------- | ------------------------------- | -------------- | -------------------------------- |
+| `unknown` | No audio data received          | -              | AudioCaptureManager.swift:96     |
+| `poor`    | RMS < 0.01 or clipping detected | <0.01, >10%    | AudioCaptureManager.swift:96-100 |
+| `good`    | Normal audio levels             | 0.01-0.3, <10% | AudioCaptureManager.swift:96-100 |
+| `limited` | Limiter active (gain < 0.9)     | 0.9 max gain   | AudioCaptureManager.swift:96-100 |
 
 ### Redundant Audio Source States
 
-| State | Meaning | Evidence |
-|-------|---------|----------|
+| State     | Meaning                  | Evidence                              |
+| --------- | ------------------------ | ------------------------------------- |
 | `primary` | System audio (preferred) | RedundantAudioCaptureManager.swift:30 |
-| `backup` | Microphone (fallback) | RedundantAudioCaptureManager.swift:31 |
+| `backup`  | Microphone (fallback)    | RedundantAudioCaptureManager.swift:31 |
 
 ### Model State Machine
 
-| State | Meaning | Evidence |
-|-------|---------|----------|
-| `UNINITIALIZED` | Model not loaded | model_preloader.py:52 |
-| `LOADING` | Model loading from disk | model_preloader.py:53 |
-| `WARMING_UP` | Running warmup inferences | model_preloader.py:54 |
-| `READY` | Model ready for inference | model_preloader.py:55 |
-| `ERROR` | Model load failed | model_preloader.py:56 |
+| State           | Meaning                   | Evidence              |
+| --------------- | ------------------------- | --------------------- |
+| `UNINITIALIZED` | Model not loaded          | model_preloader.py:52 |
+| `LOADING`       | Model loading from disk   | model_preloader.py:53 |
+| `WARMING_UP`    | Running warmup inferences | model_preloader.py:54 |
+| `READY`         | Model ready for inference | model_preloader.py:55 |
+| `ERROR`         | Model load failed         | model_preloader.py:56 |
 
 ### Degradation Levels
 
-| Level | RTF Threshold | Action | Evidence |
-|-------|---------------|---------|----------|
-| `NORMAL` | < 0.8 | None | degrade_ladder.py:212 |
-| `WARNING` | 0.8 - 1.2 | Increase chunk size (if possible) | degrade_ladder.py:230 |
-| `DEGRADE` | 1.2 - 2.0 | Disable VAD | degrade_ladder.py:239 |
-| `EMERGENCY` | 2.0 - 5.0 | Start dropping chunks | degrade_ladder.py:176 |
-| `FAILOVER` | > 5.0 or provider error | Switch provider | degrade_ladder.py:178 |
+| Level       | RTF Threshold           | Action                            | Evidence              |
+| ----------- | ----------------------- | --------------------------------- | --------------------- |
+| `NORMAL`    | < 0.8                   | None                              | degrade_ladder.py:212 |
+| `WARNING`   | 0.8 - 1.2               | Increase chunk size (if possible) | degrade_ladder.py:230 |
+| `DEGRADE`   | 1.2 - 2.0               | Disable VAD                       | degrade_ladder.py:239 |
+| `EMERGENCY` | 2.0 - 5.0               | Start dropping chunks             | degrade_ladder.py:176 |
+| `FAILOVER`  | > 5.0 or provider error | Switch provider                   | degrade_ladder.py:178 |
 
 ### Backpressure Levels
 
-| Level | Queue Fill Ratio | Meaning | Evidence |
-|-------|----------------|---------|----------|
-| `normal` | < 70% | No issue | concurrency_controller.py:296-331 |
-| `buffering` | 70-85% | Processing backlog | concurrency_controller.py:309-318 |
-| `degraded` | 85-95% | High backlog, some drops | concurrency_controller.py:320-319 |
-| `overloaded` | > 95% | Critical backlog, dropping frames | concurrency_controller.py:321-322 |
+| Level        | Queue Fill Ratio | Meaning                           | Evidence                          |
+| ------------ | ---------------- | --------------------------------- | --------------------------------- |
+| `normal`     | < 70%            | No issue                          | concurrency_controller.py:296-331 |
+| `buffering`  | 70-85%           | Processing backlog                | concurrency_controller.py:309-318 |
+| `degraded`   | 85-95%           | High backlog, some drops          | concurrency_controller.py:320-319 |
+| `overloaded` | > 95%            | Critical backlog, dropping frames | concurrency_controller.py:321-322 |
 
 ---
 
@@ -373,6 +375,7 @@ This is the comprehensive flow from audio source detection through model inferen
 **Triggers**: User clicks "Start Listening" button, global hotkey F1, or from onboarding
 
 **Preconditions**:
+
 - Backend server ready (`BackendManager.isServerReady == true`)
 - Required permissions granted (Screen Recording for system audio, Microphone for mic)
 - ASR model loaded (`model_preloader.health().ready == true`)
@@ -565,18 +568,21 @@ This is the comprehensive flow from audio source detection through model inferen
 ```
 
 **Inputs**:
+
 - User selection (audio source: system/microphone/both)
 - Audio: Variable sample rate (typically 48kHz), converted to 16kHz mono PCM16
 - Permissions: Screen Recording, Microphone
 - Server config: ASR provider, model name, VAD enabled
 
 **Outputs**:
+
 - Transcript: Real-time ASR segments with text, timestamps, confidence, source
 - Analysis: Entities, actions, decisions, risks (every 40s)
 - Metrics: Queue depth, RTF, dropped frames (every 1s)
 - Files: Session JSON, transcript JSONL, debug bundle ZIP
 
 **Key Modules**:
+
 - Client: `AppState.swift:492-649`, `AudioCaptureManager.swift`, `MicrophoneCaptureManager.swift`, `WebSocketStreamer.swift`, `StructuredLogger.swift`
 - Server: `ws_live_listener.py`, `asr_stream.py`, `asr_providers.py`, `analysis_stream.py`, `metrics_registry.py`
 
@@ -599,6 +605,7 @@ This is the comprehensive flow from audio source detection through model inferen
 15. **Client crash before session end** → Session bundle not saved, partial loss
 
 **Observability**:
+
 - **Logs**: StructuredLogger with correlation IDs (session_id, attempt_id, connection_id)
 - **Metrics**: Queue depth, fill ratio, dropped frames, RTF (every 1s)
 - **Health checks**: Backend /health endpoint, client polls health status
@@ -606,11 +613,13 @@ This is the comprehensive flow from audio source detection through model inferen
 - **Audio quality**: RMS level monitoring, clipping detection via limiter
 
 **Proof**:
+
 - `AppState.swift:492-649` - Complete session start/stop flow
 - `AudioCaptureManager.swift:106-214` - Audio processing pipeline with limiter
 - `WebSocketStreamer.swift:102-200` - WebSocket connection management
 - `ws_live_listener.py:585-871` - Server-side session management
 - `WS_CONTRACT.md` - WebSocket protocol specification
+
 ```
 
 ---
@@ -620,60 +629,63 @@ This is the comprehensive flow from audio source detection through model inferen
 ### Client-Side Dependencies
 
 ```
+
 MeetingListenerApp.swift (app entry)
 ├── AppState (central state manager)
-│   ├── AudioCaptureManager (system audio capture)
-│   │   └── Callbacks: onPCMFrame, onAudioQualityUpdate, onSampleCount
-│   ├── MicrophoneCaptureManager (mic capture)
-│   │   └── Callbacks: onPCMFrame, onAudioLevelUpdate
-│   ├── RedundantAudioCaptureManager (dual-source + failover)
-│   │   └── Callbacks: onPCMFrame, onSourceChanged, onHealthChanged
-│   ├── WebSocketStreamer (WebSocket client)
-│   │   ├── Callbacks: onStatus, onASRPartial, onASRFinal, onMetrics
-│   │   └── Dependency: BackendConfig (URL, auth token)
-│   ├── StructuredLogger (logging)
-│   ├── SessionStore (persistence)
-│   ├── SessionBundleManager (debug exports)
-│   ├── HotKeyManager (global hotkeys)
-│   ├── KeychainHelper (secrets)
-│   └── Notification: NSNotificationCenter
+│ ├── AudioCaptureManager (system audio capture)
+│ │ └── Callbacks: onPCMFrame, onAudioQualityUpdate, onSampleCount
+│ ├── MicrophoneCaptureManager (mic capture)
+│ │ └── Callbacks: onPCMFrame, onAudioLevelUpdate
+│ ├── RedundantAudioCaptureManager (dual-source + failover)
+│ │ └── Callbacks: onPCMFrame, onSourceChanged, onHealthChanged
+│ ├── WebSocketStreamer (WebSocket client)
+│ │ ├── Callbacks: onStatus, onASRPartial, onASRFinal, onMetrics
+│ │ └── Dependency: BackendConfig (URL, auth token)
+│ ├── StructuredLogger (logging)
+│ ├── SessionStore (persistence)
+│ ├── SessionBundleManager (debug exports)
+│ ├── HotKeyManager (global hotkeys)
+│ ├── KeychainHelper (secrets)
+│ └── Notification: NSNotificationCenter
 ├── BackendManager (server process management)
-│   ├── Dependencies: BackendConfig, KeychainHelper
-│   └── Callbacks: serverStatus, healthDetail (published)
+│ ├── Dependencies: BackendConfig, KeychainHelper
+│ └── Callbacks: serverStatus, healthDetail (published)
 └── UI Views
-    ├── SidePanelView (three-cut renderers)
-    ├── OnboardingView (first-launch flow)
-    ├── SessionHistoryView (session browser)
-    └── SettingsView (configuration)
+├── SidePanelView (three-cut renderers)
+├── OnboardingView (first-launch flow)
+├── SessionHistoryView (session browser)
+└── SettingsView (configuration)
 
 External Dependencies:
 ├── ScreenCaptureKit (system audio)
 ├── AVFoundation (microphone audio)
 ├── OSLog/unified logging
 └── macOS Keychain (secrets storage)
+
 ```
 
 ### Server-Side Dependencies
 
 ```
+
 main.py (FastAPI entry point)
 ├── Lifespan: model_preloader
-│   └── ASRProviderRegistry initialization
+│ └── ASRProviderRegistry initialization
 ├── Router: ws_live_listener
-│   ├── SessionState (per-connection state)
-│   ├── ASR Loop: _asr_loop (per-source)
-│   │   ├── ASRStream (chunking)
-│   │   └── ASRProvider (faster-whisper/whisper.cpp/voxtral)
-│   │       └── Dependencies: VAD filter (optional), Model files
-│   ├── Analysis Loop: _analysis_loop
-│   │   ├── extract_entities (NER)
-│   │   └── extract_cards (Actions/Decisions/Risks)
-│   └── Metrics Loop: _metrics_loop
-│       └── Dependencies: MetricsRegistry
+│ ├── SessionState (per-connection state)
+│ ├── ASR Loop: \_asr_loop (per-source)
+│ │ ├── ASRStream (chunking)
+│ │ └── ASRProvider (faster-whisper/whisper.cpp/voxtral)
+│ │ └── Dependencies: VAD filter (optional), Model files
+│ ├── Analysis Loop: \_analysis_loop
+│ │ ├── extract_entities (NER)
+│ │ └── extract_cards (Actions/Decisions/Risks)
+│ └── Metrics Loop: \_metrics_loop
+│ └── Dependencies: MetricsRegistry
 ├── Router: documents
-│   └── LocalRAGStore (BM25/TF-IDF indexing)
+│ └── LocalRAGStore (BM25/TF-IDF indexing)
 └── ConcurrencyController (session limiting)
-    └── Session slot management
+└── Session slot management
 
 External Dependencies:
 ├── fast-whisper (CTranslate2 Python package)
@@ -682,15 +694,17 @@ External Dependencies:
 ├── Silero VAD (HuggingFace model, optional)
 ├── uvicorn (ASGI server)
 └── pydantic (JSON validation)
+
 ```
 
 ### Cross-Boundary Data Flow
 
 ```
+
 Client → Server (WebSocket)
 ├── Audio frames (base64 JSON)
-│   ├── System audio: 16kHz mono PCM16, 320-sample chunks (20ms)
-│   └── Mic audio: 16kHz mono PCM16, 320-sample chunks (20ms)
+│ ├── System audio: 16kHz mono PCM16, 320-sample chunks (20ms)
+│ └── Mic audio: 16kHz mono PCM16, 320-sample chunks (20ms)
 ├── Control messages: start, stop
 └── Correlation IDs: session_id, attempt_id, connection_id
 ├── Latency: ~5ms round trip (localhost)
@@ -698,26 +712,28 @@ Client → Server (WebSocket)
 
 Server → Client (WebSocket)
 ├── Transcript events: asr_final
-│   ├── Text, t0, t1, confidence, source
-│   └── 1Hz emission rate during speech
+│ ├── Text, t0, t1, confidence, source
+│ └── 1Hz emission rate during speech
 ├── Analysis events: entities_update, cards_update
-│   └── 40s emission rate
+│ └── 40s emission rate
 ├── Final summary: markdown + JSON
-│   ├── Transcript (speaker-labeled if diarization enabled)
-│   ├── Entities, Actions, Decisions, Risks
-│   └── Diarization segments
+│ ├── Transcript (speaker-labeled if diarization enabled)
+│ ├── Entities, Actions, Decisions, Risks
+│ └── Diarization segments
 └── Metrics events (1Hz)
-    ├── Queue depth, fill ratio, dropped frames
-    ├── RTF (realtime factor), avg_infer_ms
-    ├── Correlation IDs
-    └── Degrade level
+├── Queue depth, fill ratio, dropped frames
+├── RTF (realtime factor), avg_infer_ms
+├── Correlation IDs
+└── Degrade level
 
 Data Flow Boundaries:
+
 - Client-side: Capture → Process → Chunk → Transmit
 - Network: WebSocket over localhost (ws://) with optional TLS (wss:// for remote)
 - Server-side: Receive → Queue → ASR → Analyze → Emit
 - Storage: JSON/JSONL files, no database, local filesystem only
-```
+
+````
 
 ---
 
@@ -728,7 +744,7 @@ Data Flow Boundaries:
 | Risk | Location | Impact | Mitigation Status |
 |------|----------|--------|------------------|
 | **Clock drift between audio sources** | AUD-009 (Hypothesized) | Multi-source sessions lose sync after several minutes, speaker labels become incorrect | Not implemented - requires drift compensation with CACurrentMediaTime |
-| **Token-in-query for WebSocket** | SEC-005 | Auth token visible in logs/proxies, security vulnerability | Partial - acknowledged in docs, requires header-based auth |
+| **Token-in-query for WebSocket** | SEC-005 | Auth token visible in logs/proxies, security vulnerability | Mitigated - client now sends auth in headers; server keeps temporary query-token compatibility |
 | **No model unload on session end** | MOD-014 | Models stay in memory indefinitely, OOM risk under load | Mitigated - explicit model unload + provider cache eviction on shutdown |
 | **Debug audio dump PII exposure** | SEC-009 | Unredacted audio written to /tmp when env var set, privacy breach | Partial - env-gated debug dump now enforces age/file-count/size cleanup limits |
 | **Data retention policy undefined** | STO-013 | Sessions, logs, RAG docs persist indefinitely, no auto-cleanup | Hypothesized - no TTL enforcement |
@@ -742,7 +758,7 @@ Data Flow Boundaries:
 | **Embeddings not implemented** | INT-009 | RAG uses pure lexical BM25, missing semantic search | Not implemented - contradicts RAG_PIPELINE_ARCHITECTURE.md |
 | **GLiNER not implemented** | INT-008 | NER uses regex patterns, missing semantic layer | Not implemented - contradicts NER_PIPELINE_ARCHITECTURE.md |
 | **Silent failure propagation** | STO-002/003 | File write failures only logged, not surfaced to user | Implemented - logs errors but no UI feedback |
-| **Health check timeout hardcoding** | OBS-004 | Client health check timeout 2.0s, server-side no timeout, hangs possible | Implemented - but values not configurable |
+| **Health check timeout hardcoding** | OBS-004 | Client health check timeout can be tuned (default 2.0s), server-side no timeout, hangs possible | Mitigated - client timeout now config-backed (`backendHealthTimeoutSeconds`) |
 | **Queue full drop policy** | AUD-005 | Drop oldest frame when queue full, may lose critical speech | Implemented - but configurable, may drop important content |
 | **No retransmission** | AUD-005 | Dropped frames lost forever, no recovery mechanism | Implemented - no retry or retransmission |
 | **Exponential backoff unbounded** | OBS-012 | Restart delay grows exponentially but no max cap (currently 10s) | Implemented - max attempts limited but delay could grow indefinitely |
@@ -791,11 +807,12 @@ python tests/test_ws_integration.py -q  # End-to-end WebSocket integration
 
 # Health check
 curl http://localhost:8000/health  # Verify server health
-```
+````
 
 ### Manual Verification Steps
 
 #### EXT-001: First Launch Onboarding
+
 1. [ ] Fresh install: Run app, verify onboarding appears
 2. [ ] Permissions: Verify screen recording prompt appears for system audio
 3. [ ] Permissions: Verify microphone prompt appears for mic audio
@@ -803,6 +820,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Backend: Verify backend status display shows healthy state
 
 #### EXT-004: Session Start
+
 1. [ ] Start session with system audio source
 2. [ ] Verify audio frames flowing (debug: count bytes sent)
 3. [ ] Verify WebSocket connects (status → streaming)
@@ -813,6 +831,7 @@ curl http://localhost:8000/health  # Verify server health
 8. [ ] Verify source tag in transcript ("mic" vs "system")
 
 #### EXT-005: Session Stop & Finalization
+
 1. [ ] Stop session mid-stream
 2. [ ] Verify ASR flush completes within 8s
 3. [ ] Verify final_summary received
@@ -822,6 +841,7 @@ curl http://localhost:8000/health  # Verify server health
 7. [ ] Verify session saved to history
 
 #### AUD-001: System Audio Capture
+
 1. [ ] Start system audio capture
 2. [ ] Play system audio (YouTube, Spotify, etc.)
 3. [ ] Verify capture stops on app quit
@@ -830,6 +850,7 @@ curl http://localhost:8000/health  # Verify server health
 6. [ ] Verify 20ms chunks (320 samples @ 16kHz)
 
 #### AUD-003: Dual-Source Redundant Capture
+
 1. [ ] Enable broadcast mode with redundant audio
 2. [ ] Play system audio at high volume
 3. [ ] Verify failover to microphone (check active source changes)
@@ -837,6 +858,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Verify quality monitoring updates UI
 
 #### MOD-003: Eager Load + Warmup
+
 1. [ ] Start server cold (no model in memory)
 2. [ ] Check /health endpoint (should return 503 during load)
 3. [ ] Verify model warmup completes (< 10s typical)
@@ -844,6 +866,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Check server logs for "eager load" and "warmup"
 
 #### MOD-007: 5-Level Degrade Ladder
+
 1. [ ] Start session and inject synthetic load (high RTF)
 2. [ ] Verify degrade level transitions: NORMAL → WARNING → DEGRADE → EMERGENCY
 3. [ ] Verify chunk size increases at DEGRADE level
@@ -853,6 +876,7 @@ curl http://localhost:8000/health  # Verify server health
 7. [ ] Test failover (simulate provider crash)
 
 #### COMPOSITE-001: Complete Audio-to-Transcript Flow
+
 1. [ ] Test with slow backend (simulate RTF > 2.0)
 2. [ ] Verify backpressure warnings appear
 3. [ ] Verify degrade ladder activates
@@ -866,6 +890,7 @@ curl http://localhost:8000/health  # Verify server health
 11. [ ] Export debug bundle and verify contents
 
 #### SEC-001: Screen Recording Permission
+
 1. [ ] Fresh install: Deny screen recording permission
 2. [ ] Verify app shows error state
 3. [ ] Grant permission via System Settings
@@ -873,6 +898,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Verify CGPreflightScreenCaptureAccess() returns true after grant
 
 #### SEC-003: Backend Token Keychain Storage
+
 1. [ ] Save HF token via KeychainHelper
 2. [ ] Restart app and verify token persists
 3. [ ] Load token and verify server uses it
@@ -880,6 +906,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Verify token not in logs (redaction working)
 
 #### SEC-010: Log Redaction
+
 1. [ ] Enable debug mode and generate logs
 2. [ ] Verify HF tokens redacted (search logs for token string)
 3. [ ] Verify file paths redacted (search for user home directory)
@@ -887,22 +914,24 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Check logs in Console.app and ~/Library/Application Support/com.echopanel/logs/
 
 #### STO-007: Session Bundle Export
+
 1. [ ] Complete a 5-minute session
 2. [ ] Export debug bundle via Diagnostics or UI
 3. [ ] Verify ZIP file created
 4. [ ] Extract and verify contents:
-    - receipt.json (metadata, flags)
-    - events.ndjson (timeline)
-    - metrics.ndjson (1Hz samples)
-    - transcript_realtime.json
-    - transcript_final.json
-    - drops_summary.json
-    - logs/client.log
-    - logs/server.log
+   - receipt.json (metadata, flags)
+   - events.ndjson (timeline)
+   - metrics.ndjson (1Hz samples)
+   - transcript_realtime.json
+   - transcript_final.json
+   - drops_summary.json
+   - logs/client.log
+   - logs/server.log
 5. [ ] Verify machine ID hashed (SHA256)
 6. [ ] Verify audio NOT included (privacy-safe default)
 
 #### INT-004: RAG Document Indexing
+
 1. [ ] Index a document (test.txt)
 2. [ ] Verify document appears in list
 3. [ ] Query document and verify results
@@ -910,6 +939,7 @@ curl http://localhost:8000/health  # Verify server health
 5. [ ] Verify BM25 scoring (not embeddings)
 
 #### OBS-002: Metrics Collection
+
 1. [ ] Start session and let run for 1 minute
 2. [ ] Verify metrics events received every 1 second
 3. [ ] Check queue_depth, queue_fill_ratio, avg_infer_ms, realtime_factor
@@ -923,6 +953,7 @@ curl http://localhost:8000/health  # Verify server health
 
 **Generated By**: Flow Extraction Orchestrator
 **Sub-Agents**: 7 parallel specialists
+
 - User Journey Mapper (18 flows)
 - Audio Pipeline Analyst (10 flows, 1 partial, 1 hypothesized)
 - Model Lifecycle Analyst (15 flows, 1 partial, 1 not implemented)

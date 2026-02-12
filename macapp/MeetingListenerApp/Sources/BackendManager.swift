@@ -281,7 +281,7 @@ final class BackendManager: ObservableObject {
     
     private func checkHealth() {
         var request = URLRequest(url: healthCheckURL)
-        request.timeoutInterval = 2.0
+        request.timeoutInterval = BackendConfig.healthCheckTimeout
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {

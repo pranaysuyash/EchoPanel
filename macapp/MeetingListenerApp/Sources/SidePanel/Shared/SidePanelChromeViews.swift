@@ -183,6 +183,41 @@ extension SidePanelView {
         .accessibilityLabel("No audio detected: \(appState.silenceMessage)")
     }
 
+    func userNoticeBanner(_ notice: AppState.UserNotice) -> some View {
+        let palette: (text: Color, background: Color, icon: String)
+        switch notice.level {
+        case .info:
+            palette = (.secondary, Color.secondary.opacity(0.12), "info.circle.fill")
+        case .success:
+            palette = (.green, Color.green.opacity(0.12), "checkmark.circle.fill")
+        case .error:
+            palette = (.red, Color.red.opacity(0.12), "exclamationmark.triangle.fill")
+        }
+
+        return HStack(spacing: 6) {
+            Image(systemName: palette.icon)
+                .foregroundColor(palette.text)
+            Text(notice.message)
+                .font(Typography.caption)
+                .foregroundColor(palette.text)
+                .lineLimit(2)
+            Spacer(minLength: 4)
+            Button {
+                appState.clearUserNotice()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(palette.text)
+            .accessibilityLabel("Dismiss notice")
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.background)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
+        .accessibilityLabel(notice.message)
+    }
+
     // MARK: - Empty Transcript State
     var emptyTranscriptState: some View {
         VStack(alignment: .leading, spacing: 6) {

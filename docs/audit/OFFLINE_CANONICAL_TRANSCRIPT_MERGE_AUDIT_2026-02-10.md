@@ -60,10 +60,10 @@
 - `docs/DUAL_PIPELINE_ARCHITECTURE.md`
 - `docs/WS_CONTRACT.md`
 
-**HTML Prototypes (Data Model Reference):**
-- `echopanel.html` (pins UI references, lines 1115-1893)
-- `echopanel_roll.html` (pins state tracking, line 760)
-- `echopanel_sidepanel.html` (pins surface, lines 804-856)
+**HTML Prototypes (Data Model Reference for macOS App):**
+- `exploration/echopanel.html` (pins UI references, lines 1115-1893)
+- `exploration/echopanel_roll.html` (pins state tracking, line 760)
+- `exploration/echopanel_sidepanel.html` (pins surface, lines 804-856)
 
 ---
 
@@ -294,7 +294,7 @@ def generate_segment_id(source: str, t0: float, t1: float, text: str) -> str:
 
 ### Current State (Observed)
 
-Pins exist **only in HTML prototypes** (`echopanel.html`, `echopanel_roll.html`, `echopanel_sidepanel.html`) with these properties:
+Pins exist **only in HTML prototypes** (`exploration/echopanel.html`, `exploration/echopanel_roll.html`, `exploration/echopanel_sidepanel.html`) for the macOS app with these properties:
 - Created via "P" key on focused line
 - Stored in `rightModel.pins` array
 - Have text content but no stable ID scheme
@@ -579,7 +579,7 @@ def test_orphan_pin_preservation():
 | 2026-02-10 | Inspected `macapp/MeetingListenerApp/Sources/SessionStore.swift:9-48` | Observed - session storage structure, no raw audio |
 | 2026-02-10 | Inspected `server/services/diarization.py:78-107` | Observed - session-end diarization only |
 | 2026-02-10 | Searched for "pin" in native app sources | Observed - pins only exist in HTML prototypes |
-| 2026-02-10 | Inspected `echopanel.html`, `echopanel_roll.html` | Observed - pins UI defined in prototypes only |
+| 2026-02-10 | Inspected `exploration/echopanel.html`, `exploration/echopanel_roll.html` | Observed - pins UI defined in HTML prototypes for macOS app only |
 
 ---
 
