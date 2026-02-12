@@ -214,6 +214,13 @@ final class WebSocketStreamer: NSObject {
             "format": "pcm_s16le",
             "channels": 1
         ]
+
+        payload["client_features"] = [
+            "clock_drift_compensation_enabled": BackendConfig.clockDriftCompensationEnabled,
+            "client_vad_enabled": BackendConfig.clientVADEnabled,
+            "clock_drift_telemetry_enabled": true,
+            "client_vad_telemetry_enabled": true
+        ]
         
         if let correlationIDs = _correlationIDs {
             payload["attempt_id"] = correlationIDs.attemptId

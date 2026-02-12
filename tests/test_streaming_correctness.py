@@ -222,6 +222,52 @@ class TestSourceAwareDiarization:
         assert result["system"][0]["speaker"] == "Speaker 1"
 
 
+class TestStagedFeatureTelemetry:
+    """Tests for U8 staged feature flags and drift telemetry helpers."""
+
+    def test_extract_client_features_defaults(self):
+        from server.api.ws_live_listener import _extract_client_features
+
+        result = _extract_client_features({})
+        assert result == {
+            "clock_drift_compensation_enabled": False,
+            "client_vad_enabled": False,
+            "clock_drift_telemetry_enabled": False,
+            "client_vad_telemetry_enabled": False,
+        }
+
+    def test_extract_client_features_from_payload(self):
+        from server.api.ws_live_listener import _extract_client_features
+
+        payload = {
+            "client_features": {
+                "clock_drift_compensation_enabled": True,
+                "client_vad_enabled": True,
+                "clock_drift_telemetry_enabled": True,
+                "client_vad_telemetry_enabled": False,
+            }
+        }
+        result = _extract_client_features(payload)
+        assert result["clock_drift_compensation_enabled"] is True
+        assert result["client_vad_enabled"] is True
+        assert result["clock_drift_telemetry_enabled"] is True
+        assert result["client_vad_telemetry_enabled"] is False
+
+    def test_update_source_clock_spread_tracks_last_and_max(self):
+        from server.api.ws_live_listener import SessionState, _update_source_clock_spread
+
+        state = SessionState(sample_rate=16000)
+        state.asr_last_t1_by_source = {"system": 3.0, "mic": 3.12}
+        _update_source_clock_spread(state)
+        assert state.source_clock_spread_ms == pytest.approx(120.0, abs=0.1)
+        assert state.max_source_clock_spread_ms == pytest.approx(120.0, abs=0.1)
+
+        state.asr_last_t1_by_source = {"system": 4.0, "mic": 4.05}
+        _update_source_clock_spread(state)
+        assert state.source_clock_spread_ms == pytest.approx(50.0, abs=0.1)
+        assert state.max_source_clock_spread_ms == pytest.approx(120.0, abs=0.1)
+
+
 class TestQueueConfig:
     """Tests for queue configuration."""
 

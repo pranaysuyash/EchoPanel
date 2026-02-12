@@ -105,6 +105,46 @@ def test_session_end_diarization_emits_source_segments(monkeypatch):
         assert diarization[0]["source"] == "mic"
 
 
+def test_start_ack_and_final_summary_include_client_feature_flags():
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-listener") as websocket:
+        connected = websocket.receive_json()
+        assert connected["type"] == "status"
+        assert connected["state"] == "connected"
+
+        websocket.send_json(
+            {
+                "type": "start",
+                "session_id": "test_feature_flags",
+                "client_features": {
+                    "clock_drift_compensation_enabled": True,
+                    "client_vad_enabled": True,
+                    "clock_drift_telemetry_enabled": True,
+                    "client_vad_telemetry_enabled": True,
+                },
+            }
+        )
+        started = websocket.receive_json()
+        assert started["type"] == "status"
+        assert started["state"] == "streaming"
+        assert started["client_features"]["clock_drift_compensation_enabled"] is True
+        assert started["client_features"]["client_vad_enabled"] is True
+
+        websocket.send_json({"type": "stop", "session_id": "test_feature_flags"})
+        final_summary = None
+        for _ in range(12):
+            msg = websocket.receive_json()
+            if msg.get("type") == "final_summary":
+                final_summary = msg
+                break
+        assert final_summary is not None, "Expected final_summary event"
+        features = final_summary["json"]["client_features"]
+        assert features["clock_drift_compensation_enabled"] is True
+        assert features["client_vad_enabled"] is True
+        assert "clock_spread_ms" in final_summary["json"]
+
+
 def test_ws_auth_rejects_missing_token(monkeypatch):
     monkeypatch.setenv("ECHOPANEL_WS_AUTH_TOKEN", "secret-token")
     client = TestClient(app)

@@ -135,4 +135,35 @@ final class BackendRecoveryUXTests: XCTestCase {
         let components = URLComponents(url: BackendConfig.webSocketURL, resolvingAgainstBaseURL: false)
         XCTAssertNil(components?.query)
     }
+
+    func testStagedAudioFeatureFlagsDefaultToOffAndReadOverrides() {
+        let defaults = UserDefaults.standard
+        let driftKey = "broadcast_useClockDriftCompensation"
+        let vadKey = "broadcast_useClientVAD"
+        let originalDrift = defaults.object(forKey: driftKey)
+        let originalVAD = defaults.object(forKey: vadKey)
+
+        defer {
+            if let originalDrift {
+                defaults.set(originalDrift, forKey: driftKey)
+            } else {
+                defaults.removeObject(forKey: driftKey)
+            }
+            if let originalVAD {
+                defaults.set(originalVAD, forKey: vadKey)
+            } else {
+                defaults.removeObject(forKey: vadKey)
+            }
+        }
+
+        defaults.removeObject(forKey: driftKey)
+        defaults.removeObject(forKey: vadKey)
+        XCTAssertFalse(BackendConfig.clockDriftCompensationEnabled)
+        XCTAssertFalse(BackendConfig.clientVADEnabled)
+
+        defaults.set(true, forKey: driftKey)
+        defaults.set(true, forKey: vadKey)
+        XCTAssertTrue(BackendConfig.clockDriftCompensationEnabled)
+        XCTAssertTrue(BackendConfig.clientVADEnabled)
+    }
 }

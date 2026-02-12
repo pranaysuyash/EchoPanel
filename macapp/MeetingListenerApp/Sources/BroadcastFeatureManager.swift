@@ -57,6 +57,12 @@ final class BroadcastFeatureManager: ObservableObject {
     @Published var useNTPTimestamps: Bool {
         didSet { UserDefaults.standard.set(useNTPTimestamps, forKey: "broadcast_useNTP") }
     }
+    @Published var useClockDriftCompensation: Bool {
+        didSet { UserDefaults.standard.set(useClockDriftCompensation, forKey: "broadcast_useClockDriftCompensation") }
+    }
+    @Published var useClientVAD: Bool {
+        didSet { UserDefaults.standard.set(useClientVAD, forKey: "broadcast_useClientVAD") }
+    }
     @Published var ntpOffset: TimeInterval = 0
     
     // MARK: - Managers
@@ -77,6 +83,8 @@ final class BroadcastFeatureManager: ObservableObject {
         useHotKeys = UserDefaults.standard.bool(forKey: "broadcast_useHotKeys")
         showConfidence = UserDefaults.standard.bool(forKey: "broadcast_showConfidence")
         useNTPTimestamps = UserDefaults.standard.bool(forKey: "broadcast_useNTP")
+        useClockDriftCompensation = UserDefaults.standard.bool(forKey: "broadcast_useClockDriftCompensation")
+        useClientVAD = UserDefaults.standard.bool(forKey: "broadcast_useClientVAD")
         
         setupCallbacks()
         
@@ -269,6 +277,15 @@ struct BroadcastSettingsView: View {
                         Task { await broadcast.syncNTP() }
                     }
                 }
+            }
+
+            Section(header: Text("Experimental Audio Processing")) {
+                Toggle("Clock Drift Compensation (Staged)", isOn: $broadcast.useClockDriftCompensation)
+                Toggle("Client-Side VAD (Staged)", isOn: $broadcast.useClientVAD)
+
+                Text("These toggles currently publish feature flags and telemetry metadata only. Default processing behavior is unchanged.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)

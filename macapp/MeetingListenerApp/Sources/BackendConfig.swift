@@ -76,4 +76,13 @@ enum BackendConfig {
     static func documentDeleteURL(documentID: String) -> URL {
         buildURL(path: "/documents/\(documentID)")
     }
+
+    // U8 groundwork flags: telemetry + feature handshakes only (no default behavior change).
+    static var clockDriftCompensationEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "broadcast_useClockDriftCompensation")
+    }
+
+    static var clientVADEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "broadcast_useClientVAD")
+    }
 }

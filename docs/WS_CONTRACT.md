@@ -20,6 +20,9 @@ This is the current source of truth for the live listener protocol implemented i
     1) `?token=...` query parameter
     2) `x-echopanel-token` header
     3) `Authorization: Bearer ...` header
+  - Current client transport:
+    - EchoPanel client sends `Authorization` + `x-echopanel-token` headers.
+    - Query-token support remains server-side for backward compatibility.
 - Unauthorized websocket behavior:
   - Server sends `{"type":"status","state":"error","message":"Unauthorized websocket connection"}`
   - Then closes with close code `1008`.
@@ -36,13 +39,20 @@ All structured messages are UTF-8 JSON text frames.
   "session_id": "uuid-string",
   "sample_rate": 16000,
   "format": "pcm_s16le",
-  "channels": 1
+  "channels": 1,
+  "client_features": {
+    "clock_drift_compensation_enabled": false,
+    "client_vad_enabled": false,
+    "clock_drift_telemetry_enabled": true,
+    "client_vad_telemetry_enabled": true
+  }
 }
 ```
 - Server currently requires exactly `16000` / `pcm_s16le` / `1`.
 - On mismatch, server sends:
   - `{"type":"error","message":"Unsupported audio format: ..."}`
   - then closes connection.
+- `client_features` is optional; these flags are telemetry/staging controls and do not change default processing behavior yet.
 
 ### `audio` (preferred)
 ```json
@@ -118,6 +128,27 @@ All structured messages are UTF-8 JSON text frames.
 }
 ```
 
+### `metrics`
+```json
+{
+  "type": "metrics",
+  "source": "system | mic",
+  "queue_depth": 1,
+  "queue_max": 48,
+  "queue_fill_ratio": 0.02,
+  "dropped_total": 0,
+  "dropped_recent": 0,
+  "avg_infer_ms": 420.0,
+  "realtime_factor": 0.21,
+  "client_clock_drift_compensation_enabled": false,
+  "client_vad_enabled": false,
+  "source_clock_spread_ms": 0.0,
+  "max_source_clock_spread_ms": 0.0
+}
+```
+- Emitted about once per second per active source.
+- `source_clock_spread_ms`/`max_source_clock_spread_ms` expose cross-source ASR timeline spread telemetry groundwork.
+
 ### `final_summary`
 ```json
 {
@@ -130,7 +161,17 @@ All structured messages are UTF-8 JSON text frames.
     "decisions": [],
     "risks": [],
     "entities": {},
-    "diarization": []
+    "diarization": [],
+    "client_features": {
+      "clock_drift_compensation_enabled": false,
+      "client_vad_enabled": false,
+      "clock_drift_telemetry_enabled": true,
+      "client_vad_telemetry_enabled": true
+    },
+    "clock_spread_ms": {
+      "last": 0.0,
+      "max": 0.0
+    }
   }
 }
 ```

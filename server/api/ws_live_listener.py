@@ -73,6 +73,15 @@ class SessionState:
     provider_name: str = "unknown"
     model_id: str = "unknown"
     vad_enabled: bool = False
+    # U8 groundwork: staged client feature flags (no behavioral change yet)
+    client_clock_drift_compensation_enabled: bool = False
+    client_vad_enabled: bool = False
+    client_clock_drift_telemetry_enabled: bool = False
+    client_vad_telemetry_enabled: bool = False
+    # U8 groundwork telemetry: ASR timeline spread across active sources
+    asr_last_t1_by_source: Dict[str, float] = field(default_factory=dict)
+    source_clock_spread_ms: float = 0.0
+    max_source_clock_spread_ms: float = 0.0
     # TCK-20260211-010: Degrade ladder for adaptive performance
     degrade_ladder: Optional[DegradeLadder] = None
 
@@ -84,6 +93,37 @@ def _normalize_source(source: Optional[str]) -> str:
     if raw == "system":
         return "system"
     return raw or "system"
+
+
+def _extract_client_features(payload: Dict[str, Any]) -> Dict[str, bool]:
+    features = payload.get("client_features")
+    if not isinstance(features, dict):
+        return {
+            "clock_drift_compensation_enabled": False,
+            "client_vad_enabled": False,
+            "clock_drift_telemetry_enabled": False,
+            "client_vad_telemetry_enabled": False,
+        }
+
+    return {
+        "clock_drift_compensation_enabled": bool(features.get("clock_drift_compensation_enabled", False)),
+        "client_vad_enabled": bool(features.get("client_vad_enabled", False)),
+        "clock_drift_telemetry_enabled": bool(features.get("clock_drift_telemetry_enabled", False)),
+        "client_vad_telemetry_enabled": bool(features.get("client_vad_telemetry_enabled", False)),
+    }
+
+
+def _update_source_clock_spread(state: SessionState) -> None:
+    if len(state.asr_last_t1_by_source) < 2:
+        state.source_clock_spread_ms = 0.0
+        return
+
+    t1_values = list(state.asr_last_t1_by_source.values())
+    spread_seconds = max(t1_values) - min(t1_values)
+    spread_ms = max(0.0, spread_seconds * 1000.0)
+    state.source_clock_spread_ms = spread_ms
+    if spread_ms > state.max_source_clock_spread_ms:
+        state.max_source_clock_spread_ms = spread_ms
 
 
 def _append_diarization_audio(state: SessionState, source: str, chunk: bytes) -> None:
@@ -461,6 +501,9 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
                 # Add source if missing (stream_asr does it, but double check)
                 if "source" not in event:
                     event["source"] = source
+                source_key = _normalize_source(event.get("source", source))
+                state.asr_last_t1_by_source[source_key] = float(event.get("t1", 0.0))
+                _update_source_clock_spread(state)
                 state.transcript.append(event)
             
             await ws_send(state, websocket, event)
@@ -624,6 +667,12 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                     "provider": state.provider_name,  # V1: Provider name
                     "model_id": state.model_id,  # V1: Model identifier
                     "vad_enabled": state.vad_enabled,  # V1: VAD status
+                    "client_clock_drift_compensation_enabled": state.client_clock_drift_compensation_enabled,
+                    "client_vad_enabled": state.client_vad_enabled,
+                    "client_clock_drift_telemetry_enabled": state.client_clock_drift_telemetry_enabled,
+                    "client_vad_telemetry_enabled": state.client_vad_telemetry_enabled,
+                    "source_clock_spread_ms": round(state.source_clock_spread_ms, 1),
+                    "max_source_clock_spread_ms": round(state.max_source_clock_spread_ms, 1),
                     "sources_active": list(state.active_sources),  # V1: Active sources list
                     "timestamp": time.time()
                 }
@@ -698,6 +747,11 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         state.session_id = payload.get("session_id")
                         state.attempt_id = payload.get("attempt_id")  # V1: Client attempt ID
                         state.connection_id = payload.get("connection_id") or str(uuid.uuid4())  # V1: Generate if not provided
+                        client_features = _extract_client_features(payload)
+                        state.client_clock_drift_compensation_enabled = client_features["clock_drift_compensation_enabled"]
+                        state.client_vad_enabled = client_features["client_vad_enabled"]
+                        state.client_clock_drift_telemetry_enabled = client_features["clock_drift_telemetry_enabled"]
+                        state.client_vad_telemetry_enabled = client_features["client_vad_telemetry_enabled"]
                         sample_rate = payload.get("sample_rate", 16000)
                         encoding = payload.get("format", "pcm_s16le")
                         channels = payload.get("channels", 1)
@@ -757,12 +811,20 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             "type": "status", 
                             "state": "streaming", 
                             "message": "Streaming",
-                            "connection_id": state.connection_id  # V1: Echo back for confirmation
+                            "connection_id": state.connection_id,  # V1: Echo back for confirmation
+                            "client_features": {
+                                "clock_drift_compensation_enabled": state.client_clock_drift_compensation_enabled,
+                                "client_vad_enabled": state.client_vad_enabled,
+                                "clock_drift_telemetry_enabled": state.client_clock_drift_telemetry_enabled,
+                                "client_vad_telemetry_enabled": state.client_vad_telemetry_enabled,
+                            },
                         })
                         
                         logger.info(f"Session started: session_id={state.session_id}, "
                                   f"attempt_id={state.attempt_id}, connection_id={state.connection_id}, "
-                                  f"provider={state.provider_name}, model={state.model_id}")
+                                  f"provider={state.provider_name}, model={state.model_id}, "
+                                  f"client_vad={state.client_vad_enabled}, "
+                                  f"clock_drift_comp={state.client_clock_drift_compensation_enabled}")
                         
                         if DEBUG:
                             logger.debug(f"ws_live_listener: start session_id={state.session_id}")
@@ -865,6 +927,16 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                     "risks": cards["risks"],
                                     "entities": entities,
                                     "diarization": diarization_segments, # H8 Fix: Include raw diarization
+                                    "client_features": {
+                                        "clock_drift_compensation_enabled": state.client_clock_drift_compensation_enabled,
+                                        "client_vad_enabled": state.client_vad_enabled,
+                                        "clock_drift_telemetry_enabled": state.client_clock_drift_telemetry_enabled,
+                                        "client_vad_telemetry_enabled": state.client_vad_telemetry_enabled,
+                                    },
+                                    "clock_spread_ms": {
+                                        "last": round(state.source_clock_spread_ms, 1),
+                                        "max": round(state.max_source_clock_spread_ms, 1),
+                                    },
                                 },
                             }
                         )

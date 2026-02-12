@@ -183,4 +183,15 @@ final class ObservabilityTests: XCTestCase {
         let missing = manager.bundle(for: "non-existent")
         XCTAssertNil(missing)
     }
+
+    func testSessionBundleManagerRemovesBundleWhenSetNil() {
+        let manager = SessionBundleManager.shared
+        let sessionId = "test-session-\(UUID().uuidString)"
+
+        _ = manager.createBundle(for: sessionId)
+        XCTAssertNotNil(manager.bundle(for: sessionId))
+
+        manager.setBundle(nil, for: sessionId)
+        XCTAssertNil(manager.bundle(for: sessionId))
+    }
 }

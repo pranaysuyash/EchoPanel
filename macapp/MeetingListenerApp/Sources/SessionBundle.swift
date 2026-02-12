@@ -18,6 +18,17 @@ import CryptoKit
 /// Privacy: Audio is NOT included by default. Users must explicitly opt-in.
 @MainActor
 final class SessionBundle {
+
+    enum ExportError: LocalizedError {
+        case zipFailed(exitCode: Int32)
+
+        var errorDescription: String? {
+            switch self {
+            case .zipFailed(let exitCode):
+                return "Failed to create session bundle archive (zip exit code \(exitCode))."
+            }
+        }
+    }
     
     // MARK: - Types
     
@@ -243,7 +254,10 @@ final class SessionBundle {
         
         try process.run()
         process.waitUntilExit()
-        
+        guard process.terminationStatus == 0 else {
+            throw ExportError.zipFailed(exitCode: process.terminationStatus)
+        }
+
         // Copy to destination
         let fm = FileManager.default
         if fm.fileExists(atPath: destinationURL.path) {

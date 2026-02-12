@@ -719,7 +719,7 @@ None — Flow Atlas extraction complete, document delivered at `docs/flow-atlas-
 Type: HARDENING
 Owner: Pranay (agent: Codex)
 Created: 2026-02-12 10:49 (local time)
-Status: **IN_PROGRESS** 🟡
+Status: **DONE** ✅
 Priority: P0
 
 Description:
@@ -771,12 +771,18 @@ Tracking items:
 | F-005 | OBS-004/EXT-012 | implementation gap | U3 | docs/flow-atlas-20260211.md, docs/flows/EXT-012.md | BackendManager.swift, BackendConfig.swift | Health timeout configurable, default preserved | DONE |
 | F-006 | MOD-014 | implementation gap | U1 | docs/flow-atlas-20260211.md | model_preloader.py, main.py | Explicit unload + shutdown hook + tests | DONE |
 | F-007 | SEC-009 | implementation gap | U2 | docs/flow-atlas-20260211.md | ws_live_listener.py | Debug dump bounded cleanup policy + tests | DONE |
-| F-008 | AUD-009 | large-scope | U8 | docs/flows/AUD-009.md | capture + ws paths | Telemetry/flag groundwork only | OPEN |
-| F-009 | AUD-010 | large-scope | U8 | docs/flows/AUD-010.md | audio capture pipeline | Telemetry/flag groundwork only | OPEN |
+| F-008 | AUD-009 | large-scope | U8 | docs/flows/AUD-009.md | WebSocketStreamer.swift, ws_live_listener.py | Telemetry/flag groundwork only | DONE |
+| F-009 | AUD-010 | large-scope | U8 | docs/flows/AUD-010.md | BroadcastFeatureManager.swift, BackendConfig.swift, WebSocketStreamer.swift, ws_live_listener.py | Telemetry/flag groundwork only | DONE |
 | F-010 | TCK-20260211-013 | implementation gap | U7 | docs/WORKLOG_TICKETS.md, docs/CIRCUIT_BREAKER_IMPLEMENTATION.md | CircuitBreaker.swift, ResilientWebSocket.swift | Consolidated behavior + docs + tests | DONE |
-| F-011 | NET-001..005 | doc drift | U9 | docs/flows/NET-001.md .. docs/flows/NET-005.md | WebSocketStreamer.swift, BackendConfig.swift, AppState.swift | NET flow docs reflect implemented connection/auth/send/receive/disconnect behavior | OPEN |
-| F-012 | UI-001..010 | doc drift | U9 | docs/flows/UI-001.md .. docs/flows/UI-010.md | SidePanelView.swift, SidePanelStateLogic.swift, MeetingListenerApp.swift | UI flow docs reflect implemented menu/panel/search/focus/surface/pin/lens/follow-live behavior | OPEN |
+| F-011 | NET-001..005 | doc drift | U9 | docs/flows/NET-001.md .. docs/flows/NET-005.md | WebSocketStreamer.swift, BackendConfig.swift, AppState.swift | NET flow docs reflect implemented connection/auth/send/receive/disconnect behavior | DONE |
+| F-012 | UI-001..010 | doc drift | U9 | docs/flows/UI-001.md .. docs/flows/UI-010.md | SidePanelView.swift, SidePanelStateLogic.swift, MeetingListenerApp.swift | UI flow docs reflect implemented menu/panel/search/focus/surface/pin/lens/follow-live behavior | DONE |
 | F-013 | EXT-001 | doc drift | U9 | docs/flows/EXT-001.md | MeetingListenerApp.swift | Onboarding reopen behavior documented as implemented where evidenced | DONE |
+| F-014 | flow corpus hygiene | doc drift | U9 | docs/flows/*.md | markdown cleanup sweep | Remove generator residue markers (`</content>`, `<parameter name=\"filePath\">`) from flow docs | DONE |
+| F-015 | INT-008 | large-scope | U10 | docs/flows/INT-008.md | NER pipeline / GLiNER | Topic extraction implementation staged pending product/model decision | BLOCKED |
+| F-016 | INT-009 | large-scope | U10 | docs/flows/INT-009.md | RAG embedding pipeline | Embedding generation + vector store integration pending architecture decision | BLOCKED |
+| F-017 | INT-010 | large-scope | U10 | docs/flows/INT-010.md | analysis_stream.py, ws_live_listener.py | True incremental analysis diffing pending algorithm/complexity decision | BLOCKED |
+| F-018 | SEC-007 | doc drift | U10 | docs/flows/SEC-007.md | BackendConfig.swift | TLS flow status aligned to current implementation evidence | DONE |
+| F-019 | OBS-014/STO-007 | implementation gap | U11 | docs/flows/OBS-014.md, docs/flows/STO-007.md | AppState.swift, SessionBundle.swift | Session bundle session-id continuity is preserved and zip export failures are explicit/user-visible | DONE |
 
 Unit Reality + Options log:
 
@@ -863,6 +869,18 @@ Unit Reality + Options log:
     - Cons: requires careful API adaptation + reconnection regression checks.
   - Decision: Option B, in a constrained patch that preserves thresholds/timeouts and retry behavior.
 
+- U8 (F-008/F-009) Reality:
+  - Clock-drift compensation and client-side VAD behavior are not implemented in the live path.
+  - Existing codebase already has stable toggles/metrics channels (`BroadcastFeatureManager`, websocket `start`, server `metrics`).
+  - Gap classification: large-scope implementation gaps, staged groundwork requested.
+  - Option A (minimal): docs-only acknowledgment, leave code unchanged.
+    - Pros: zero runtime risk.
+    - Cons: no telemetry to derisk future rollout.
+  - Option B (comprehensive staged): add feature-flag handshake and telemetry fields across client/server with defaults off (no behavior change).
+    - Pros: measurable baseline for future rollout, contract in place.
+    - Cons: wider contract/test/doc touch than option A.
+  - Decision: Option B, strictly telemetry/flag groundwork only.
+
 - U9 (F-011/F-012/F-013) Reality:
   - Full `docs/flows/` sweep found multiple NET/UI/EXT docs marked `Hypothesized` or explicit gaps where matching code paths already exist.
   - Gap classification: doc drift.
@@ -872,7 +890,19 @@ Unit Reality + Options log:
   - Option B (comprehensive): normalize all affected flow docs to a consistent verified template.
     - Pros: cleaner long-term flow corpus.
     - Cons: larger documentation-only patch.
-  - Decision: Option A, then expand if needed.
+  - Decision: Option B for NET/UI and Option A for targeted EXT fix; implemented as a doc-only unit (no behavior changes).
+
+- U11 (F-019) Reality:
+  - `AppState.startSession()` generated session ID twice, creating risk that `SessionBundleManager` bundle identity diverges from active session identity.
+  - Export paths depended on `/usr/bin/zip` but did not explicitly validate non-zero exit status.
+  - Gap classification: implementation gap.
+  - Option A (minimal): remove duplicate session ID assignment only.
+    - Pros: smallest change.
+    - Cons: leaves export archive failure semantics implicit.
+  - Option B (comprehensive): fix session identity continuity + explicit bundle cleanup on reset + explicit zip exit validation in both modern and legacy debug export paths.
+    - Pros: tighter correctness and lifecycle hygiene for session bundle/export contract.
+    - Cons: slightly broader code surface.
+  - Decision: Option B.
 
 Evidence log:
 
@@ -1006,6 +1036,66 @@ Evidence log:
     - `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift` includes explicit onboarding reopen action
   - Interpretation: Observed — EXT onboarding reopen doc drift resolved
 
+- [2026-02-12 11:58] Completed U9 (`F-011`, `F-012`) NET/UI flow doc alignment | Evidence:
+  - Docs:
+    - Rewrote `docs/flows/NET-001.md` .. `docs/flows/NET-005.md` with observed client auth-header transport, connect/send/receive/disconnect behavior, and current failure handling
+    - Rewrote `docs/flows/UI-001.md` .. `docs/flows/UI-010.md` with observed menu/panel/search/focus/surface/pin/lens/follow-live behavior
+  - Commands:
+    - `rg -n "Hypothesized|None evidenced|<content>|<parameter name=|token query parameter" docs/flows/NET-*.md docs/flows/UI-*.md`
+    - `git diff -- docs/flows/NET-001.md docs/flows/NET-002.md docs/flows/NET-003.md docs/flows/NET-004.md docs/flows/NET-005.md docs/flows/UI-001.md docs/flows/UI-002.md docs/flows/UI-003.md docs/flows/UI-004.md docs/flows/UI-005.md docs/flows/UI-006.md docs/flows/UI-007.md docs/flows/UI-008.md docs/flows/UI-009.md docs/flows/UI-010.md`
+  - Outcome:
+    - No stale placeholder markers remained in the rewritten NET/UI flow set.
+  - Interpretation: Observed — NET/UI doc drift closed against current code paths.
+
+- [2026-02-12 11:59] Completed U9 extension (`F-014`) flow-corpus markdown hygiene sweep | Evidence:
+  - Commands:
+    - `perl -pi -e 's#</content>$##; s#^\\s*<parameter name=\"filePath\">.*$##' docs/flows/*.md`
+    - `rg -n \"</content>|<parameter name=\\\"filePath\\\">\" docs/flows/*.md || true`
+  - Outcome:
+    - Generator residue markers removed from flow files across `AUD/EXT/MOD/NET/OBS/STO/UI`.
+  - Interpretation: Observed — doc corpus cleaned to valid markdown without injected tool metadata lines.
+
+- [2026-02-12 12:07] Completed U8 (`F-008`, `F-009`) staged clock-drift/VAD groundwork | Evidence:
+  - Code:
+    - Client: added staged flags (`broadcast_useClockDriftCompensation`, `broadcast_useClientVAD`) and surfaced toggles in Broadcast settings
+      (`macapp/MeetingListenerApp/Sources/BroadcastFeatureManager.swift`)
+    - Client start contract: websocket `start` now includes `client_features` flags
+      (`macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`, `macapp/MeetingListenerApp/Sources/BackendConfig.swift`)
+    - Server: parse/store client features, track per-source ASR clock spread, emit spread + flag fields in `metrics`, include in `final_summary`
+      (`server/api/ws_live_listener.py`)
+  - Tests:
+    - Command: `.venv/bin/pytest -q tests/test_streaming_correctness.py tests/test_ws_integration.py tests/test_ws_live_listener.py`
+    - Output: `25 passed, 3 warnings in 2.59s`
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter BackendRecoveryUXTests`
+    - Output: `Executed 4 tests, with 0 failures`
+    - Command: `cd macapp/MeetingListenerApp && swift test`
+    - Output: `Executed 65 tests, with 0 failures`
+  - Docs:
+    - Updated `docs/flows/AUD-009.md`, `docs/flows/AUD-010.md`, `docs/WS_CONTRACT.md`
+  - Interpretation: Observed — telemetry and feature-flag contract groundwork shipped without changing default audio behavior.
+
+- [2026-02-12 12:07] Completed U10 triage for residual partial/hypothesized integration flows (`F-015/F-016/F-017/F-018`) | Evidence:
+  - Command: `rg -n "^- Status: (Hypothesized|Partial)" docs/flows/*.md | sort`
+  - Output: Residual set narrowed to `AUD-009`, `AUD-010`, `INT-008`, `INT-009`, `INT-010`
+  - Decision:
+    - `INT-008/009/010` classified as blocked large-scope feature work requiring product/architecture decisions.
+    - `SEC-007` status aligned to implemented behavior in `BackendConfig` (doc drift closure).
+  - Interpretation: Observed — all newly discovered residual items are now tracked as DONE or BLOCKED with rationale.
+
+- [2026-02-12 12:14] Completed U11 (`F-019`) session-bundle continuity + zip export hardening | Evidence:
+  - Code:
+    - Removed duplicate `sessionID` regeneration in `AppState.startSession()` to preserve bundle/session identity continuity (`macapp/MeetingListenerApp/Sources/AppState.swift`)
+    - Added explicit bundle cleanup during `resetSession()` (`macapp/MeetingListenerApp/Sources/AppState.swift`)
+    - Added explicit zip non-zero exit validation for both modern and legacy debug export paths (`macapp/MeetingListenerApp/Sources/SessionBundle.swift`, `macapp/MeetingListenerApp/Sources/AppState.swift`)
+  - Tests:
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter ObservabilityTests`
+    - Output: `Executed 11 tests, with 0 failures`
+    - Command: `cd macapp/MeetingListenerApp && swift test --filter AppStateNoticeTests`
+    - Output: `Executed 3 tests, with 0 failures`
+  - Docs:
+    - Updated `docs/flows/OBS-014.md` and `docs/flows/STO-007.md` to reflect observed export notices and explicit zip error handling
+  - Interpretation: Observed — session bundle/export flow is now deterministic for identity and archive failure handling.
+
 Status updates:
 
 - [2026-02-12 10:49] **IN_PROGRESS** 🟡 — ticket created and remediation loop started
@@ -1015,9 +1105,14 @@ Status updates:
 - [2026-02-12 11:39] **IN_PROGRESS** 🟡 — U5 and U6 complete, moving to U7/U9 sequencing
 - [2026-02-12 11:45] **IN_PROGRESS** 🟡 — U7 complete, proceeding with U9/U8 backlog
 - [2026-02-12 11:46] **IN_PROGRESS** 🟡 — U9 partial (`F-013`) done; NET/UI doc-drift items remain
+- [2026-02-12 11:58] **IN_PROGRESS** 🟡 — U9 complete (`F-011`, `F-012`, `F-013`); moving to U8 groundwork (`F-008`, `F-009`)
+- [2026-02-12 11:59] **IN_PROGRESS** 🟡 — U9 extension (`F-014`) complete; moving to U8 groundwork (`F-008`, `F-009`)
+- [2026-02-12 12:07] **IN_PROGRESS** 🟡 — U8 complete (`F-008`, `F-009`); residual partial/hypothesis flows triaged (`U10`)
+- [2026-02-12 12:07] **DONE** ✅ — tracked remediation backlog closed (DONE/BLOCKED with evidence)
+- [2026-02-12 12:10] **IN_PROGRESS** 🟡 — reopened for new `OBS-014` implementation finding (`F-019`)
+- [2026-02-12 12:14] **DONE** ✅ — U11 complete (`F-019`) with code/tests/docs evidence
 
 Next actions:
 
-1. Continue U9 doc-drift alignment (`F-011/F-012/F-013`) for NET/UI/EXT flow files.
-2. Stage U8 groundwork (`F-008/F-009`) as telemetry/feature-flag only, leaving behavior defaults unchanged.
-3. Re-evaluate remaining open items for `DONE` vs `BLOCKED` evidence closure.
+1. No immediate implementation items remain in this ticket.
+2. Blocked follow-ups (`F-015/F-016/F-017`) require product/architecture decisions before code execution.

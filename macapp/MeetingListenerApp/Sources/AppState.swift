@@ -609,8 +609,6 @@ final class AppState: ObservableObject {
                 }
             }
 
-            let id = UUID().uuidString
-            sessionID = id
             sessionStart = Date()
             sessionEnd = nil
 
@@ -762,6 +760,9 @@ final class AppState: ObservableObject {
     }
 
     func resetSession() {
+        if let existingSessionID = sessionID {
+            SessionBundleManager.shared.setBundle(nil, for: existingSessionID)
+        }
         elapsedSeconds = 0
         transcriptSegments = []
         bumpTranscriptRevision()
@@ -942,6 +943,17 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    private enum DebugBundleExportError: LocalizedError {
+        case zipFailed(exitCode: Int32)
+
+        var errorDescription: String? {
+            switch self {
+            case .zipFailed(let exitCode):
+                return "Failed to create debug bundle archive (zip exit code \(exitCode))."
+            }
+        }
+    }
     
     private func exportLegacyDebugBundle() async throws {
         // 1. Prepare files
@@ -972,6 +984,9 @@ final class AppState: ObservableObject {
         process.currentDirectoryURL = bundleDir
         try process.run()
         process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw DebugBundleExportError.zipFailed(exitCode: process.terminationStatus)
+        }
         
         // 3. Save Panel
         await MainActor.run {
