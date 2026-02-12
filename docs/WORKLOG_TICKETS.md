@@ -1116,3 +1116,104 @@ Next actions:
 
 1. No immediate implementation items remain in this ticket.
 2. Blocked follow-ups (`F-015/F-016/F-017`) require product/architecture decisions before code execution.
+
+### TCK-20260212-002 :: HF Pro Acceleration (Prefetch + Prewarm + Fast Eval Harness)
+
+Type: IMPROVEMENT
+Owner: Pranay (agent: Codex)
+Created: 2026-02-12 08:48 (local time)
+Status: **DONE** ✅
+Priority: P1
+
+Description:
+Implement the practical Hugging Face Pro acceleration plan: pinned model manifest + prefetch script, hosted eval harness for staged INT candidates, startup diarization prewarm, and Apple-Silicon whisper.cpp preference in auto provider selection.
+
+Scope contract:
+
+- In-scope:
+  - Pinned HF model manifest for diarization + INT-008/INT-009 candidates
+  - Local prefetch CLI with receipt output
+  - Hosted quick-eval CLI with receipt output
+  - Server startup diarization prewarm (background task)
+  - Auto-select whisper.cpp preference on Apple Silicon (configurable via env)
+  - Docs and evidence log updates
+- Out-of-scope:
+  - Full INT-008/INT-009 feature implementation
+  - Token provisioning or acceptance flow for gated model terms
+
+Tracking items:
+
+| item_id | source_flow | category | dependency | evidence_doc | evidence_code | acceptance | status |
+|---|---|---|---|---|---|---|---|
+| F-020 | AUD-007 / INT-008 / INT-009 | implementation gap | U1 | docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md | server/config/hf_model_manifest.json, scripts/prefetch_hf_models.py, scripts/eval_hf_models.py | Pinned manifest + prefetch/eval CLIs produce receipts | DONE |
+| F-021 | AUD-007 | implementation gap | U2 | docs/flows/AUD-007.md | server/services/diarization.py, server/main.py | Startup diarization prewarm executes in bounded background task | DONE |
+| F-022 | MOD provider selection | improvement | U2 | docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md | server/main.py | Auto-selection prefers whisper.cpp on Apple Silicon when available, unless disabled by env flag | DONE |
+| F-023 | execution receipt | blocked runtime precondition | U3 | docs/audit/artifacts/hf-prefetch-receipt-20260212T085317Z.json, docs/audit/artifacts/hf-eval-receipt-20260212T085334Z.json | scripts/*.py | Live token-backed run completed in this environment | BLOCKED |
+
+Unit Reality + Options log:
+
+- U1 (F-020) Reality:
+  - Model IDs were referenced across docs but no pinned revision manifest or prefetch/eval automation existed.
+  - Option A (minimal): document manual `huggingface-cli download` commands.
+    - Pros: fastest docs-only patch.
+    - Cons: low repeatability, no machine-readable receipts.
+  - Option B (comprehensive): add pinned manifest + reusable prefetch/eval CLIs with JSON receipts.
+    - Pros: reproducible and auditable acceleration workflow.
+    - Cons: moderate script maintenance surface.
+  - Decision: Option B.
+
+- U2 (F-021/F-022) Reality:
+  - Diarization pipeline loaded lazily at first session-end call; startup did not prewarm it.
+  - Auto provider selection could choose non-whisper provider on Apple Silicon despite whisper.cpp speed benefits.
+  - Option A (minimal): docs-only recommendation.
+    - Pros: zero code risk.
+    - Cons: no runtime acceleration.
+  - Option B (comprehensive): background prewarm on startup + safe whisper.cpp preference hook with env override.
+    - Pros: concrete latency reduction path with operator control.
+    - Cons: additional startup logic and tests.
+  - Decision: Option B.
+
+Evidence log:
+
+- [2026-02-12 08:51] Implemented pinned manifest + HF acceleration scripts | Evidence:
+  - Added `server/config/hf_model_manifest.json` with pinned revisions for diarization and staged INT candidates
+  - Added `scripts/prefetch_hf_models.py` (prefetch + receipt)
+  - Added `scripts/eval_hf_models.py` (hosted eval + receipt)
+  - Added operator playbook: `docs/HF_PRO_ACCELERATION_PLAYBOOK_2026-02.md`
+
+- [2026-02-12 08:51] Implemented startup diarization prewarm + whisper.cpp preference | Evidence:
+  - Code:
+    - `server/services/diarization.py` -> `prewarm_diarization_pipeline(timeout_seconds=...)`
+    - `server/main.py` -> background prewarm task in lifespan startup/shutdown
+    - `server/main.py` -> `_prefer_whisper_cpp_for_apple_silicon(...)` env-controlled preference
+  - Docs:
+    - `docs/flows/AUD-007.md` updated with prewarm step
+    - `docs/TROUBLESHOOTING.md` updated with prefetch/eval commands
+
+- [2026-02-12 08:51] Verified code and scripts locally | Evidence:
+  - Command: `.venv/bin/python -m py_compile scripts/prefetch_hf_models.py scripts/eval_hf_models.py server/main.py server/services/diarization.py`
+  - Output: success (no errors)
+  - Command: `.venv/bin/pytest -q tests/test_diarization_prewarm.py tests/test_main_auto_select.py`
+  - Output: `5 passed in 0.84s`
+  - Command: `.venv/bin/python scripts/prefetch_hf_models.py --dry-run --group diarization --group int-008 --group int-009`
+  - Output: dry-run plan with receipt `docs/audit/artifacts/hf-prefetch-receipt-20260212T085111Z.json`
+  - Command: `.venv/bin/python scripts/eval_hf_models.py --dry-run --group int-008 --group int-009 --requests 2`
+  - Output: dry-run plan with receipt `docs/audit/artifacts/hf-eval-receipt-20260212T085111Z.json`
+  - Interpretation: Observed — runtime tooling is wired and verified in this environment.
+
+- [2026-02-12 08:51] Live token-backed execution status | Evidence:
+  - Command: `if [ -n "$ECHOPANEL_HF_TOKEN" ]; then echo "ECHOPANEL_HF_TOKEN=set"; else echo "ECHOPANEL_HF_TOKEN=unset"; fi`
+  - Output: `ECHOPANEL_HF_TOKEN=unset`
+  - Interpretation: Observed — live gated-model prefetch/eval cannot run in this shell without token export.
+
+- [2026-02-12 08:53] Ran non-dry public model prefetch/eval probes | Evidence:
+  - Command: `.venv/bin/python scripts/prefetch_hf_models.py --model sentence-transformers/all-MiniLM-L6-v2`
+  - Output: `downloaded` and receipt `docs/audit/artifacts/hf-prefetch-receipt-20260212T085317Z.json`
+  - Command: `.venv/bin/python scripts/eval_hf_models.py --model sentence-transformers/all-MiniLM-L6-v2 --requests 1`
+  - Output: `401 Unauthorized` and receipt `docs/audit/artifacts/hf-eval-receipt-20260212T085334Z.json`
+  - Interpretation: Observed — prefetch works for public model without token; hosted eval endpoint requires authentication in this environment.
+
+Status updates:
+
+- [2026-02-12 08:48] **IN_PROGRESS** 🟡 — ticket created and HF acceleration implementation started
+- [2026-02-12 08:51] **DONE** ✅ — implementation complete with tests and dry-run receipts; live token-backed run blocked by missing shell token

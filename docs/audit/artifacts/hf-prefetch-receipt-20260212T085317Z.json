@@ -1,0 +1,18 @@
+{
+  "dry_run": false,
+  "generated_at": "2026-02-12T08:53:17.334395+00:00",
+  "manifest": "server/config/hf_model_manifest.json",
+  "results": [
+    {
+      "cache_path": "/Users/pranay/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "elapsed_ms": 35181.7,
+      "gated": false,
+      "group": "int-009-baseline",
+      "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "status": "downloaded"
+    }
+  ],
+  "token_env": "ECHOPANEL_HF_TOKEN",
+  "type": "hf_prefetch_receipt"
+}

@@ -25,6 +25,9 @@ diarization = [
     "pyannote.audio==3.3.0",
     "torch==2.5.1",
 ]
+hf_tools = [
+    "huggingface_hub>=1.4.0",
+]
 
 [build-system]
 requires = ["setuptools>=69.0.0"]

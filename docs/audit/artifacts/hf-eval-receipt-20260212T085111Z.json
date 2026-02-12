@@ -1,0 +1,27 @@
+{
+  "dry_run": true,
+  "generated_at": "2026-02-12T08:51:11.676647+00:00",
+  "manifest": "server/config/hf_model_manifest.json",
+  "requests_per_model": 2,
+  "results": [
+    {
+      "model_id": "urchade/gliner_medium-v2.1",
+      "revision": "40ec419335d09393f298636f471328b722c6da9e",
+      "status": "planned",
+      "task": "token_classification"
+    },
+    {
+      "model_id": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "status": "planned",
+      "task": "feature_extraction"
+    },
+    {
+      "model_id": "google/embeddinggemma-300m",
+      "revision": "57c266a740f537b4dc058e1b0cda161fd15afa75",
+      "status": "planned",
+      "task": "feature_extraction"
+    }
+  ],
+  "type": "hf_eval_receipt"
+}

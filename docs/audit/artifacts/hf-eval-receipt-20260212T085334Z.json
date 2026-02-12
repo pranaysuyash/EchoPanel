@@ -1,0 +1,18 @@
+{
+  "dry_run": false,
+  "generated_at": "2026-02-12T08:53:34.529499+00:00",
+  "manifest": "server/config/hf_model_manifest.json",
+  "requests_per_model": 1,
+  "results": [
+    {
+      "errors": [
+        "Client error '401 Unauthorized' for url 'https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction' (Amz CF ID: F8QvmOUJxld8wnEFoTih8DYO83LbXZgv7t3QrC1X_Xv8PLM-O-rk2w==)\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+      ],
+      "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "status": "error",
+      "task": "feature_extraction"
+    }
+  ],
+  "type": "hf_eval_receipt"
+}

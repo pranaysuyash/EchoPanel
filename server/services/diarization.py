@@ -7,6 +7,7 @@ Segments are merged by speaker for cleaner output.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -46,6 +47,34 @@ def is_diarization_available() -> bool:
         return False
     token = os.getenv("ECHOPANEL_HF_TOKEN")
     return bool(token)
+
+
+async def prewarm_diarization_pipeline(timeout_seconds: float = 120.0) -> bool:
+    """
+    Preload the diarization pipeline so first real usage has lower latency.
+
+    Returns:
+        True when pipeline is loaded and resident, False otherwise.
+    """
+    if not is_diarization_available():
+        logger.info("Skipping diarization prewarm: dependencies or token unavailable")
+        return False
+
+    try:
+        pipeline = await asyncio.wait_for(asyncio.to_thread(_get_pipeline), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logger.warning("Diarization prewarm timed out after %.1fs", timeout_seconds)
+        return False
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.error("Diarization prewarm failed: %s", exc)
+        return False
+
+    if pipeline is None:
+        logger.warning("Diarization prewarm finished without a pipeline instance")
+        return False
+
+    logger.info("Diarization pipeline prewarmed successfully")
+    return True
 
 
 def _get_pipeline() -> Optional["Pipeline"]:

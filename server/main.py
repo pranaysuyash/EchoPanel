@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -12,6 +13,41 @@ from server.services.asr_stream import _get_default_config
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _prefer_whisper_cpp_for_apple_silicon(detector, profile, recommendation):
+    if not _env_flag("ECHOPANEL_PREFER_WHISPER_CPP", default=True):
+        return recommendation
+    if recommendation.provider == "whisper_cpp":
+        return recommendation
+    if not getattr(profile, "has_mps", False):
+        return recommendation
+
+    try:
+        whisper_available = detector._whisper_cpp_available()  # intentional use of detector probe
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("whisper.cpp availability check failed: %s", exc)
+        return recommendation
+
+    if not whisper_available:
+        return recommendation
+
+    model = "medium.en" if getattr(profile, "ram_gb", 0.0) >= 16 else "small.en"
+    recommendation.provider = "whisper_cpp"
+    recommendation.model = model
+    recommendation.chunk_seconds = 2
+    recommendation.compute_type = "q5_0"
+    recommendation.device = "gpu"
+    recommendation.vad_enabled = True
+    recommendation.reason = f"{recommendation.reason}; preferred whisper_cpp on Apple Silicon"
+    return recommendation
 
 
 def _auto_select_provider():
@@ -32,6 +68,7 @@ def _auto_select_provider():
         detector = CapabilityDetector()
         profile = detector.detect()
         recommendation = detector.recommend(profile)
+        recommendation = _prefer_whisper_cpp_for_apple_silicon(detector, profile, recommendation)
         
         # Set environment variables for the recommendation
         os.environ["ECHOPANEL_ASR_PROVIDER"] = recommendation.provider
@@ -71,6 +108,18 @@ async def lifespan(app: FastAPI):
         logger.error(f"Model preloading failed: {e}")
         # Continue anyway - will load on first request
 
+    diarization_prewarm_task: asyncio.Task[bool] | None = None
+    if _env_flag("ECHOPANEL_PREWARM_DIARIZATION", default=True):
+        try:
+            from server.services.diarization import prewarm_diarization_pipeline
+
+            timeout_seconds = float(os.getenv("ECHOPANEL_DIARIZATION_PREWARM_TIMEOUT", "120"))
+            diarization_prewarm_task = asyncio.create_task(
+                prewarm_diarization_pipeline(timeout_seconds=timeout_seconds)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to start diarization prewarm task: {e}")
+
     # Initialize ASR providers (legacy check)
     try:
         provider = ASRProviderRegistry.get_provider()
@@ -83,6 +132,13 @@ async def lifespan(app: FastAPI):
         # Don't raise here to allow server to start even if ASR fails
 
     yield
+
+    if diarization_prewarm_task and not diarization_prewarm_task.done():
+        diarization_prewarm_task.cancel()
+        try:
+            await diarization_prewarm_task
+        except asyncio.CancelledError:
+            pass
 
     try:
         from server.services.model_preloader import shutdown_model_manager

@@ -1,0 +1,58 @@
+{
+  "version": "2026-02-12",
+  "description": "Pinned Hugging Face models for diarization and staged INT-008/INT-009 evaluation.",
+  "models": [
+    {
+      "id": "pyannote/speaker-diarization-3.1",
+      "revision": "84fd25912480287da0247647c3d2b4853cb3ee5d",
+      "group": "diarization",
+      "gated": true,
+      "prefetch": true,
+      "eval": null
+    },
+    {
+      "id": "urchade/gliner_medium-v2.1",
+      "revision": "40ec419335d09393f298636f471328b722c6da9e",
+      "group": "int-008",
+      "gated": false,
+      "prefetch": true,
+      "eval": {
+        "task": "token_classification",
+        "input": "Action item: finalize SOC2 checklist and legal review by Friday."
+      }
+    },
+    {
+      "id": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "group": "int-009",
+      "gated": false,
+      "prefetch": true,
+      "eval": {
+        "task": "feature_extraction",
+        "input": "Summarize decisions and risks from today's architecture review."
+      }
+    },
+    {
+      "id": "google/embeddinggemma-300m",
+      "revision": "57c266a740f537b4dc058e1b0cda161fd15afa75",
+      "group": "int-009",
+      "gated": false,
+      "prefetch": true,
+      "eval": {
+        "task": "feature_extraction",
+        "input": "Extract semantic vectors for retrieval over meeting transcripts."
+      }
+    },
+    {
+      "id": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "group": "int-009-baseline",
+      "gated": false,
+      "prefetch": true,
+      "eval": {
+        "task": "feature_extraction",
+        "input": "Fallback embedding baseline for low-latency semantic search."
+      }
+    }
+  ]
+}

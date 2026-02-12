@@ -146,3 +146,7 @@ Checks:
 - Set `ECHOPANEL_HF_TOKEN` and enable diarization:
   - `scripts/run-dev-all.sh --asr --diarization`
 - Confirm `pyannote.audio` and `torch` are installed in the active venv.
+- Prefetch pinned HF models (recommended before subscription expiry):
+  - `.venv/bin/python scripts/prefetch_hf_models.py --group diarization`
+- Probe hosted model latency/availability for staged INT flows:
+  - `.venv/bin/python scripts/eval_hf_models.py --group int-008 --group int-009 --requests 3`
