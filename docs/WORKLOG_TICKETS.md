@@ -1250,3 +1250,653 @@ Status updates:
 - [2026-02-12 08:48] **IN_PROGRESS** 🟡 — ticket created and HF acceleration implementation started
 - [2026-02-12 08:51] **DONE** ✅ — implementation complete with tests and dry-run receipts; live token-backed run blocked by missing shell token
 - [2026-02-12 09:06] **DONE** ✅ — U4 complete (`F-024`) with discovery tooling + candidate receipt
+
+### TCK-20260212-003 :: Implement Free Beta Gating (MON-001)
+
+Type: FEATURE
+Owner: Pranay (agent: Implementation)
+Created: 2026-02-12 (local time)
+Status: **IN_PROGRESS** 🟡
+Priority: P0
+
+Description:
+Implement invite code validation, session limits (20 sessions/month), and upgrade prompts for free beta tier. Enables controlled beta access and drives conversion to paid tier.
+
+Scope contract:
+
+- In-scope:
+  - Invite code validation system
+  - Session counter and limits enforcement
+  - Upgrade prompts when limits reached
+  - Admin tool for invite code generation
+  - Audit logging of invite code usage
+- Out-of-scope:
+  - Payment processing (separate ticket)
+  - Full subscription management (separate ticket)
+- Behavior change allowed: YES (new gating logic)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/BetaGatingManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/SessionStore.swift` (modification - add session count)
+  - `macapp/MeetingListenerApp/Sources/OnboardingView.swift` (modification - invite code step)
+  - `macapp/MeetingListenerApp/Sources/AppState.swift` (modification - check limits)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (modification - show usage)
+  - `server/api/invite_codes.py` (new - optional admin endpoint)
+  - `server/config/invite_codes.json` (new - or hardcoded list)
+  - `tests/test_beta_gating.py` (new)
+  - `docs/PRICING.md` (update - reflect implementation)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [x] Invite code entry UI in Settings or Onboarding
+- [x] Session counter persisted in SessionStore (via BetaGatingManager)
+- [x] Session limit enforcement with grace period (20 sessions/month default)
+- [x] Upgrade prompt appears when limit reached
+- [x] Grace period allows existing session to complete
+- [x] Admin tool to generate invite codes
+- [x] Audit log of invite code usage
+- [x] Tests for session counting and limit enforcement
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.1 Free Beta Gating (2-3 weeks)
+  - Flow ID: MON-001 (Free Beta Access)
+  - Interpretation: Observed — ticket created for critical business flow
+
+- [2026-02-12 15:20] Created BetaGatingManager.swift | Evidence:
+  - File: macapp/MeetingListenerApp/Sources/BetaGatingManager.swift (210 lines)
+  - Features: Invite code validation, session counting, limit enforcement, upgrade prompts
+  - Storage: ~/Library/Application Support/com.echopanel/beta_access.json
+  - Default session limit: 20 sessions/month
+  - Hardcoded invite codes: ECHOPANEL-BETA-2024, ECHOPANEL-EARLY-ACCESS, ECHOPANEL-ALPHA-V2
+  - Interpretation: Observed — BetaGatingManager implementation complete
+
+- [2026-02-12 15:22] Updated SessionStore.swift to emit sessionEnded notification | Evidence:
+  - Added: .sessionEnded notification when session ends (line 106)
+  - Added: sessionEnded to Notification.Name extension (line 328)
+  - Interpretation: Observed — SessionStore now notifies on session completion
+
+- [2026-02-12 15:23] Updated BetaGatingManager to listen for sessionEnded notification | Evidence:
+  - Added: NotificationCenter observer in init() (lines 94-100)
+  - Added: handleSessionEnded() method to increment session count (lines 105-110)
+  - Interpretation: Observed — BetaGatingManager automatically tracks sessions
+
+- [2026-02-12 15:24] Updated AppState.swift to check session limits | Evidence:
+  - Added: Beta gating guard clause in startSession() (lines 546-551)
+  - Blocks session start when limit reached
+  - Error message: "Session limit reached. You have used all 20 sessions this month. Upgrade to Pro for unlimited sessions."
+  - Interpretation: Observed — Session limit enforcement integrated
+
+- [2026-02-12 15:25] Updated SettingsView to add Beta Access section | Evidence:
+  - Added: @ObservedObject var betaGating (line 330)
+  - Added: "Beta Access" section in generalSettingsTab (lines 458-493)
+  - Shows: Beta access status, session count, session limit, invite code
+  - UI: TextField for invite code entry, validation feedback
+  - Interpretation: Observed — UI for invite code entry and usage display
+
+- [2026-02-12 15:26] Created admin tool script for invite code generation | Evidence:
+  - File: scripts/generate_invite_code.py (165 lines)
+  - Commands: generate, batch, use, list, export
+  - Features: Random code generation, audit logging, JSON storage
+  - Storage: server/config/invite_codes.json
+  - Audit log: Tracks generation and usage of codes
+  - Interpretation: Observed — Admin tool for invite code management
+
+- [2026-02-12 15:27] Created BetaGatingManagerTests.swift | Evidence:
+  - File: macapp/MeetingListenerAppTests/BetaGatingManagerTests.swift (150 lines)
+  - Tests: 12 test cases covering validation, session counting, limits, upgrade prompts
+  - Coverage: Valid/invalid codes, case insensitivity, trimming, session increment, limit checks
+  - Interpretation: Observed — Test coverage for beta gating functionality
+
+- [2026-02-12 15:28] Built Swift project successfully | Evidence:
+  - Command: cd macapp/MeetingListenerApp && swift build
+  - Output: "Build complete! (3.74s)"
+  - No compilation errors
+  - Interpretation: Observed — All Swift code compiles successfully
+
+- [2026-02-12 15:30] Verified admin tool script | Evidence:
+  - Command: chmod +x scripts/generate_invite_code.py
+  - Script is executable
+  - Tested: python scripts/generate_invite_code.py --help
+  - Interpretation: Observed — Admin tool is ready to use
+
+- [2026-02-12 15:34] Ran full Swift test suite | Evidence:
+  - Command: cd macapp/MeetingListenerApp && swift test
+  - Output: "Test Suite 'All tests' passed ... Executed 66 tests, with 0 failures (0 unexpected) in 10.883 (10.894) seconds"
+  - All tests passing
+  - No regressions introduced
+  - Interpretation: Observed — Test suite passes with beta gating changes
+
+- [2026-02-12 15:35] Created server/config/invite_codes.json | Evidence:
+  - File: server/config/invite_codes.json
+  - Structure: {"codes": [], "audit_log": []}
+  - Ready for admin tool to populate
+  - Interpretation: Observed — Invite codes storage initialized
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+- [2026-02-12 15:20] **IN_PROGRESS** 🟡 — implementing beta gating functionality
+- [2026-02-12 15:30] **IN_PROGRESS** 🟡 — core implementation complete, testing ready
+
+Next actions:
+
+1. [x] Implement invite code validation system
+2. [x] Add session counter and limits
+3. [x] Create upgrade prompts
+4. [x] Write tests
+5. [ ] Run full test suite
+6. [ ] Update PRICING.md documentation
+7. [ ] Stage and commit changes
+
+---
+
+### TCK-20260212-004 :: Implement Pro/Paid Subscription (MON-002)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Integrate StoreKit for in-app purchases (IAP), subscription management (Monthly/Annual), purchase flow, receipt validation, and subscription status tracking. Enables revenue generation.
+
+Scope contract:
+
+- In-scope:
+  - StoreKit integration for IAP
+  - Monthly and Annual subscription tiers
+  - Purchase flow (from upgrade prompt and Settings)
+  - Receipt validation with Apple servers
+  - Subscription status tracking (Keychain)
+  - Restore Purchases functionality
+  - Entitlement checks before Pro features
+- Out-of-scope:
+  - License key validation (separate ticket)
+  - Usage limits (separate ticket)
+- Behavior change allowed: YES (new subscription logic)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/SubscriptionManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/ReceiptValidator.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/EntitlementsManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (modification - subscription section)
+  - `macapp/MeetingListenerApp/Sources/UpgradePromptView.swift` (new)
+  - `macapp/MeetingListenerApp/App.entitlements` (modification - add StoreKit)
+  - `macapp/MeetingListenerApp/Package.swift` (modification - add StoreKit dependency)
+  - `tests/test_subscription.py` (new)
+  - `tests/test_receipt_validation.py` (new)
+  - `docs/PRICING.md` (update - reflect implementation)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] StoreKit products configured in App Store Connect
+- [ ] Purchase UI available from upgrade prompt and Settings
+- [ ] Monthly and Annual subscription tiers
+- [ ] Receipt validation with Apple servers
+- [ ] Subscription status persisted in Keychain
+- [ ] Restore Purchases functionality
+- [ ] Entitlement checks before Pro features
+- [ ] Handle subscription expiry/cancellation
+- [ ] Error handling for network failures
+- [ ] Tests for receipt validation and subscription management
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.2 Pro/Paid Subscription (4-6 weeks)
+  - Flow ID: MON-002 (Pro/Paid Subscription)
+  - Interpretation: Observed — ticket created for critical revenue flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Configure StoreKit products in App Store Connect
+3. Implement StoreKit integration
+4. Add receipt validation
+5. Create purchase UI
+6. Write tests
+
+---
+
+### TCK-20260212-005 :: Implement License Key Validation (MON-003)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement license key entry, Gumroad API integration (or manual validation), license validation on app launch, license status persistence, and feature gating based on license.
+
+Scope contract:
+
+- In-scope:
+  - License key entry UI
+  - Gumroad API integration (or validation API)
+  - License validation on app launch
+  - License status persistence (Keychain)
+  - Feature gates based on license type (Standard/Pro)
+  - Handle license expiry
+- Out-of-scope:
+  - Full subscription management (separate ticket)
+  - Payment processing (separate ticket)
+- Behavior change allowed: YES (new license validation logic)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/LicenseManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/GumroadAPI.swift` (new - optional)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (modification - license key field)
+  - `server/api/license_validation.py` (new - optional)
+  - `tests/test_license_validation.py` (new)
+  - `docs/LICENSING.md` (update - reflect implementation)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] License key entry field in Settings
+- [ ] Gumroad API integration (or validation API)
+- [ ] License validation on app launch
+- [ ] License status persisted in Keychain
+- [ ] Feature gates based on license type (Standard/Pro)
+- [ ] Handle license expiry
+- [ ] Error messages for invalid/expired keys
+- [ ] "Validate License" button
+- [ ] Tests for license validation scenarios
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.3 License Key Validation (2-3 weeks)
+  - Flow ID: MON-003 (License Key Validation)
+  - Interpretation: Observed — ticket created for alternative monetization flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Decide: Gumroad webhook or manual validation
+3. Implement license validation logic
+4. Add license key UI
+5. Write tests
+
+---
+
+### TCK-20260212-006 :: Implement Usage Limits Enforcement (MON-004)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement feature-based limits (Free vs Pro), session-based limits (Free tier only), feature gates for Pro features, usage display in Settings, and limit exceeded handling.
+
+Scope contract:
+
+- In-scope:
+  - Feature gates implemented for Free/Pro tiers
+  - Session limits for Free tier (e.g., 20/month)
+  - Feature gates defined (ASR models, diarization, export formats, etc.)
+  - Usage statistics display in Settings
+  - Graceful error messages when limits exceeded
+  - Upgrade prompts for limited features
+  - Reset mechanism for monthly limits
+- Out-of-scope:
+  - Subscription management (separate ticket)
+  - License validation (separate ticket)
+- Behavior change allowed: YES (new limit enforcement logic)
+
+Targets:
+
+- Surfaces: macapp | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/UsageTracker.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/FeatureGates.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (modification - usage display)
+  - `macapp/MeetingListenerApp/Sources/AppState.swift` (modification - check feature gates)
+  - `macapp/MeetingListenerApp/UsageStats.json` (new - or embed in SessionStore)
+  - `tests/test_feature_gates.py` (new)
+  - `tests/test_usage_limits.py` (new)
+  - `docs/PRICING.md` (update - reflect implementation)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] Feature gates implemented for:
+  - ASR model selection (Free: Base only, Pro: All)
+  - Diarization (Free: Optional, Pro: Enabled)
+  - Export formats (Free: Markdown only, Pro: All formats)
+  - Session history (Free: Last 10 sessions, Pro: Unlimited)
+  - RAG documents (Free: 5 documents, Pro: Unlimited)
+  - API Access (Free: None, Pro: Full access)
+- [ ] Session limits for Free tier (20/month default)
+- [ ] Usage statistics display in Settings
+- [ ] Graceful error messages when limits exceeded
+- [ ] Upgrade prompts for limited features
+- [ ] Reset mechanism for monthly limits
+- [ ] Tests for feature gates and limit enforcement
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.4 Usage Limits Enforcement (1-2 weeks)
+  - Flow ID: MON-004 (Usage Limits Enforcement)
+  - Interpretation: Observed — ticket created for feature gating flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Define feature gate matrix (Free vs Pro)
+3. Implement usage tracker
+4. Add feature gates to AppState
+5. Create usage display UI
+6. Write tests
+
+---
+
+### TCK-20260212-007 :: Implement User Account Creation (AUTH-001)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement user account signup UI, email verification flow, password strength validation, account creation API, and user profile storage. Enables multi-user support.
+
+Scope contract:
+
+- In-scope:
+  - Account signup UI with email/password
+  - Email verification flow
+  - Password strength requirements
+  - Account creation API endpoint
+  - User profile stored in local database
+  - Error handling for duplicate emails
+  - Onboarding integration (signup after onboarding)
+- Out-of-scope:
+  - Login/Sign In (separate ticket)
+  - Password reset (separate ticket)
+- Behavior change allowed: YES (new account creation flow)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/SignupView.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AccountManager.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/EmailVerificationView.swift` (new)
+  - `server/api/accounts.py` (new - account creation endpoint)
+  - `server/services/auth.py` (new - authentication service)
+  - `server/database/users.db` (new - SQLite)
+  - `tests/test_account_creation.py` (new)
+  - `tests/test_email_verification.py` (new)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] Signup screen with email/password
+- [ ] Email verification flow
+- [ ] Password strength requirements
+- [ ] Account creation API endpoint
+- [ ] User profile stored in local database
+- [ ] Error handling for duplicate emails
+- [ ] Onboarding integration (signup after onboarding)
+- [ ] Tests for signup flow and verification
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.5 User Account Creation (3-4 weeks)
+  - Flow ID: AUTH-001 (User Account Creation)
+  - Interpretation: Observed — ticket created for multi-user support
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Design database schema for users
+3. Implement account creation API
+4. Create signup UI
+5. Integrate email verification service
+6. Write tests
+
+---
+
+### TCK-20260212-008 :: Implement Login/Sign In (AUTH-002)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement login UI, authentication API, session management, remember me functionality, and password reset flow. Enables user authentication.
+
+Scope contract:
+
+- In-scope:
+  - Login screen with email/password
+  - Authentication API endpoint
+  - Session token generation and storage
+  - "Remember me" checkbox
+  - Password reset flow (email link)
+  - Auto-login on app launch (if "remember me")
+  - Error handling for invalid credentials
+  - Rate limiting for login attempts
+- Out-of-scope:
+  - User account creation (separate ticket)
+  - Logout (separate ticket)
+- Behavior change allowed: YES (new authentication flow)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/LoginView.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AccountManager.swift` (extension - login logic)
+  - `macapp/MeetingListenerApp/Sources/PasswordResetView.swift` (new)
+  - `server/api/auth.py` (new - login endpoint)
+  - `server/services/auth.py` (extension - JWT token generation)
+  - `tests/test_login.py` (new)
+  - `tests/test_password_reset.py` (new)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] Login screen with email/password
+- [ ] Authentication API endpoint
+- [ ] Session token generation and storage (Keychain)
+- [ ] "Remember me" checkbox
+- [ ] Password reset flow (email link)
+- [ ] Auto-login on app launch (if "remember me")
+- [ ] Error handling for invalid credentials
+- [ ] Rate limiting for login attempts
+- [ ] Tests for login flow and password reset
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.6 Login/Sign In (2-3 weeks)
+  - Flow ID: AUTH-002 (Login/Sign In)
+  - Interpretation: Observed — ticket created for authentication flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Implement authentication API (JWT)
+3. Create login UI
+4. Implement password reset flow
+5. Add session management
+6. Write tests
+
+---
+
+### TCK-20260212-009 :: Implement User Logout/Sign Out (AUTH-003)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement logout UI, session invalidation, optional local data clearing, and return to login screen. Enables user session termination.
+
+Scope contract:
+
+- In-scope:
+  - Logout button in Settings or Menu Bar
+  - Client-side session invalidation
+  - Optional server-side session invalidation
+  - Option to clear local data on logout
+  - Confirmation dialog before logout
+  - Return to login screen after logout
+- Out-of-scope:
+  - User profile management (separate ticket)
+- Behavior change allowed: YES (new logout flow)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/SettingsView.swift` (modification - logout button)
+  - `macapp/MeetingListenerApp/Sources/AccountManager.swift` (extension - logout logic)
+  - `server/api/auth.py` (extension - optional session invalidation)
+  - `tests/test_logout.py` (new)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] Logout button in Settings or Menu Bar
+- [ ] Client-side session invalidation
+- [ ] Optional server-side session invalidation
+- [ ] Option to clear local data on logout
+- [ ] Confirmation dialog before logout
+- [ ] Return to login screen after logout
+- [ ] Tests for logout flow
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.7 User Logout/Sign Out (1 week)
+  - Flow ID: AUTH-003 (User Logout/Sign Out)
+  - Interpretation: Observed — ticket created for logout flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Add logout button to Settings
+3. Implement logout logic
+4. Add confirmation dialog
+5. Write tests
+
+---
+
+### TCK-20260212-010 :: Implement User Profile Management (AUTH-004)
+
+Type: FEATURE
+Owner: TBD
+Created: 2026-02-12 (local time)
+Status: **OPEN** 🔵
+Priority: P0
+
+Description:
+Implement profile settings UI, email change flow, password change flow, account deletion flow, and profile display. Enables user account management.
+
+Scope contract:
+
+- In-scope:
+  - Profile settings screen
+  - Display account email, tier, created date
+  - Change email flow (with verification)
+  - Change password flow
+  - Delete account flow (with confirmation)
+  - Update account settings API
+  - Error handling for all flows
+- Out-of-scope:
+  - User account creation (separate ticket)
+- Behavior change allowed: YES (new profile management flow)
+
+Targets:
+
+- Surfaces: macapp | server | docs
+- Files:
+  - `macapp/MeetingListenerApp/Sources/ProfileView.swift` (new)
+  - `macapp/MeetingListenerApp/Sources/AccountManager.swift` (extension - profile management)
+  - `server/api/accounts.py` (extension - profile endpoints)
+  - `tests/test_profile_management.py` (new)
+  - `docs/WORKLOG_TICKETS.md` (this ticket)
+
+Acceptance criteria:
+
+- [ ] Profile settings screen
+- [ ] Display account email, tier, created date
+- [ ] Change email flow (with verification)
+- [ ] Change password flow
+- [ ] Delete account flow (with confirmation)
+- [ ] Update account settings API
+- [ ] Error handling for all flows
+- [ ] Tests for profile management flows
+
+Evidence log:
+
+- [2026-02-12] Created implementation ticket based on IMPLEMENTATION_ROADMAP_v1.0.md | Evidence:
+  - Phase 1.8 User Profile Management (2-3 weeks)
+  - Flow ID: AUTH-004 (User Profile Management)
+  - Interpretation: Observed — ticket created for account management flow
+
+Status updates:
+
+- [2026-02-12] **OPEN** 🔵 — awaiting assignment/implementation
+
+Next actions:
+
+1. Assign owner
+2. Create profile settings UI
+3. Implement profile management API
+4. Add email change flow
+5. Add password change flow
+6. Add account deletion flow
+7. Write tests
+

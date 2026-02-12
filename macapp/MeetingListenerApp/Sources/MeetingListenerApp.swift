@@ -328,6 +328,7 @@ private struct DemoPanelView: View {
 struct SettingsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var backendManager: BackendManager
+    @ObservedObject var betaGating = BetaGatingManager.shared
     
     @AppStorage("whisperModel") private var whisperModel = "base.en"
     @AppStorage("backendHost") private var backendHost = "127.0.0.1"
@@ -452,6 +453,53 @@ struct SettingsView: View {
                     backendManager.stopServer()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                         backendManager.startServer()
+                    }
+                }
+            }
+            
+            Section("Beta Access") {
+                if betaGating.isBetaAccessGranted {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Beta access granted")
+                                .font(.subheadline)
+                        }
+                        
+                        Text("Sessions this month: \(betaGating.sessionsThisMonth) / \(betaGating.sessionLimit)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if betaGating.sessionsThisMonth >= betaGating.sessionLimit {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Session limit reached")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        
+                        Text("Invite code: \(betaGating.validatedInviteCode ?? "Unknown")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    TextField("Enter invite code", text: Binding(
+                        get: { "" },
+                        set: { code in
+                            if !code.isEmpty {
+                                _ = betaGating.validateInviteCode(code)
+                            }
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    
+                    if !betaGating.isBetaAccessGranted {
+                        Text("Invalid invite code. Please check your code and try again.")
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                 }
             }

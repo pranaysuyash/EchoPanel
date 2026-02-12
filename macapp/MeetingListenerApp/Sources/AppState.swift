@@ -542,6 +542,13 @@ final class AppState: ObservableObject {
 
     func startSession() {
         guard sessionState != .listening && sessionState != .starting else { return }
+        
+        // Beta gating: Check if user can start a session
+        guard BetaGatingManager.shared.canStartSession() else {
+            setSessionError(.backendNotReady(detail: "Session limit reached. You have used all \(BetaGatingManager.shared.sessionLimit) sessions this month. Upgrade to Pro for unlimited sessions."))
+            return
+        }
+        
         resetSession()
         sessionState = .starting
         statusMessage = "Requesting permission"

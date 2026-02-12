@@ -104,6 +104,7 @@ final class SessionStore: ObservableObject {
         
         NSLog("SessionStore: Ended session \(sessionId)")
         NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
+        NotificationCenter.default.post(name: .sessionEnded, object: nil, userInfo: ["session_id": sessionId])
     }
     
     // MARK: - Data Persistence
@@ -324,4 +325,5 @@ final class SessionStore: ObservableObject {
 
 extension Notification.Name {
     static let sessionAutoSaveRequested = Notification.Name("sessionAutoSaveRequested")
+    static let sessionEnded = Notification.Name("sessionEnded")
 }

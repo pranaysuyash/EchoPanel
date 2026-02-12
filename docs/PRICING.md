@@ -10,10 +10,13 @@
 
 ### Free Beta (Invite-only)
 
-- Limited sessions per month (suggested: 10–20). **Inferred**
+- Limited sessions per month (20 sessions/month). **Observed**: `macapp/MeetingListenerApp/Sources/BetaGatingManager.swift` - sessionLimit = 20
+- Invite code validation required. **Observed**: `macapp/MeetingListenerApp/Sources/BetaGatingManager.swift` - validateInviteCode()
 - Basic transcript + cards (Actions/Decisions/Risks/Entities). **Observed**: current features in `docs/FEATURES.md`
 - Export Markdown + JSON. **Observed**: `docs/FEATURES.md`
 - Local-only processing by default. **Observed**: distribution plan emphasizes local bundle (`docs/DISTRIBUTION_PLAN_v0.2.md`)
+- Admin tool for invite code generation. **Observed**: `scripts/generate_invite_code.py` - generate, batch, use, list, export commands
+- Audit logging for invite code usage. **Observed**: `scripts/generate_invite_code.py` - audit_log tracking generation and usage
 
 ### Pro (Paid)
 
