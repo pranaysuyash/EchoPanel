@@ -5,6 +5,7 @@ Tests backpressure handling, transcript ordering, and ASR provider thread safety
 """
 
 import asyncio
+import os
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -241,3 +242,77 @@ class TestQueueConfig:
             else:
                 os.environ.pop("ECHOPANEL_AUDIO_QUEUE_MAX", None)
             reload(wsl)
+
+
+class TestDebugAudioDumpCleanup:
+    """Tests for debug audio dump retention policy."""
+
+    def test_cleanup_removes_expired_files(self, tmp_path, monkeypatch):
+        import server.api.ws_live_listener as wsl
+
+        old_file = tmp_path / "old.pcm"
+        fresh_file = tmp_path / "fresh.pcm"
+        old_file.write_bytes(b"old")
+        fresh_file.write_bytes(b"fresh")
+
+        now = 1_000.0
+        os.utime(old_file, (now - 120, now - 120))
+        os.utime(fresh_file, (now - 10, now - 10))
+
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP", True)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_DIR", tmp_path)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS", 60)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_FILES", 100)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", 1024)
+
+        wsl._cleanup_audio_dump_dir(now=now)
+
+        assert not old_file.exists()
+        assert fresh_file.exists()
+
+    def test_cleanup_enforces_max_file_count(self, tmp_path, monkeypatch):
+        import server.api.ws_live_listener as wsl
+
+        files = []
+        now = 2_000.0
+        for idx in range(4):
+            file_path = tmp_path / f"dump-{idx}.pcm"
+            file_path.write_bytes(b"x")
+            os.utime(file_path, (now + idx, now + idx))
+            files.append(file_path)
+
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP", True)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_DIR", tmp_path)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS", 0)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_FILES", 2)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", 1024)
+
+        wsl._cleanup_audio_dump_dir(now=now + 10)
+
+        remaining = sorted(path.name for path in tmp_path.glob("*.pcm"))
+        assert remaining == ["dump-2.pcm", "dump-3.pcm"]
+
+    def test_cleanup_enforces_total_size(self, tmp_path, monkeypatch):
+        import server.api.ws_live_listener as wsl
+
+        now = 3_000.0
+        a = tmp_path / "a.pcm"
+        b = tmp_path / "b.pcm"
+        c = tmp_path / "c.pcm"
+        a.write_bytes(b"a" * 5)
+        b.write_bytes(b"b" * 5)
+        c.write_bytes(b"c" * 5)
+        os.utime(a, (now, now))
+        os.utime(b, (now + 1, now + 1))
+        os.utime(c, (now + 2, now + 2))
+
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP", True)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_DIR", tmp_path)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS", 0)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_FILES", 100)
+        monkeypatch.setattr(wsl, "DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", 10)
+
+        wsl._cleanup_audio_dump_dir(now=now + 10)
+
+        remaining = sorted(path.name for path in tmp_path.glob("*.pcm"))
+        assert remaining == ["b.pcm", "c.pcm"]

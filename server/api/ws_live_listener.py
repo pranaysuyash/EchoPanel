@@ -27,6 +27,11 @@ DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 QUEUE_MAX = int(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX", "48"))
 DEBUG_AUDIO_DUMP = os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP", "0") == "1"
 DEBUG_AUDIO_DUMP_DIR = Path(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_DIR", "/tmp/echopanel_audio_dump"))
+DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS = int(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS", "86400"))
+DEBUG_AUDIO_DUMP_MAX_FILES = int(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_FILES", "200"))
+DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES = int(
+    os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", str(512 * 1024 * 1024))
+)
 WS_AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
 
 
@@ -201,6 +206,7 @@ def _init_audio_dump(state: SessionState, source: str) -> None:
     
     try:
         DEBUG_AUDIO_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+        _cleanup_audio_dump_dir()
         timestamp = int(time.time())
         session_id = state.session_id or "unknown"
         filename = f"{session_id}_{source}_{timestamp}.pcm"
@@ -238,6 +244,67 @@ def _close_audio_dumps(state: SessionState) -> None:
             logger.error(f"Failed to close audio dump for {source}: {e}")
     
     state.debug_dump_files.clear()
+
+
+def _cleanup_audio_dump_dir(now: Optional[float] = None) -> None:
+    """Apply retention limits to debug dump files (age/file-count/total-size)."""
+    if not DEBUG_AUDIO_DUMP:
+        return
+
+    try:
+        DEBUG_AUDIO_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Failed to prepare debug dump directory: {e}")
+        return
+
+    entries: list[tuple[Path, os.stat_result]] = []
+    for path in DEBUG_AUDIO_DUMP_DIR.glob("*.pcm"):
+        try:
+            entries.append((path, path.stat()))
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.warning(f"Failed to inspect debug dump file {path}: {e}")
+
+    if not entries:
+        return
+
+    entries.sort(key=lambda item: item[1].st_mtime)  # oldest first
+    cutoff = (now or time.time()) - DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS
+    kept_entries: list[tuple[Path, os.stat_result]] = []
+
+    for path, stat_result in entries:
+        if DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS > 0 and stat_result.st_mtime < cutoff:
+            try:
+                path.unlink(missing_ok=True)
+                logger.info(f"Removed expired audio dump: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove expired debug dump {path}: {e}")
+            continue
+        kept_entries.append((path, stat_result))
+
+    if DEBUG_AUDIO_DUMP_MAX_FILES > 0 and len(kept_entries) > DEBUG_AUDIO_DUMP_MAX_FILES:
+        over_limit = len(kept_entries) - DEBUG_AUDIO_DUMP_MAX_FILES
+        for path, _ in kept_entries[:over_limit]:
+            try:
+                path.unlink(missing_ok=True)
+                logger.info(f"Removed excess audio dump: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove excess debug dump {path}: {e}")
+        kept_entries = kept_entries[over_limit:]
+
+    if DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES > 0:
+        total_bytes = sum(stat_result.st_size for _, stat_result in kept_entries)
+        if total_bytes > DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES:
+            for path, stat_result in kept_entries:
+                if total_bytes <= DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES:
+                    break
+                try:
+                    path.unlink(missing_ok=True)
+                    total_bytes -= stat_result.st_size
+                    logger.info(f"Removed oversized audio dump: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove oversized debug dump {path}: {e}")
 
 
 def get_queue(state: SessionState, source: str) -> asyncio.Queue:
