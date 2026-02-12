@@ -281,6 +281,15 @@ class ASRProvider(ABC):
         """
         return []
 
+    async def unload(self) -> None:
+        """Release provider-held resources.
+        
+        Providers that keep model/process state should override this to free memory
+        and stop background work. Default implementation is a no-op.
+        """
+        self._health.model_resident = False
+        self._health.model_loaded_at = None
+
     def log(self, msg: str) -> None:
         """Debug logging helper."""
         logger.debug(f"[{self.name}] {msg}")
@@ -368,3 +377,18 @@ class ASRProviderRegistry:
                     "error": str(e),
                 }
         return result
+
+    @classmethod
+    def evict_provider_instance(cls, provider: ASRProvider) -> int:
+        """Evict a provider instance from the cache.
+        
+        Returns:
+            Number of cache entries removed.
+        """
+        removed = 0
+        with cls._get_lock():
+            keys_to_remove = [key for key, value in cls._instances.items() if value is provider]
+            for key in keys_to_remove:
+                cls._instances.pop(key, None)
+                removed += 1
+        return removed

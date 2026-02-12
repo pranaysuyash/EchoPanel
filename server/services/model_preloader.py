@@ -17,6 +17,7 @@ Usage:
 """
 
 import asyncio
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ class ModelState(Enum):
     UNINITIALIZED = auto()
     LOADING = auto()
     WARMING_UP = auto()
+    UNLOADING = auto()
     READY = auto()
     ERROR = auto()
 
@@ -138,21 +140,32 @@ class ModelManager:
         Returns:
             True if initialization succeeded
         """
+        should_wait_for_existing_load = False
         async with self._lock:
             if self._state == ModelState.READY:
                 return True
-            
-            if self._state == ModelState.LOADING:
-                # Another task is loading, wait for it
-                async with self._lock:
-                    pass  # Release lock and wait below
-                try:
-                    await asyncio.wait_for(self._ready_event.wait(), timeout=timeout)
-                    return self._state == ModelState.READY
-                except asyncio.TimeoutError:
-                    return False
-            
-            self._state = ModelState.LOADING
+
+            if self._state in {ModelState.LOADING, ModelState.WARMING_UP}:
+                should_wait_for_existing_load = True
+            elif self._state == ModelState.UNLOADING:
+                logger.warning("Model initialization requested while unloading")
+                return False
+
+            if should_wait_for_existing_load:
+                pass
+            else:
+                self._ready_event.clear()
+                self._last_error = None
+                self._load_time_ms = 0.0
+                self._warmup_time_ms = 0.0
+                self._state = ModelState.LOADING
+
+        if should_wait_for_existing_load:
+            try:
+                await asyncio.wait_for(self._ready_event.wait(), timeout=timeout)
+                return self._state == ModelState.READY
+            except asyncio.TimeoutError:
+                return False
         
         try:
             # Phase 1: Load model
@@ -160,6 +173,9 @@ class ModelManager:
             start = time.time()
             
             if not await self._load_model():
+                async with self._lock:
+                    self._state = ModelState.ERROR
+                    self._ready_event.set()
                 return False
             
             self._load_time_ms = (time.time() - start) * 1000
@@ -274,6 +290,55 @@ class ModelManager:
                 await asyncio.sleep(remaining / 1000)
             
             logger.debug(f"Level 3 complete: {iterations} iterations")
+
+    async def _run_provider_hook(self, provider: ASRProvider, hook_name: str, timeout: float) -> None:
+        hook = getattr(provider, hook_name, None)
+        if not callable(hook):
+            return
+        maybe_awaitable = hook()
+        if inspect.isawaitable(maybe_awaitable):
+            await asyncio.wait_for(maybe_awaitable, timeout=timeout)
+
+    def _reset_runtime_state_locked(self) -> None:
+        self._provider = None
+        self._load_time_ms = 0.0
+        self._warmup_time_ms = 0.0
+        self._inference_count = 0
+        self._total_inference_time_ms = 0.0
+        self._ready_event.clear()
+
+    async def unload(self, timeout: float = 10.0) -> bool:
+        """Unload the active provider and reset manager state."""
+        async with self._lock:
+            provider = self._provider
+            if provider is None and self._state == ModelState.UNINITIALIZED:
+                self._reset_runtime_state_locked()
+                self._last_error = None
+                return True
+            self._state = ModelState.UNLOADING
+            self._last_error = None
+            self._ready_event.clear()
+
+        try:
+            if provider is not None:
+                await self._run_provider_hook(provider, "stop_session", timeout=timeout)
+                await self._run_provider_hook(provider, "unload", timeout=timeout)
+                removed = ASRProviderRegistry.evict_provider_instance(provider)
+                if removed:
+                    logger.info("Evicted %d cached ASR provider instance(s)", removed)
+
+            async with self._lock:
+                self._reset_runtime_state_locked()
+                self._state = ModelState.UNINITIALIZED
+                self._last_error = None
+            return True
+        except Exception as e:
+            logger.error(f"Model unload failed: {e}")
+            async with self._lock:
+                self._state = ModelState.ERROR
+                self._last_error = str(e)
+                self._ready_event.set()
+            return False
     
     def get_provider(self) -> Optional[ASRProvider]:
         """Get the loaded provider (if ready)."""
@@ -372,6 +437,17 @@ def reset_model_manager():
     """Reset the global model manager (for testing)."""
     global _model_manager
     _model_manager = None
+
+
+async def shutdown_model_manager(timeout: float = 10.0) -> bool:
+    """Unload and reset the global model manager."""
+    global _model_manager
+    if _model_manager is None:
+        return True
+    success = await _model_manager.unload(timeout=timeout)
+    if success:
+        _model_manager = None
+    return success
 
 
 async def initialize_model_at_startup(

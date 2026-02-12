@@ -302,6 +302,15 @@ class FasterWhisperProvider(ASRProvider):
         
         return health
 
+    async def unload(self) -> None:
+        """Release model reference so memory can be reclaimed."""
+        with self._infer_lock:
+            self._model = None
+        self._model_loaded_at = None
+        self._infer_times.clear()
+        self._chunks_processed = 0
+        await super().unload()
+
 
 # Register the provider
 ASRProviderRegistry.register("faster_whisper", FasterWhisperProvider)

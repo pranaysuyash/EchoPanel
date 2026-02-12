@@ -447,5 +447,10 @@ class VoxtralRealtimeProvider(ASRProvider):
                 "session_duration_s": time.perf_counter() - session.started_at,
             }
 
+    async def unload(self) -> None:
+        """Stop any active streaming session and clear residency markers."""
+        await self._stop_session()
+        await super().unload()
+
 
 ASRProviderRegistry.register("voxtral_realtime", VoxtralRealtimeProvider)

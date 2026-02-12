@@ -14,6 +14,7 @@ from server.services.model_preloader import (
     WarmupConfig,
     get_model_manager,
     reset_model_manager,
+    shutdown_model_manager,
 )
 from server.services.asr_providers import ASRConfig
 
@@ -229,3 +230,82 @@ async def test_initialize_model_at_startup():
     # Should succeed with proper mock
     manager = get_model_manager()
     assert manager.state == ModelState.READY or manager.health().model_loaded
+
+
+@pytest.mark.asyncio
+async def test_unload_resets_state_and_stats():
+    """Model unload should release provider and reset runtime stats."""
+    reset_model_manager()
+    manager = ModelManager()
+
+    mock_provider = Mock()
+    mock_provider.name = "test_provider"
+    mock_provider.is_available = True
+    mock_provider.stop_session = AsyncMock(return_value=None)
+    mock_provider.unload = AsyncMock(return_value=None)
+
+    async def mock_transcribe(*args, **kwargs):
+        yield Mock(text="hello", t0=0.0, t1=1.0)
+
+    mock_provider.transcribe_stream = mock_transcribe
+
+    with patch("server.services.model_preloader.ASRProviderRegistry.get_provider", return_value=mock_provider):
+        success = await manager.initialize(timeout=10.0)
+
+    assert success
+    manager._inference_count = 3
+    manager._total_inference_time_ms = 123.0
+
+    with patch("server.services.model_preloader.ASRProviderRegistry.evict_provider_instance", return_value=1) as evict:
+        unloaded = await manager.unload(timeout=1.0)
+
+    assert unloaded
+    assert manager.state == ModelState.UNINITIALIZED
+    assert not manager.is_ready
+    assert manager.health().model_loaded is False
+    assert manager.get_stats()["inference_count"] == 0
+    mock_provider.stop_session.assert_awaited_once()
+    mock_provider.unload.assert_awaited_once()
+    evict.assert_called_once_with(mock_provider)
+
+
+@pytest.mark.asyncio
+async def test_unload_failure_sets_error_state():
+    """Unload failures should transition manager into ERROR with details."""
+    manager = ModelManager()
+
+    mock_provider = Mock()
+    mock_provider.name = "test_provider"
+    mock_provider.stop_session = AsyncMock(return_value=None)
+    mock_provider.unload = AsyncMock(side_effect=RuntimeError("unload failed"))
+
+    manager._provider = mock_provider
+    manager._state = ModelState.READY
+
+    unloaded = await manager.unload(timeout=0.5)
+
+    assert not unloaded
+    assert manager.state == ModelState.ERROR
+    assert "unload failed" in (manager.health().last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_shutdown_model_manager_unloads_singleton():
+    """Global shutdown helper should unload then reset singleton."""
+    reset_model_manager()
+    manager = get_model_manager()
+
+    mock_provider = Mock()
+    mock_provider.name = "test_provider"
+    mock_provider.stop_session = AsyncMock(return_value=None)
+    mock_provider.unload = AsyncMock(return_value=None)
+
+    manager._provider = mock_provider
+    manager._state = ModelState.READY
+
+    with patch("server.services.model_preloader.ASRProviderRegistry.evict_provider_instance", return_value=1):
+        success = await shutdown_model_manager(timeout=1.0)
+
+    assert success
+    replacement = get_model_manager()
+    assert replacement is not manager

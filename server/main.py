@@ -84,6 +84,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    try:
+        from server.services.model_preloader import shutdown_model_manager
+        unloaded = await shutdown_model_manager()
+        if not unloaded:
+            logger.warning("Model shutdown did not complete cleanly")
+    except Exception as e:
+        logger.error(f"Model shutdown failed: {e}")
+
     logger.info("Shutting down EchoPanel server...")
 
 
