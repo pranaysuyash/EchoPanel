@@ -49,7 +49,7 @@ class ASRSegment:
 @dataclass
 class ASRConfig:
     """Configuration for an ASR provider."""
-    model_name: str = "large-v3-turbo"
+    model_name: str = "base"
     device: str = "auto"
     compute_type: str = "int8"
     language: Optional[str] = None  # None = auto-detect

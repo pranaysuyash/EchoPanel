@@ -74,6 +74,7 @@ struct OnboardingView: View {
                         withAnimation { nextStep() }
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(currentStep == .permissions && !canProceedFromPermissions)
                 }
             }
             .padding(20)
@@ -167,6 +168,17 @@ struct OnboardingView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             
+            if !canProceedFromPermissions {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Screen Recording permission is required to capture meeting audio.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .padding(.top, 4)
+            }
+            
             // Gap reduction: Self-test button (plays sound)
             Button {
                 NSSound.beep()
@@ -205,18 +217,18 @@ struct OnboardingView: View {
         }
     }
     
-    // B4 Fix: Diarization Step
+    // B4 Fix: Diarization Step - OPTIONAL, can skip
     private var diarizationStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Speaker Labels (Optional)")
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("To identify who is speaking (Diarization), EchoPanel uses a model that requires a HuggingFace User Access Token due to license restrictions.")
+            Text("To identify who's speaking, EchoPanel uses a model that requires a HuggingFace token. This is optional - the app works without it.")
                 .foregroundColor(.secondary)
             
             VStack(alignment: .leading, spacing: 12) {
-                Text("HuggingFace Token (Read-only)")
+                Text("HuggingFace Token (Optional)")
                     .font(.caption)
                     .fontWeight(.medium)
                 
@@ -229,21 +241,46 @@ struct OnboardingView: View {
                         .foregroundColor(.red)
                 }
                 
-                Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
+                SwiftUI.Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
                     .font(.caption)
             }
             .padding(12)
             .background(Color.secondary.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             
-            Text("You can leave this empty and set it later. Speaker labels won't be available without it.")
+            Text("You can skip this. Speaker labels won't be available without a token.")
                 .font(.caption)
                 .foregroundColor(.secondary)
             
-            Text("Note: Speaker identification is performed after the meeting ends.")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            HStack {
+                Button("Skip") {
+                    withAnimation { nextStep() }
+                }
+                .buttonStyle(.bordered)
+                
+                Spacer()
+                
+                if !hfToken.isEmpty {
+                    Button("Save & Continue") {
+                        saveHuggingFaceToken()
+                        withAnimation { nextStep() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
         }
+    }
+    
+    private func saveHuggingFaceToken() {
+        guard !hfToken.isEmpty else { return }
+        // Save to Keychain
+        let success = KeychainHelper.saveHFToken(hfToken)
+        if !success {
+            hfTokenSaveError = "Couldn't save token. Please try again."
+            return
+        }
+        // Also save to environment for backend
+        setenv("ECHOPANEL_HF_TOKEN", hfToken, 1)
     }
     
     private var readyStep: some View {
@@ -336,7 +373,14 @@ struct OnboardingView: View {
     
     // MARK: - Navigation
     
+    private var canProceedFromPermissions: Bool {
+        appState.screenRecordingPermission == .authorized
+    }
+    
     private func nextStep() {
+        if currentStep == .permissions && !canProceedFromPermissions {
+            return
+        }
         if let next = OnboardingStep(rawValue: currentStep.rawValue + 1) {
             currentStep = next
         }

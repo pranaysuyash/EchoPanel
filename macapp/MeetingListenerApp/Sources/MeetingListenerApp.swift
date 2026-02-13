@@ -7,6 +7,7 @@ struct MeetingListenerApp: App {
     @StateObject private var backendManager = BackendManager.shared
     @StateObject private var sessionStore = SessionStore.shared
     @State private var sidePanelController = SidePanelController()
+    @StateObject private var betaGating = BetaGatingManager.shared
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
     @State private var showRecoveryPrompt = false
 
@@ -116,68 +117,189 @@ struct MeetingListenerApp: App {
 
         Window("EchoPanel Demo", id: "demo") {
             DemoPanelView(appState: appState) {
-                seedDemoData()
+                appState.seedDemoData()
             }
         }
         .defaultSize(width: 980, height: 560)
+
+        Window("EchoPanel Settings", id: "settings") {
+            SettingsView(appState: appState, backendManager: backendManager)
+        }
+        .defaultSize(width: 450, height: 300)
     }
 
+    private var labelContent: some View {
+        HStack(spacing: 6) {
+            Image(systemName: appState.sessionState == .listening ? "waveform.circle.fill" : "waveform.circle")
+                .foregroundColor(appState.sessionState == .listening ? .green : .secondary)
+                .overlay(alignment: .topTrailing) {
+                    if backendManager.isServerReady {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 4, y: -4)
+                    } else {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 4, y: -4)
+                    }
+                }
+            Text(appState.timerText)
+        }
+        .help(backendStatusHelpText)
+    }
+    
+    private var backendStatusHelpText: String {
+        if backendManager.isServerReady {
+            return "Backend ready"
+        } else {
+            return "Backend \(backendManager.serverStatus.rawValue)"
+        }
+    }
+    
     private var menuContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            StartupTasksView(
-                appState: appState,
-                showOnboarding: $showOnboarding,
-                openOnboarding: { openWindow(id: "onboarding") }
-            ) {
-                seedDemoData()
-                openWindow(id: "demo")
+        VStack(alignment: .leading, spacing: 12) {
+            // App Header
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("EchoPanel")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    Text(appState.sessionState == .listening ? "Recording" : "Ready")
+                        .font(.caption)
+                        .foregroundColor(appState.sessionState == .listening ? .green : .secondary)
+                }
+                
+                Spacer()
+                
+                Text(appState.timerText)
+                    .font(.system(.title3, design: .monospaced).weight(.medium))
+                    .monospacedDigit()
             }
-
-            Text(appState.sessionState == .listening ? "Listening" : "Idle")
-                .font(.headline)
-            Text("Timer: \(appState.timerText)")
-                .font(.caption)
-                .monospacedDigit()
-            if !appState.statusLine.isEmpty {
-                Text(appState.statusLine)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+            .padding(.bottom, 4)
             
-            // Server status indicator
-            HStack {
+            Divider()
+            
+            // Status Section
+            HStack(spacing: 8) {
                 Circle()
                     .fill(backendManager.isServerReady ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                Text(backendManager.serverStatus.rawValue)
-                    .font(.caption2)
+                    .frame(width: 10, height: 10)
+                Text(backendManager.isServerReady ? "Backend Ready" : "Backend Starting")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            
+            if !appState.statusLine.isEmpty {
+                Text(appState.statusLine)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
             
             Divider()
-            Button(appState.sessionState == .listening ? "Stop Listening" : "Start Listening") {
-                toggleSession()
-            }
-            .keyboardShortcut("l", modifiers: [.command, .shift])
-            .help(backendManager.isServerReady ? "Start live notes" : "Backend not ready — click for details")
             
-            Button("Export JSON") {
-                appState.exportJSON()
+            // Main Actions with colored backgrounds
+            VStack(spacing: 6) {
+                if appState.sessionState == .listening {
+                    Button {
+                        toggleSession()
+                    } label: {
+                        HStack {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.red)
+                            Text("Stop Listening")
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("⌘⇧L")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        toggleSession()
+                    } label: {
+                        HStack {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.green)
+                            Text("Start Listening")
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("⌘⇧L")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!backendManager.isServerReady)
+                }
             }
-            .keyboardShortcut("e", modifiers: [.command, .shift])
-            .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
-            Button("Export Markdown") {
-                appState.exportMarkdown()
-            }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-            .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
-            Divider()
             
-            // Gap 5 fix: Session recovery option
+            // Export Section
+            VStack(spacing: 6) {
+                Button {
+                    appState.exportJSON()
+                } label: {
+                    HStack {
+                        Image(systemName: "curlybraces")
+                            .font(.system(size: 14))
+                            .foregroundColor(.blue)
+                        Text("Export JSON")
+                            .font(.subheadline)
+                        Spacer()
+                        Text("⌘⇧E")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
+                
+                Button {
+                    appState.exportMarkdown()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.richtext")
+                            .font(.system(size: 14))
+                            .foregroundColor(.purple)
+                        Text("Export Markdown")
+                            .font(.subheadline)
+                        Spacer()
+                        Text("⌘⇧M")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
+            }
+            
+            // Recovery
             if sessionStore.hasRecoverableSession {
-                Button("Recover Last Session...") {
+                Divider()
+                Button {
                     if let data = sessionStore.loadRecoverableSession() {
-                        // Export recovered data to JSON
                         let panel = NSSavePanel()
                         panel.nameFieldStringValue = "recovered-session.json"
                         panel.begin { response in
@@ -191,326 +313,137 @@ struct MeetingListenerApp: App {
                             }
                         }
                     }
-                }
-                Button("Discard Last Session") {
-                    sessionStore.discardRecoverableSession()
-                }
-                Divider()
-            }
-
-            Button("Session Summary...") {
-                openWindow(id: "summary")
-            }
-            Button("Session History...") {
-                openWindow(id: "history")
-            }
-            
-            Button("Show Onboarding") {
-                showOnboarding = true
-            }
-            if ProcessInfo.processInfo.arguments.contains("--demo-ui") {
-                Button("Open Demo Window") {
-                    seedDemoData()
-                    openWindow(id: "demo")
-                }
-            }
-            Button("Quit") { 
-                BackendManager.shared.stopServer()
-                NSApp.terminate(nil) 
-            }
-        }
-        .padding(.vertical, 4)
-        .onReceive(NotificationCenter.default.publisher(for: .summaryShouldOpen)) { _ in
-            openWindow(id: "summary")
-        }
-    }
-
-    private var labelContent: some View {
-        HStack(spacing: 6) {
-            Image(systemName: appState.sessionState == .listening ? "waveform.circle.fill" : "waveform.circle")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(appState.sessionState == .listening ? Color.green : Color.secondary, Color.secondary.opacity(0.3))
-            Text(appState.timerText)
-                .monospacedDigit()
-        }
-        .accessibilityLabel(appState.sessionState == .listening ? "EchoPanel listening" : "EchoPanel idle")
-    }
-
-    private func toggleSession() {
-        if appState.sessionState == .listening {
-            appState.stopSession()
-            sidePanelController.hide()
-        } else {
-            // Always open the side panel so the user sees state and guidance even if
-            // we can't start listening yet (permissions/backend not ready).
-            sidePanelController.show(appState: appState) {
-                appState.stopSession()
-                sidePanelController.hide()
-            }
-
-            // Check if onboarding completed and server ready
-            if !UserDefaults.standard.bool(forKey: "onboardingCompleted") {
-                showOnboarding = true
-                return
-            }
-            
-            if !backendManager.isServerReady {
-                // Surface an actionable error in the side panel header.
-                appState.reportBackendNotReady(
-                    detail: backendManager.healthDetail.isEmpty
-                        ? "Backend not ready. Open Diagnostics to see logs."
-                        : backendManager.healthDetail
-                )
-                return
-            }
-            
-            appState.startSession()
-        }
-    }
-
-    private func startListeningFromOnboarding() {
-        UserDefaults.standard.set(true, forKey: "onboardingCompleted")
-        showOnboarding = false
-        toggleSession()
-    }
-
-    private func seedDemoData() {
-        appState.seedDemoData()
-    }
-}
-
-private struct StartupTasksView: View {
-    @ObservedObject var appState: AppState
-    @Binding var showOnboarding: Bool
-    let openOnboarding: () -> Void
-    let openDemo: () -> Void
-
-    @State private var didRun = false
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .task {
-                guard !didRun else { return }
-                didRun = true
-
-                // Ensure permission badges are accurate even before the first session.
-                appState.refreshPermissionStatuses()
-
-                if showOnboarding {
-                    // If already true on first launch, .onChange won't fire; open explicitly.
-                    openOnboarding()
-                }
-
-                if ProcessInfo.processInfo.arguments.contains("--demo-ui") {
-                    openDemo()
-                }
-            }
-    }
-}
-
-private struct DemoPanelView: View {
-    @ObservedObject var appState: AppState
-    let seed: () -> Void
-
-    var body: some View {
-        SidePanelView(appState: appState) {
-            // Demo window should not end sessions.
-        }
-        .onAppear {
-            seed()
-        }
-    }
-}
-
-// MARK: - Settings View
-
-struct SettingsView: View {
-    @ObservedObject var appState: AppState
-    @ObservedObject var backendManager: BackendManager
-    @ObservedObject var betaGating = BetaGatingManager.shared
-    
-    @AppStorage("whisperModel") private var whisperModel = "base.en"
-    @AppStorage("backendHost") private var backendHost = "127.0.0.1"
-    @AppStorage("backendPort") private var backendPort = 8000
-    @State private var backendToken: String = ""
-    @State private var backendTokenSaveError: String?
-    @State private var selectedTab = 0
-    private let modelRecommendation = ASRModelRecommendation.forCurrentMac()
-    
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            generalSettingsTab
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
-                .tag(0)
-            
-            broadcastSettingsTab
-                .tabItem {
-                    Label("Broadcast", systemImage: "antenna.radiowaves.left.and.right")
-                }
-                .tag(1)
-        }
-        .frame(width: 500, height: 450)
-        .onAppear {
-            _ = KeychainHelper.migrateFromUserDefaults()
-            backendToken = KeychainHelper.loadBackendToken() ?? ""
-            backendTokenSaveError = nil
-        }
-        .onChange(of: backendToken) { token in
-            if KeychainHelper.saveBackendToken(token) {
-                backendTokenSaveError = nil
-            } else {
-                backendTokenSaveError = "Couldn't save backend token to Keychain. Verify Keychain access and try again."
-                appState.recordCredentialSaveFailure(field: "backend token")
-            }
-        }
-    }
-    
-    private var generalSettingsTab: some View {
-        Form {
-            Section("Audio") {
-                Picker("Source", selection: $appState.audioSource) {
-                    ForEach(AppState.AudioSource.allCases, id: \.self) { source in
-                        Text(source.rawValue).tag(source)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.counterclockwise.circle")
+                            .foregroundColor(.orange)
+                        Text("Recover Last Session")
+                            .font(.subheadline)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
                 }
+                .buttonStyle(.plain)
             }
             
-            Section("ASR Model") {
-                Picker("Whisper Model", selection: $whisperModel) {
-                    Text("Base English (Recommended)").tag("base.en")
-                    Text("Base (Multilingual)").tag("base")
-                    Text("Small").tag("small")
-                    Text("Medium").tag("medium")
-                    Text("Large v3 Turbo (Best)").tag("large-v3-turbo")
+            Divider()
+            
+            // Windows Section
+            VStack(spacing: 4) {
+                Button {
+                    openWindow(id: "summary")
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.blue)
+                        Text("Session Summary")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recommended for this Mac: \(modelRecommendation.displayName)")
-                        .font(.caption)
+                .buttonStyle(.plain)
+                
+                Button {
+                    openWindow(id: "history")
+                } label: {
+                    HStack {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundColor(.gray)
+                        Text("Session History")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    openWindow(id: "diagnostics")
+                } label: {
+                    HStack {
+                        Image(systemName: "stethoscope")
+                            .foregroundColor(.green)
+                        Text("Diagnostics")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Divider()
+            
+            // Bottom Actions
+            Button {
+                openWindow(id: "settings")
+            } label: {
+                HStack {
+                    Image(systemName: "gear")
+                        .foregroundColor(.secondary)
+                    Text("Settings")
                         .foregroundColor(.primary)
-                    Text("\(modelRecommendation.hardwareSummary) · \(modelRecommendation.reason)")
+                    Spacer()
+                    Text("⌘,")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    if whisperModel != modelRecommendation.modelKey {
-                        Button("Use Recommended") {
-                            whisperModel = modelRecommendation.modelKey
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
                 }
-                Text("Changes take effect after restarting the server.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
-
-            Section("Backend") {
-                TextField("Host", text: $backendHost)
-                    .textFieldStyle(.roundedBorder)
-                Stepper(value: $backendPort, in: 1024...65535) {
-                    Text("Port: \(backendPort)")
-                }
-                SecureField("Optional WS auth token", text: $backendToken)
-                    .textFieldStyle(.roundedBorder)
-                if let backendTokenSaveError {
-                    Text(backendTokenSaveError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                Text(BackendConfig.isLocalHost ? "Local backend uses ws/http." : "Remote backend defaults to wss/https.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Backend changes take effect after restarting the server.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            .buttonStyle(.plain)
             
-            Section("Server") {
+            Button {
+                NSApp.terminate(nil)
+            } label: {
                 HStack {
-                    Text("Status")
+                    Image(systemName: "power")
+                        .foregroundColor(.red)
+                    Text("Quit EchoPanel")
+                        .foregroundColor(.primary)
                     Spacer()
-                    Circle()
-                        .fill(backendManager.isServerReady ? Color.green : Color.orange)
-                        .frame(width: 10, height: 10)
-                    Text(backendManager.serverStatus.rawValue)
-                }
-                if backendManager.usingExternalBackend {
-                    Text("Using existing backend on \(backendHost):\(backendPort).")
-                        .font(.caption)
+                    Text("⌘Q")
+                        .font(.caption2)
                         .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if !backendManager.healthDetail.isEmpty {
-                    Text(backendManager.healthDetail)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                
-                Button("Restart Server") {
-                    backendManager.stopServer()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        backendManager.startServer()
-                    }
-                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
-            
-            Section("Beta Access") {
-                if betaGating.isBetaAccessGranted {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Beta access granted")
-                                .font(.subheadline)
-                        }
-                        
-                        Text("Sessions this month: \(betaGating.sessionsThisMonth) / \(betaGating.sessionLimit)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        if betaGating.sessionsThisMonth >= betaGating.sessionLimit {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("Session limit reached")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        
-                        Text("Invite code: \(betaGating.validatedInviteCode ?? "Unknown")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    TextField("Enter invite code", text: Binding(
-                        get: { "" },
-                        set: { code in
-                            if !code.isEmpty {
-                                _ = betaGating.validateInviteCode(code)
-                            }
-                        }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    
-                    if !betaGating.isBetaAccessGranted {
-                        Text("Invalid invite code. Please check your code and try again.")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                }
-            }
+            .buttonStyle(.plain)
         }
-        .formStyle(.grouped)
-        .padding()
+        .padding(16)
+        .frame(width: 280)
     }
     
     private var broadcastSettingsTab: some View {
         BroadcastSettingsView()
             .padding()
+    }
+    
+    private func toggleSession() {
+        if appState.sessionState == .listening {
+            appState.stopSession()
+        } else {
+            appState.startSession()
+            sidePanelController.show(appState: appState) {
+                self.appState.stopSession()
+            }
+        }
+    }
+    
+    private func startListeningFromOnboarding() {
+        showOnboarding = false
+        appState.startSession()
+        sidePanelController.show(appState: appState) {
+            self.appState.stopSession()
+        }
+    }
+    
+    private func formatElapsed(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 

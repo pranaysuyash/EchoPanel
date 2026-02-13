@@ -92,28 +92,25 @@ final class BackendManager: ObservableObject {
             break
         }
         
-        // Find the server directory
-        guard let serverPath = findServerPath() else {
-            NSLog("BackendManager: Could not find server path")
+        // Determine launch strategy: bundled executable or Python
+        let launchConfig = determineLaunchStrategy()
+        
+        guard let executablePath = launchConfig.executable else {
+            NSLog("BackendManager: Could not find server executable or Python")
             serverStatus = .error
+            healthDetail = "Server not found. Please reinstall EchoPanel."
             recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
             return
         }
         
-        // Find Python executable
-        guard let pythonPath = findPythonPath(serverDir: serverPath) else {
-            NSLog("BackendManager: Could not find Python executable")
-            serverStatus = .error
-            recoveryPhase = .failed(attempts: restartAttempts, maxAttempts: maxRestartAttempts)
-            return
-        }
-        
-        NSLog("BackendManager: Starting server")
+        NSLog("BackendManager: Starting server using \(launchConfig.mode)")
         
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: pythonPath)
-        process.arguments = ["-m", "uvicorn", "server.main:app", "--host", serverHost, "--port", "\(serverPort)"]
-        process.currentDirectoryURL = URL(fileURLWithPath: serverPath).deletingLastPathComponent()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = launchConfig.arguments
+        if let workingDir = launchConfig.workingDirectory {
+            process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
+        }
         
         // Set environment
         var env = ProcessInfo.processInfo.environment
@@ -420,24 +417,77 @@ final class BackendManager: ObservableObject {
             "base", "base.en",
             "small", "small.en",
             "medium", "medium.en",
-            "large-v2", "large-v3", "large-v3-turbo", "large"
+            "large-v1", "large-v2", "large-v3", "large",
+            "distil-large-v2", "distil-medium.en", "distil-small.en", "distil-large-v3",
+            "large-v3-turbo", "large-v3-turbo.en"
         ]
         if allowed.contains(value) { return value }
+        // Allow HuggingFace model identifiers (they may have / or -)
+        if value.contains("/") || value.contains("-") { return value }
         return "base.en"
     }
     
-    // MARK: - Path Discovery
+    // MARK: - Launch Strategy
     
-    private func findServerPath() -> String? {
-        // Priority 1: Bundled in app Resources
+    private struct LaunchConfig {
+        enum Mode {
+            case bundledExecutable
+            case pythonModule
+        }
+        let mode: Mode
+        let executable: String?
+        let arguments: [String]
+        let workingDirectory: String?
+    }
+    
+    private func determineLaunchStrategy() -> LaunchConfig {
+        // Priority 1: Bundled PyInstaller executable
+        if let bundledExe = findBundledExecutable() {
+            return LaunchConfig(
+                mode: .bundledExecutable,
+                executable: bundledExe,
+                arguments: ["--host", serverHost, "--port", "\(serverPort)"],
+                workingDirectory: nil
+            )
+        }
+        
+        // Priority 2: Python-based launch (development)
+        if let serverPath = findDevelopmentServerPath(),
+           let pythonPath = findPythonPath(serverDir: serverPath) {
+            return LaunchConfig(
+                mode: .pythonModule,
+                executable: pythonPath,
+                arguments: ["-m", "uvicorn", "server.main:app", "--host", serverHost, "--port", "\(serverPort)"],
+                workingDirectory: (serverPath as NSString).deletingLastPathComponent
+            )
+        }
+        
+        return LaunchConfig(mode: .bundledExecutable, executable: nil, arguments: [], workingDirectory: nil)
+    }
+    
+    private func findBundledExecutable() -> String? {
+        // Look for echopanel-server in app Resources
         if let resourcePath = Bundle.main.resourcePath {
-            let bundledServer = (resourcePath as NSString).appendingPathComponent("server")
-            if FileManager.default.fileExists(atPath: bundledServer) {
-                return bundledServer
+            let bundledExe = (resourcePath as NSString).appendingPathComponent("echopanel-server")
+            if FileManager.default.fileExists(atPath: bundledExe) {
+                return bundledExe
             }
         }
         
-        // Priority 2: Development path (relative to app)
+        // Look in MacOS directory (alternative location)
+        let macOSExe = (Bundle.main.bundlePath as NSString)
+            .appendingPathComponent("Contents/MacOS/echopanel-server")
+        if FileManager.default.fileExists(atPath: macOSExe) {
+            return macOSExe
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Path Discovery (Development Fallback)
+    
+    private func findDevelopmentServerPath() -> String? {
+        // Priority 1: Development path (relative to app)
         var devPath = (Bundle.main.bundlePath as NSString).deletingLastPathComponent
         devPath = (devPath as NSString).deletingLastPathComponent
         devPath = (devPath as NSString).deletingLastPathComponent // Go up from .build/debug/
@@ -446,7 +496,7 @@ final class BackendManager: ObservableObject {
             return serverDir
         }
         
-        // Priority 3: Hardcoded development path (DEBUG builds only)
+        // Priority 2: Hardcoded development path (DEBUG builds only)
         #if DEBUG
         let hardcodedPath = "/Users/pranay/Projects/EchoPanel/server"
         if FileManager.default.fileExists(atPath: hardcodedPath) {
@@ -466,15 +516,7 @@ final class BackendManager: ObservableObject {
             return venvPython
         }
         
-        // Priority 2: Bundled Python (future)
-        if let resourcePath = Bundle.main.resourcePath {
-            let bundledPython = (resourcePath as NSString).appendingPathComponent("python/bin/python3")
-            if FileManager.default.fileExists(atPath: bundledPython) {
-                return bundledPython
-            }
-        }
-        
-        // Priority 3: System Python
+        // Priority 2: System Python
         for path in ["/usr/local/bin/python3", "/opt/homebrew/bin/python3", "/usr/bin/python3"] {
             if FileManager.default.fileExists(atPath: path) {
                 return path

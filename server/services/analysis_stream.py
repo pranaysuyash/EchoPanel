@@ -162,6 +162,108 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
     }
 
 
+def extract_cards_incremental(transcript: List[dict], last_t1: float, prev_cards: Dict[str, Any], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> Tuple[dict, float]:
+    """
+    Incrementally update card extraction from transcript.
+    
+    Only processes segments newer than last_t1, merges with previous results.
+    Returns (updated_cards_dict, new_last_t1)
+    """
+    windowed = _filter_window(transcript, window_seconds)
+    
+    # Find new segments since last analysis
+    new_segments = [seg for seg in windowed if seg.get("t1", 0.0) > last_t1]
+    
+    if not new_segments:
+        # No new segments, return previous results
+        return prev_cards, last_t1
+    
+    # Convert previous results back to card lists
+    actions = _dict_to_cards(prev_cards.get("actions", []), "action")
+    decisions = _dict_to_cards(prev_cards.get("decisions", []), "decision")
+    risks = _dict_to_cards(prev_cards.get("risks", []), "risk")
+    
+    # Process only new segments
+    _extract_cards_from_segments_incremental(new_segments, actions, decisions, risks)
+    
+    # Deduplicate and limit
+    actions = _deduplicate_cards(actions)[:7]
+    decisions = _deduplicate_cards(decisions)[:7]
+    risks = _deduplicate_cards(risks)[:7]
+    
+    result = {
+        "actions": [_card_to_dict(c) for c in actions],
+        "decisions": [_card_to_dict(c) for c in decisions],
+        "risks": [_card_to_dict(c) for c in risks],
+    }
+    
+    # Update last_t1 to the max t1 of new segments
+    new_last_t1 = max(last_t1, max((seg.get("t1", 0.0) for seg in new_segments), default=last_t1))
+    
+    return result, new_last_t1
+
+
+def _dict_to_cards(cards_dict: List[dict], card_type: str) -> List[Card]:
+    """Convert cards dict list back to Card objects."""
+    cards = []
+    for card_dict in cards_dict:
+        cards.append(Card(
+            text=card_dict["text"],
+            card_type=card_type,
+            t0=card_dict.get("t0", 0.0),
+            t1=card_dict.get("t1", 0.0),
+            confidence=card_dict.get("confidence", 0.0),
+            owner=card_dict.get("owner"),
+            due=card_dict.get("due"),
+            evidence=card_dict.get("evidence", [])
+        ))
+    return cards
+
+
+def _extract_cards_from_segments_incremental(segments: List[dict], actions: List[Card], decisions: List[Card], risks: List[Card]) -> None:
+    """Incrementally extract cards from segments into existing lists."""
+    
+    action_keywords = ["i will", "we will", "i'll", "we'll", "todo", "to do", "action item", 
+                       "follow up", "next step", "take action", "send", "schedule"]
+    decision_keywords = ["decide", "decided", "decision", "agree", "agreed", "approval",
+                         "approved", "ship", "launch", "go ahead", "finalize"]
+    risk_keywords = ["risk", "issue", "blocker", "concern", "problem", "delay", 
+                     "blocked", "at risk", "warning", "danger"]
+
+    for segment in segments:
+        text = segment.get("text", "")
+        lower = text.lower()
+        t0 = segment.get("t0", 0.0)
+        t1 = segment.get("t1", 0.0)
+        
+        if any(kw in lower for kw in action_keywords):
+            actions.append(Card(
+                text=text,
+                card_type="action",
+                t0=t0, t1=t1,
+                confidence=segment.get("confidence", 0.0),
+                evidence=[{"t0": t0, "t1": t1, "quote": text}]
+            ))
+        
+        if any(kw in lower for kw in decision_keywords):
+            decisions.append(Card(
+                text=text,
+                card_type="decision",
+                t0=t0, t1=t1,
+                confidence=segment.get("confidence", 0.0),
+                evidence=[{"t0": t0, "t1": t1, "quote": text}]
+            ))
+        
+        if any(kw in lower for kw in risk_keywords):
+            risks.append(Card(
+                text=text,
+                card_type="risk",
+                t0=t0, t1=t1,
+                confidence=segment.get("confidence", 0.0),
+                evidence=[{"t0": t0, "t1": t1, "quote": text}]
+            ))
+
+
 def _card_to_dict(card: Card) -> dict:
     """Convert Card dataclass to dict for JSON serialization."""
     result = {
@@ -182,6 +284,11 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
     Uses 10-minute sliding window.
     """
     windowed = _filter_window(transcript, window_seconds)
+    return _extract_entities_from_segments(windowed)
+
+
+def _extract_entities_from_segments(segments: List[dict]) -> dict:
+    """Extract entities from a list of transcript segments."""
     
     # Track entities by (name, type)
     entity_map: Dict[Tuple[str, str], Entity] = {}
@@ -226,7 +333,7 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
         "Pranay", "Raj", "Amit", "Priya", "Neha", "Arjun", "Ravi", "Sanjay", "Anita", "Kavita",
     }
     
-    for segment in windowed:
+    for segment in segments:
         text = segment.get("text", "")
         t1 = segment.get("t1", 0.0)
         t0 = segment.get("t0", 0.0)
@@ -363,6 +470,229 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
         "projects": [_entity_to_dict(e) for e in projects[:7]],
         "topics": [_entity_to_dict(e) for e in topics[:12]],  # More topics allowed
     }
+
+
+def extract_entities_incremental(transcript: List[dict], last_t1: float, prev_entities: Dict[str, Any], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> Tuple[dict, float]:
+    """
+    Incrementally update entity extraction from transcript.
+    
+    Only processes segments newer than last_t1, merges with previous results.
+    Returns (updated_entities_dict, new_last_t1)
+    """
+    windowed = _filter_window(transcript, window_seconds)
+    
+    # Find new segments since last analysis
+    new_segments = [seg for seg in windowed if seg.get("t1", 0.0) > last_t1]
+    
+    if not new_segments:
+        # No new segments, return previous results
+        return prev_entities, last_t1
+    
+    # Convert previous results back to entity_map format for incremental processing
+    entity_map = _dict_to_entity_map(prev_entities)
+    
+    # Process only new segments
+    _extract_entities_from_segments_incremental(new_segments, entity_map)
+    
+    # Convert back to dict format
+    result = _entity_map_to_dict(entity_map)
+    
+    # Update last_t1 to the max t1 of new segments
+    new_last_t1 = max(last_t1, max((seg.get("t1", 0.0) for seg in new_segments), default=last_t1))
+    
+    return result, new_last_t1
+
+
+def _dict_to_entity_map(entities_dict: Dict[str, Any]) -> Dict[Tuple[str, str], Entity]:
+    """Convert entities dict back to entity_map format."""
+    entity_map = {}
+    for category in ["people", "orgs", "dates", "projects", "topics"]:
+        for entity_dict in entities_dict.get(category, []):
+            name = entity_dict["name"]
+            entity_type = entity_dict["type"]
+            key = (name, entity_type)
+            entity_map[key] = Entity(
+                name=name,
+                entity_type=entity_type,
+                count=entity_dict["count"],
+                last_seen=entity_dict["last_seen"],
+                first_seen=entity_dict.get("first_seen", entity_dict["last_seen"]),
+                confidence=entity_dict.get("confidence", 0.6),
+                grounding_quotes=entity_dict.get("grounding", [])
+            )
+    return entity_map
+
+
+def _entity_map_to_dict(entity_map: Dict[Tuple[str, str], Entity]) -> dict:
+    """Convert entity_map to dict format."""
+    def sort_key(e: Entity) -> Tuple[int, float]:
+        return (-e.count, -e.last_seen)
+    
+    people = sorted([e for e in entity_map.values() if e.entity_type == "person"], key=sort_key)
+    orgs = sorted([e for e in entity_map.values() if e.entity_type == "org"], key=sort_key)
+    dates = sorted([e for e in entity_map.values() if e.entity_type == "date"], key=sort_key)
+    projects = sorted([e for e in entity_map.values() if e.entity_type == "project"], key=sort_key)
+    topics = sorted([e for e in entity_map.values() if e.entity_type == "topic"], key=sort_key)
+
+    def _entity_to_dict(e: Entity) -> dict:
+        return {
+            "name": e.name,
+            "type": e.entity_type,
+            "count": e.count,
+            "last_seen": e.last_seen,
+            "confidence": e.confidence,
+            "grounding": e.grounding_quotes[:2],
+        }
+
+    return {
+        "people": [_entity_to_dict(e) for e in people[:7]],
+        "orgs": [_entity_to_dict(e) for e in orgs[:7]],
+        "dates": [_entity_to_dict(e) for e in dates[:7]],
+        "projects": [_entity_to_dict(e) for e in projects[:7]],
+        "topics": [_entity_to_dict(e) for e in topics[:12]],
+    }
+
+
+def _extract_entities_from_segments_incremental(segments: List[dict], entity_map: Dict[Tuple[str, str], Entity]) -> None:
+    """Incrementally extract entities from segments into existing entity_map."""
+    
+    # Common words, day names, orgs, first names - same as before
+    common_words = {
+        "A", "An", "And", "Are", "As", "At",
+        "Be", "Been", "But", "By",
+        "Can", "Could",
+        "Did", "Do", "Does", "Done",
+        "For", "From",
+        "Had", "Has", "Have", "Here", "How",
+        "I", "If", "In", "Into", "Is", "It",
+        "Just",
+        "May", "Might", "Must", "My",
+        "No", "Not", "Now",
+        "Of", "On", "Or", "Our", "Out",
+        "So", "Should", "Shall",
+        "That", "The", "Then", "There", "These", "This", "Those", "To",
+        "We", "Were", "What", "When", "Where", "Which", "Who", "Why", "Will", "Would",
+        "You", "Your",
+        "Alright", "Okay", "Ok", "OK", "Yeah", "Yes", "Well", "Great", "Thanks", "Thank",
+        "Hello", "Hi",
+    }
+    common_words_lower = {w.lower() for w in common_words}
+    
+    day_names = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+    
+    known_orgs = {"EchoPanel", "Zoom", "Google", "Microsoft", "Apple", "Amazon", "Slack", 
+                  "Teams", "Meet", "Discord", "Notion", "Figma", "Linear", "Jira", "GitHub"}
+    
+    common_first_names = {
+        "John", "James", "Michael", "David", "Robert", "William", "Richard", "Joseph", "Thomas", "Charles",
+        "Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen",
+        "Alex", "Chris", "Sam", "Jordan", "Taylor", "Morgan", "Casey", "Jamie", "Drew", "Pat",
+        "Pranay", "Raj", "Amit", "Priya", "Neha", "Arjun", "Ravi", "Sanjay", "Anita", "Kavita",
+    }
+    
+    for segment in segments:
+        text = segment.get("text", "")
+        t1 = segment.get("t1", 0.0)
+        t0 = segment.get("t0", 0.0)
+        
+        # Same extraction logic as before, but updating existing entity_map
+        title_pattern = r"\b(Mr\.|Mrs\.|Ms\.|Dr\.)\s+([A-Z][a-z]+)"
+        title_matches = re.findall(title_pattern, text)
+        for title, name in title_matches:
+            full_name = f"{title} {name}"
+            key = (full_name, "person")
+            if key not in entity_map:
+                entity_map[key] = Entity(
+                    name=full_name,
+                    entity_type="person",
+                    count=0,
+                    first_seen=t0,
+                    last_seen=t1,
+                    grounding_quotes=[],
+                )
+            entity = entity_map[key]
+            entity.count += 1
+            entity.last_seen = max(entity.last_seen, t1)
+            if len(entity.grounding_quotes) < 3:
+                entity.grounding_quotes.append(text[:100])
+        
+        two_word_pattern = r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b"
+        two_word_matches = re.findall(two_word_pattern, text)
+        for first, last in two_word_matches:
+            if first.lower() in common_words_lower or last.lower() in common_words_lower:
+                continue
+            if first in day_names or last in day_names:
+                continue
+            if first in known_orgs or last in known_orgs:
+                continue
+            full_name = f"{first} {last}"
+            key = (full_name, "person")
+            if key not in entity_map:
+                entity_map[key] = Entity(
+                    name=full_name,
+                    entity_type="person",
+                    count=0,
+                    first_seen=t0,
+                    last_seen=t1,
+                    grounding_quotes=[],
+                )
+            entity = entity_map[key]
+            entity.count += 1
+            entity.last_seen = max(entity.last_seen, t1)
+            if len(entity.grounding_quotes) < 3:
+                entity.grounding_quotes.append(text[:100])
+        
+        for first_name in common_first_names:
+            if first_name in text:
+                key = (first_name, "person")
+                if key not in entity_map:
+                    entity_map[key] = Entity(
+                        name=first_name,
+                        entity_type="person",
+                        count=0,
+                        first_seen=t0,
+                        last_seen=t1,
+                        grounding_quotes=[],
+                    )
+                entity = entity_map[key]
+                entity.count += 1
+                entity.last_seen = max(entity.last_seen, t1)
+                if len(entity.grounding_quotes) < 3:
+                    entity.grounding_quotes.append(text[:100])
+        
+        tokens = re.findall(r"\b[A-Z][a-zA-Z0-9\.]+\b", text)
+        
+        for token in tokens:
+            if token.lower() in common_words_lower:
+                continue
+            if len(token) < 3:
+                continue
+            
+            if token in day_names:
+                entity_type = "date"
+            elif token.lower().startswith("v") and "." in token:
+                entity_type = "project"
+            elif token in known_orgs:
+                entity_type = "org"
+            else:
+                entity_type = "topic"
+            
+            key = (token, entity_type)
+            if key not in entity_map:
+                entity_map[key] = Entity(
+                    name=token,
+                    entity_type=entity_type,
+                    count=0,
+                    first_seen=t0,
+                    last_seen=t1,
+                    grounding_quotes=[],
+                )
+            
+            entity = entity_map[key]
+            entity.count += 1
+            entity.last_seen = max(entity.last_seen, t1)
+            if len(entity.grounding_quotes) < 3:
+                entity.grounding_quotes.append(text[:100])
 
 
 def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> str:

@@ -33,7 +33,9 @@ extension SidePanelView {
                 } else {
                     Picker("View mode", selection: $viewMode) {
                         ForEach(ViewMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                            Text(mode.rawValue)
+                                .help(modeHelpText(for: mode))
+                                .tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -69,7 +71,9 @@ extension SidePanelView {
             if isNarrow {
                 Picker("View mode", selection: $viewMode) {
                     ForEach(ViewMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                        Text(mode.rawValue)
+                            .help(modeHelpText(for: mode))
+                            .tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -77,6 +81,17 @@ extension SidePanelView {
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("View mode")
             }
+        }
+    }
+    
+    private func modeHelpText(for mode: ViewMode) -> String {
+        switch mode {
+        case .roll:
+            return "Roll: Live transcript during meetings"
+        case .compact:
+            return "Compact: Quick glance at current meeting"
+        case .full:
+            return "Full: Review and search past sessions"
         }
     }
 

@@ -113,6 +113,20 @@ cd /Users/pranay/Projects/EchoPanel
 
 If the app says “Port 8000 is already in use”, that’s expected when you’re running the backend manually; just ensure `curl /health` succeeds.
 
+## Building for Distribution
+
+To build the self-contained .app bundle:
+
+```bash
+python scripts/build_app_bundle.py --release
+```
+
+This creates `dist/EchoPanel.app` (81MB) and `dist/EchoPanel-0.2.0.dmg` (73MB).
+
+See [docs/BUILD.md](./docs/BUILD.md) for detailed build instructions.
+
+---
+
 ## Documentation
 
 **Comprehensive documentation (50+ files, 45,000+ lines):**
@@ -121,9 +135,11 @@ If the app says “Port 8000 is already in use”, that’s expected when you’
 |-------------|---|
 | 📖 **Getting Started** | [docs/LIVE_LISTENER_SPEC.md](./docs/LIVE_LISTENER_SPEC.md) |
 | 🔧 **Troubleshooting** | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) |
+| 📦 **Build Guide** | [docs/BUILD.md](./docs/BUILD.md) |
 | 📊 **All Docs** | [docs/README.md](./docs/README.md) |
 | 🔍 **Audits** | [docs/audit/README.md](./docs/audit/README.md) (30+ technical audits) |
 | 📋 **Work Status** | [docs/WORKLOG_TICKETS.md](./docs/WORKLOG_TICKETS.md) |
+| 🚀 **Status & Roadmap** | [docs/STATUS_AND_ROADMAP.md](./docs/STATUS_AND_ROADMAP.md) |
 
 **Latest Audits:**
 - [Phase 0A: System Contracts](./docs/audit/PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) - State machines, protocol truth

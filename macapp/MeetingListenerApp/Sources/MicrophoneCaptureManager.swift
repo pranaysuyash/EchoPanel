@@ -13,6 +13,14 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     private var pcmRemainder: [Int16] = []
     private let frameSize = 320 // 20ms at 16kHz
     private var levelEMA: Float = 0
+    private let levelLock = NSLock()  // Thread safety for level EMA updates
+    
+    // MARK: - Metrics (AUD-002 Improvement)
+    private var metricsLock = NSLock()
+    private(set) var framesProcessed: UInt64 = 0
+    private(set) var framesDropped: UInt64 = 0
+    private(set) var bufferUnderruns: UInt64 = 0
+    private var lastProcessTime: TimeInterval = 0
     
     // MARK: - Limiter State (P0-2 Fix)
     /// Current limiter gain (1.0 = unity, <1.0 = limiting active)
@@ -26,6 +34,18 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     /// Maximum allowed gain reduction (20 dB = 0.1)
     private let limiterMaxGainReduction: Float = 0.1
     
+    // MARK: - Device Change Monitoring (AUD-002 Improvement)
+    // Uses AVCaptureDevice notifications (macOS compatible)
+    private var deviceConnectedObserver: NSObjectProtocol?
+    private var deviceDisconnectedObserver: NSObjectProtocol?
+    private var lastDeviceID: String?
+    
+    deinit {
+        stopCapture()
+    }
+    
+    // MARK: - Permission
+    
     func requestPermission() async -> Bool {
         await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
@@ -38,44 +58,192 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
         AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
     
+    // MARK: - Capture Lifecycle
+    
     func startCapture() throws {
-        guard !isRunning else { return }
+        guard !isRunning else { 
+            NSLog("MicrophoneCaptureManager: Already running")
+            return 
+        }
+        
+        // Check permission before starting
+        guard checkPermission() else {
+            NSLog("MicrophoneCaptureManager: Permission not granted")
+            throw MicCaptureError.permissionDenied
+        }
         
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         
         // Target format: 16kHz mono PCM Float32
         guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else {
+            NSLog("MicrophoneCaptureManager: Failed to create target format")
             throw MicCaptureError.formatCreationFailed
         }
         
         // Create converter
         guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            NSLog("MicrophoneCaptureManager: Failed to create converter from %@ to %@", inputFormat.description, targetFormat.description)
             throw MicCaptureError.converterCreationFailed
         }
         
+        // Install tap with error handling
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer: buffer, converter: converter, targetFormat: targetFormat)
         }
         
         audioEngine.prepare()
-        try audioEngine.start()
-        isRunning = true
-        NSLog("MicrophoneCaptureManager: Started capture")
+        
+        do {
+            try audioEngine.start()
+            isRunning = true
+            
+            // Reset metrics
+            resetMetrics()
+            
+            // Setup device change observers
+            setupDeviceObservers()
+            
+            // Log on main actor
+            Task { @MainActor in
+                StructuredLogger.shared.info("Microphone capture started", metadata: [
+                    "targetSampleRate": "16000",
+                    "targetChannels": "1"
+                ])
+            }
+            NSLog("MicrophoneCaptureManager: Started capture")
+        } catch {
+            NSLog("MicrophoneCaptureManager: Failed to start audio engine: %@", error.localizedDescription)
+            inputNode.removeTap(onBus: 0)
+            throw MicCaptureError.engineStartFailed(error)
+        }
     }
     
     func stopCapture() {
         guard isRunning else { return }
+        
+        removeDeviceObservers()
+        
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRunning = false
         pcmRemainder.removeAll()
-        NSLog("MicrophoneCaptureManager: Stopped capture")
+        
+        // Log final metrics
+        let (processed, dropped, _) = getMetrics()
+        Task { @MainActor in
+            StructuredLogger.shared.info("Microphone capture stopped", metadata: [
+                "framesProcessed": processed,
+                "framesDropped": dropped
+            ])
+        }
+        NSLog("MicrophoneCaptureManager: Stopped capture (processed: %llu, dropped: %llu)", processed, dropped)
     }
     
+    // MARK: - Device Change Monitoring (macOS)
+    
+    private func setupDeviceObservers() {
+        // Register current device
+        if let device = AVCaptureDevice.default(for: .audio) {
+            lastDeviceID = device.uniqueID
+        }
+        
+        // Monitor for device connection changes
+        deviceConnectedObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.AVCaptureDeviceWasConnected,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleDeviceConnected(notification)
+        }
+        
+        // Monitor for device disconnections
+        deviceDisconnectedObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.AVCaptureDeviceWasDisconnected,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleDeviceDisconnected(notification)
+        }
+    }
+    
+    private func removeDeviceObservers() {
+        if let observer = deviceConnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceConnectedObserver = nil
+        }
+        if let observer = deviceDisconnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceDisconnectedObserver = nil
+        }
+    }
+    
+    private func handleDeviceConnected(_ notification: Notification) {
+        guard let device = notification.object as? AVCaptureDevice,
+              device.hasMediaType(.audio) else { return }
+        
+        NSLog("MicrophoneCaptureManager: Audio device connected - \(device.localizedName)")
+        
+        Task { @MainActor in
+            StructuredLogger.shared.info("Audio device connected", metadata: [
+                "deviceName": device.localizedName,
+                "deviceID": device.uniqueID
+            ])
+        }
+    }
+    
+    private func handleDeviceDisconnected(_ notification: Notification) {
+        guard let device = notification.object as? AVCaptureDevice,
+              device.hasMediaType(.audio) else { return }
+        
+        // Check if this was our active device
+        if device.uniqueID == lastDeviceID {
+            NSLog("MicrophoneCaptureManager: Active device disconnected - \(device.localizedName)")
+            
+            Task { @MainActor in
+                StructuredLogger.shared.error("Active microphone disconnected", metadata: [
+                    "deviceName": device.localizedName,
+                    "deviceID": device.uniqueID
+                ])
+            }
+            
+            // Stop capture and report error
+            if isRunning {
+                stopCapture()
+                onError?(MicCaptureError.deviceDisconnected)
+            }
+            
+            lastDeviceID = nil
+        }
+    }
+    
+    // MARK: - Permission Revocation Detection (AUD-002 Improvement)
+    
+    /// Check if permission was revoked during capture
+    func checkPermissionStatus() -> Bool {
+        let authorized = checkPermission()
+        if !authorized && isRunning {
+            NSLog("MicrophoneCaptureManager: Permission revoked during capture")
+            Task { @MainActor in
+                StructuredLogger.shared.error("Microphone permission revoked during capture", metadata: [:])
+            }
+            stopCapture()
+            onError?(MicCaptureError.permissionRevoked)
+        }
+        return authorized
+    }
+    
+    // MARK: - Buffer Processing
+    
     private func processAudioBuffer(buffer: AVAudioPCMBuffer, converter: AVAudioConverter, targetFormat: AVAudioFormat) {
+        let startTime = CACurrentMediaTime()
+        
         let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * targetFormat.sampleRate / buffer.format.sampleRate)
+        
+        // Handle buffer allocation failure (AUD-002 Improvement)
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
+            NSLog("MicrophoneCaptureManager: Failed to allocate output buffer (capacity: %u)", outputFrameCapacity)
+            incrementFramesDropped()
             return
         }
         
@@ -91,7 +259,14 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
             return buffer
         }
         
+        // Handle conversion failure (AUD-002 Improvement)
         guard status != .error, let channelData = outputBuffer.floatChannelData else {
+            if let err = error {
+                NSLog("MicrophoneCaptureManager: Audio conversion failed: %@", err.localizedDescription)
+            } else {
+                NSLog("MicrophoneCaptureManager: Audio conversion failed - no channel data")
+            }
+            incrementFramesDropped()
             return
         }
         
@@ -106,6 +281,20 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
         
         // Emit PCM frames
         emitPCMFrames(samples: limitedSamples, count: frameCount)
+        
+        // Update metrics
+        incrementFramesProcessed()
+        
+        // Check for buffer processing delays (AUD-002 Improvement)
+        let processingTime = CACurrentMediaTime() - startTime
+        if processingTime > 0.01 { // 10ms threshold
+            NSLog("MicrophoneCaptureManager: Slow buffer processing (%.2f ms, %d frames)", processingTime * 1000, frameCount)
+        }
+        
+        // Periodic permission check (every ~100 buffers = ~2 seconds at 50 buffers/sec)
+        if framesProcessed % 100 == 0 {
+            _ = checkPermissionStatus()
+        }
     }
     
     private func updateAudioLevel(samples: UnsafePointer<Float>, count: Int) {
@@ -115,8 +304,19 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
             sumSquares += samples[i] * samples[i]
         }
         let rms = sqrt(sumSquares / Float(count))
+        levelLock.lock()
         levelEMA = levelEMA * 0.9 + rms * 0.1
-        onAudioLevelUpdate?(levelEMA)
+        let currentLevel = levelEMA
+        levelLock.unlock()
+        onAudioLevelUpdate?(currentLevel)
+    }
+    
+    /// Thread-safe getter for current audio level
+    var currentLevel: Float {
+        levelLock.lock()
+        let level = levelEMA
+        levelLock.unlock()
+        return level
     }
     
     /// Apply soft limiting to prevent hard clipping during Float->Int16 conversion.
@@ -183,9 +383,64 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
             pcmRemainder = Array(pcmSamples[index..<pcmSamples.count])
         }
     }
+    
+    // MARK: - Metrics (AUD-002 Improvement)
+    
+    private func resetMetrics() {
+        metricsLock.lock()
+        framesProcessed = 0
+        framesDropped = 0
+        bufferUnderruns = 0
+        lastProcessTime = 0
+        metricsLock.unlock()
+    }
+    
+    private func incrementFramesProcessed() {
+        metricsLock.lock()
+        framesProcessed += 1
+        metricsLock.unlock()
+    }
+    
+    private func incrementFramesDropped() {
+        metricsLock.lock()
+        framesDropped += 1
+        metricsLock.unlock()
+    }
+    
+    /// Get current metrics (thread-safe)
+    func getMetrics() -> (processed: UInt64, dropped: UInt64, underruns: UInt64) {
+        metricsLock.lock()
+        let result = (framesProcessed, framesDropped, bufferUnderruns)
+        metricsLock.unlock()
+        return result
+    }
 }
 
 enum MicCaptureError: Error {
+    case permissionDenied
+    case permissionRevoked
     case formatCreationFailed
     case converterCreationFailed
+    case engineStartFailed(Error)
+    case mediaServicesReset
+    case deviceDisconnected
+    
+    var localizedDescription: String {
+        switch self {
+        case .permissionDenied:
+            return "Microphone permission not granted"
+        case .permissionRevoked:
+            return "Microphone permission was revoked"
+        case .formatCreationFailed:
+            return "Failed to create audio format"
+        case .converterCreationFailed:
+            return "Failed to create audio converter"
+        case .engineStartFailed(let error):
+            return "Failed to start audio engine: \(error.localizedDescription)"
+        case .mediaServicesReset:
+            return "Media services were reset"
+        case .deviceDisconnected:
+            return "Microphone device was disconnected"
+        }
+    }
 }

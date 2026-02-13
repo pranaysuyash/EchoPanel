@@ -131,7 +131,7 @@ enum StrokeStyle {
             return Color(nsColor: .separatorColor)
                 .opacity(scheme == .dark ? 0.30 : 0.15)
         case .focus:
-            return Color.blue.opacity(0.50)
+            return Color.blue.opacity(0.80)
         case .pinned:
             return Color.indigo.opacity(scheme == .dark ? 0.45 : 0.35)
         }

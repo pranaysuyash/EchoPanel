@@ -10,6 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    from server.services.embeddings import get_embedding_service
+    EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    EMBEDDINGS_AVAILABLE = False
+    get_embedding_service = None
+
 STORE_PATH_ENV = "ECHOPANEL_DOC_STORE_PATH"
 _TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
 
@@ -35,6 +42,7 @@ class LocalRAGStore:
         self.overlap_words = max(0, min(overlap_words, self.chunk_words - 1))
         self._lock = threading.RLock()
         self._state: Dict[str, List[dict]] = {"documents": []}
+        self._embeddings_service = None
         self._load()
 
     def list_documents(self) -> List[dict]:
@@ -43,7 +51,14 @@ class LocalRAGStore:
             docs.sort(key=lambda item: item["indexed_at"], reverse=True)
             return docs
 
-    def index_document(self, title: str, text: str, source: str = "local", document_id: Optional[str] = None) -> dict:
+    def index_document(
+        self,
+        title: str,
+        text: str,
+        source: str = "local",
+        document_id: Optional[str] = None,
+        generate_embeddings: bool = True
+    ) -> dict:
         clean_text = (text or "").strip()
         if not clean_text:
             raise ValueError("Document text is empty")
@@ -70,7 +85,22 @@ class LocalRAGStore:
             docs.append(document)
             self._state["documents"] = docs
             self._persist()
+
+            if generate_embeddings and self.is_embedding_available():
+                try:
+                    self._generate_embeddings_for_document(doc_id, chunks)
+                except Exception:
+                    pass
+
             return self._public_document(document)
+
+    def _generate_embeddings_for_document(self, document_id: str, chunks: List[Dict]) -> None:
+        if not self.embeddings_service:
+            return
+        try:
+            self.embeddings_service.generate_document_embeddings(document_id, chunks)
+        except Exception:
+            pass
 
     def delete_document(self, document_id: str) -> bool:
         with self._lock:
@@ -78,8 +108,16 @@ class LocalRAGStore:
             kept = [doc for doc in docs if doc.get("document_id") != document_id]
             if len(kept) == len(docs):
                 return False
+
             self._state["documents"] = kept
             self._persist()
+
+            if self.embeddings_service:
+                try:
+                    self.embeddings_service.delete_document_embeddings(document_id)
+                except Exception:
+                    pass
+
             return True
 
     def query(self, query: str, top_k: int = 5) -> List[dict]:
@@ -92,6 +130,84 @@ class LocalRAGStore:
             scored = self._score_chunks(docs, query_tokens)
             limit = max(1, min(int(top_k), 20))
             return [result.__dict__ for result in scored[:limit]]
+
+    def query_semantic(self, query: str, top_k: int = 5) -> List[dict]:
+        if not self.is_embedding_available():
+            return self.query(query, top_k)
+
+        query_embedding = self.embeddings_service.embed_text(query)
+        if not query_embedding:
+            return self.query(query, top_k)
+
+        with self._lock:
+            docs = self._state.get("documents", [])
+            results: List[ChunkResult] = []
+
+            for doc in docs:
+                doc_id = doc.get("document_id", "")
+                similar = self.embeddings_service.find_similar(query_embedding, doc_id, top_k=1)
+
+                if similar:
+                    chunk_idx, similarity = similar[0]
+                    chunk = self._find_chunk(doc, chunk_idx)
+                    if chunk:
+                        snippet = self._snippet(chunk.get("text", ""), self._tokenize(query))
+                        results.append(
+                            ChunkResult(
+                                document_id=doc_id,
+                                title=doc.get("title", "Untitled"),
+                                source=doc.get("source", "local"),
+                                chunk_index=chunk_idx,
+                                snippet=snippet,
+                                score=round(similarity, 4),
+                            )
+                        )
+
+            results.sort(key=lambda item: item.score, reverse=True)
+            limit = max(1, min(int(top_k), 20))
+            return [result.__dict__ for result in results[:limit]]
+
+    def query_hybrid(self, query: str, top_k: int = 5, semantic_weight: float = 0.7) -> List[dict]:
+        semantic_results = self.query_semantic(query, top_k=top_k * 2)
+        lexical_results = self.query(query, top_k=top_k * 2)
+
+        if not semantic_results:
+            return lexical_results[:top_k]
+
+        if not lexical_results:
+            return semantic_results[:top_k]
+
+        semantic_dict = {r["document_id"]: r for r in semantic_results}
+        lexical_dict = {r["document_id"]: r for r in lexical_results}
+
+        all_doc_ids = set(semantic_dict.keys()) | set(lexical_dict.keys())
+
+        hybrid_results = []
+        for doc_id in all_doc_ids:
+            sem = semantic_dict.get(doc_id, {"score": 0})
+            lex = lexical_dict.get(doc_id, {"score": 0})
+
+            combined_score = (semantic_weight * sem.get("score", 0)) + ((1 - semantic_weight) * lex.get("score", 0))
+
+            hybrid_results.append({
+                "document_id": doc_id,
+                "title": sem.get("title", lex.get("title", "Untitled")),
+                "source": sem.get("source", lex.get("source", "local")),
+                "chunk_index": sem.get("chunk_index", lex.get("chunk_index", 0)),
+                "snippet": sem.get("snippet", lex.get("snippet", "")),
+                "score": round(combined_score, 4),
+                "semantic_score": sem.get("score", 0),
+                "lexical_score": lex.get("score", 0),
+            })
+
+        hybrid_results.sort(key=lambda x: x["score"], reverse=True)
+        return hybrid_results[:top_k]
+
+    def _find_chunk(self, document: dict, chunk_index: int) -> Optional[Dict]:
+        for chunk in document.get("chunks", []):
+            if chunk.get("chunk_index") == chunk_index:
+                return chunk
+        return None
 
     def _load(self) -> None:
         with self._lock:
@@ -107,6 +223,27 @@ class LocalRAGStore:
             except Exception:
                 # Corrupt data should not crash app startup; start fresh.
                 self._state = {"documents": []}
+
+    @property
+    def embeddings_service(self):
+        if self._embeddings_service is None and EMBEDDINGS_AVAILABLE and get_embedding_service:
+            try:
+                self._embeddings_service = get_embedding_service()
+            except Exception:
+                self._embeddings_service = None
+        return self._embeddings_service
+
+    def is_embedding_available(self) -> bool:
+        return self.embeddings_service is not None and self.embeddings_service.is_available()
+
+    def warmup_embeddings(self) -> bool:
+        if self.embeddings_service:
+            try:
+                self.embeddings_service.warmup()
+                return True
+            except Exception:
+                return False
+        return False
 
     def _persist(self) -> None:
         self.store_path.parent.mkdir(parents=True, exist_ok=True)

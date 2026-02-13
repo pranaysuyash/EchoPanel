@@ -257,10 +257,7 @@ extension SidePanelView {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                TextField("Search sessions, speakers, keywords", text: $fullSearchQuery)
-                    .textFieldStyle(.plain)
-                    .focused($fullSearchFocused)
-                    .accessibilityLabel("Search sessions, speakers, and keywords")
+                searchTextField
             }
             .padding(Spacing.sm)
             .background(BackgroundStyle.input.color(for: colorScheme))
@@ -645,5 +642,25 @@ extension SidePanelView {
             RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                 .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
         )
+    }
+    
+    @ViewBuilder
+    private var searchTextField: some View {
+        if #available(macOS 14.0, *) {
+            TextField("Search sessions, speakers, keywords", text: $fullSearchQuery)
+                .textFieldStyle(.plain)
+                .focused($fullSearchFocused)
+                .accessibilityLabel("Search sessions, speakers, and keywords")
+                .onKeyPress(.escape) {
+                    fullSearchQuery = ""
+                    fullSearchFocused = false
+                    return .handled
+                }
+        } else {
+            TextField("Search sessions, speakers, keywords", text: $fullSearchQuery)
+                .textFieldStyle(.plain)
+                .focused($fullSearchFocused)
+                .accessibilityLabel("Search sessions, speakers, and keywords")
+        }
     }
 }

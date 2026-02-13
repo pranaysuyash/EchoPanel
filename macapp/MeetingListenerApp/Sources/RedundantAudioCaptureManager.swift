@@ -91,6 +91,14 @@ final class RedundantAudioCaptureManager: ObservableObject {
     private let qualityCheckInterval: TimeInterval = 0.1
     private var autoFailoverEnabled = true
     
+    // Hysteresis and failback configuration
+    private let failoverCooldown: TimeInterval = 5.0  // Prevent rapid switching
+    private let failbackStabilizationPeriod: TimeInterval = 10.0  // Time primary must be good before failback
+    private let maxFailoverEvents = 100  // Ring buffer size
+    private var lastFailoverTime: Date?
+    private var primaryQualityGoodSince: Date?
+    private var autoFailbackEnabled = true
+    
     // Track which source is providing frames
     private var primaryFrameCount = 0
     private var backupFrameCount = 0
@@ -107,6 +115,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
             case clipping = "Excessive clipping"
             case engineStopped = "Capture engine stopped"
             case manual = "Manual override"
+            case qualityRestored = "Primary quality restored"
         }
     }
     
@@ -187,6 +196,8 @@ final class RedundantAudioCaptureManager: ObservableObject {
         isRedundancyActive = false
         primaryQuality = .unknown
         backupQuality = .unknown
+        primaryQualityGoodSince = nil
+        lastFailoverTime = nil
         
         NSLog("RedundantAudioCaptureManager: All capture stopped")
     }
@@ -204,7 +215,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
             to: source,
             reason: .manual
         )
-        failoverEvents.append(event)
+        appendFailoverEvent(event)
         
         onSourceChanged?(source)
         NSLog("RedundantAudioCaptureManager: Manual switch to \(source.displayName)")
@@ -299,12 +310,22 @@ final class RedundantAudioCaptureManager: ObservableObject {
         
         let now = Date()
         
+        // Check hysteresis cooldown
+        if let lastFailover = lastFailoverTime,
+           now.timeIntervalSince(lastFailover) < failoverCooldown {
+            // Still in cooldown period, skip quality checks
+            return
+        }
+        
         // Update silence durations
         let timeSincePrimary = now.timeIntervalSince(lastPrimaryFrame)
         let timeSinceBackup = now.timeIntervalSince(lastBackupFrame)
         
         // Check if we need to failover from primary to backup
         if activeSource == .primary {
+            // Reset primary quality tracking
+            primaryQualityGoodSince = nil
+            
             let shouldFailover = timeSincePrimary > failoverSilenceThreshold ||
                                 primaryQuality == .poor
             
@@ -316,10 +337,35 @@ final class RedundantAudioCaptureManager: ObservableObject {
             }
         }
         
+        // Check for automatic failback to primary
+        if activeSource == .backup && autoFailbackEnabled {
+            checkForFailback(now: now, timeSincePrimary: timeSincePrimary)
+        }
+        
         // Update health status
         if currentHealth != lastHealth {
             lastHealth = currentHealth
             onHealthChanged?(currentHealth)
+        }
+    }
+    
+    private func checkForFailback(now: Date, timeSincePrimary: TimeInterval) {
+        // Primary must be receiving frames and have good quality
+        guard timeSincePrimary < 1.0, primaryQuality == .good else {
+            primaryQualityGoodSince = nil
+            return
+        }
+        
+        // Start or continue tracking primary quality
+        if primaryQualityGoodSince == nil {
+            primaryQualityGoodSince = now
+        }
+        
+        // Check if primary has been good for the stabilization period
+        if let goodSince = primaryQualityGoodSince,
+           now.timeIntervalSince(goodSince) >= failbackStabilizationPeriod {
+            performFailover(from: .backup, to: .primary, reason: .qualityRestored)
+            primaryQualityGoodSince = nil
         }
     }
     
@@ -332,7 +378,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
             to: to,
             reason: reason
         )
-        failoverEvents.append(event)
+        appendFailoverEvent(event)
         
         onSourceChanged?(to)
         
@@ -344,6 +390,16 @@ final class RedundantAudioCaptureManager: ObservableObject {
         ])
         
         NSLog("RedundantAudioCaptureManager: FAILOVER from \(from.displayName) to \(to.displayName) - \(reason.rawValue)")
+    }
+    
+    /// Thread-safe helper to append failover event with ring buffer behavior
+    private func appendFailoverEvent(_ event: FailoverEvent) {
+        // Ring buffer: remove oldest if at capacity
+        if failoverEvents.count >= maxFailoverEvents {
+            failoverEvents.removeFirst()
+        }
+        failoverEvents.append(event)
+        lastFailoverTime = event.timestamp
     }
     
     private func levelToQuality(_ level: Float) -> AudioQuality {

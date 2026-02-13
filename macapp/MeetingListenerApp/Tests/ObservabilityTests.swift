@@ -105,7 +105,11 @@ final class ObservabilityTests: XCTestCase {
             timestamp: Date().timeIntervalSince1970,
             connectionId: "test-conn",
             sessionId: "test-session",
-            attemptId: "test-attempt"
+            attemptId: "test-attempt",
+            clientVadEnabled: false,
+            speechChunksEmitted: 0,
+            totalChunksProcessed: 0,
+            speechRatio: 0.0
         )
         
         bundle.recordMetrics(metrics)

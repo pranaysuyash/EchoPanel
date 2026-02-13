@@ -22,6 +22,12 @@ struct SourceMetrics {
     let connectionId: String?
     let sessionId: String?
     let attemptId: String?
+    
+    // VAD metrics
+    let clientVadEnabled: Bool
+    let speechChunksEmitted: Int
+    let totalChunksProcessed: Int
+    let speechRatio: Double
 }
 
 // V1: Correlation IDs for observability
@@ -77,7 +83,16 @@ final class WebSocketStreamer: NSObject {
     var correlationIDs: CorrelationIDs? { _correlationIDs }
     private var _correlationIDs: CorrelationIDs?
 
-    private let session = URLSession(configuration: .default)
+    // Use main operation queue for URLSession delegate callbacks so delegate-based
+// handlers (WebSocket receive/send callbacks) always run on the main thread.
+// This prevents accidental Published-property mutations from occurring on the
+// NSURLSession delegate background thread and avoids SwiftUI/Combine race/trap
+// conditions (observed as EXC_BREAKPOINT in com.apple.NSURLSession-delegate).
+private let session: URLSession = {
+    let queue = OperationQueue.main
+    queue.qualityOfService = .userInitiated
+    return URLSession(configuration: .default, delegate: nil, delegateQueue: queue)
+}()
     private var task: URLSessionWebSocketTask?
     private var webSocketRequest: URLRequest { BackendConfig.webSocketRequest }
     private var url: URL { webSocketRequest.url ?? BackendConfig.webSocketURL }
@@ -410,7 +425,11 @@ final class WebSocketStreamer: NSObject {
                 timestamp: object["timestamp"] as? TimeInterval ?? 0,
                 connectionId: object["connection_id"] as? String ?? self._correlationIDs?.connectionId,
                 sessionId: object["session_id"] as? String ?? self.sessionID,
-                attemptId: object["attempt_id"] as? String ?? self.attemptID
+                attemptId: object["attempt_id"] as? String ?? self.attemptID,
+                clientVadEnabled: object["client_vad_enabled"] as? Bool ?? false,
+                speechChunksEmitted: object["speech_chunks_emitted"] as? Int ?? 0,
+                totalChunksProcessed: object["total_chunks_processed"] as? Int ?? 0,
+                speechRatio: object["speech_ratio"] as? Double ?? 0.0
             )
             DispatchQueue.main.async {
                 self.onMetrics?(metrics)

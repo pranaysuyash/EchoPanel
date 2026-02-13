@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from server.services.analysis_stream import extract_cards, extract_entities, generate_rolling_summary
+from server.services.analysis_stream import extract_cards, extract_cards_incremental, extract_entities, extract_entities_incremental, generate_rolling_summary
 from server.services.asr_stream import stream_asr
 from server.services.diarization import diarize_pcm, merge_transcript_with_speakers
 from server.services.concurrency_controller import (
@@ -84,6 +84,11 @@ class SessionState:
     max_source_clock_spread_ms: float = 0.0
     # TCK-20260211-010: Degrade ladder for adaptive performance
     degrade_ladder: Optional[DegradeLadder] = None
+    # INT-010 incremental analysis state
+    last_entity_analysis_t1: float = 0.0
+    last_card_analysis_t1: float = 0.0
+    current_entities: Dict[str, Any] = field(default_factory=dict)
+    current_cards: Dict[str, Any] = field(default_factory=dict)
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -525,10 +530,12 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
             snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
-                entities = await asyncio.wait_for(
-                    asyncio.to_thread(extract_entities, snapshot),
+                # Use incremental entity extraction
+                entities, state.last_entity_analysis_t1 = await asyncio.wait_for(
+                    asyncio.to_thread(extract_entities_incremental, snapshot, state.last_entity_analysis_t1, state.current_entities),
                     timeout=10.0  # 10 second timeout for entity extraction
                 )
+                state.current_entities = entities
                 await ws_send(state, websocket, {"type": "entities_update", **entities})
             except asyncio.TimeoutError:
                 logger.warning("Entity extraction timed out after 10s, skipping this cycle")
@@ -538,10 +545,12 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
             snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
-                cards = await asyncio.wait_for(
-                    asyncio.to_thread(extract_cards, snapshot),
+                # Use incremental card extraction
+                cards, state.last_card_analysis_t1 = await asyncio.wait_for(
+                    asyncio.to_thread(extract_cards_incremental, snapshot, state.last_card_analysis_t1, state.current_cards),
                     timeout=15.0  # 15 second timeout for card extraction (more complex)
                 )
+                state.current_cards = cards
             except asyncio.TimeoutError:
                 logger.warning("Card extraction timed out after 15s, skipping this cycle")
                 cards = {"actions": [], "decisions": [], "risks": []}

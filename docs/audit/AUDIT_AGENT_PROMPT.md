@@ -191,12 +191,20 @@ Testing Plan: [How you'll verify the fix]
 ### 6.1 Update Audit Document
 **Modify `docs/audit/STREAMING_ASR_AUDIT_2026-02.md`:**
 
-**Update Issue Status:**
-- Move your task from "open" to "completed"
-- Update confidence levels if findings differ
-- Add implementation notes
+**Mandatory provenance & evidence requirements (add these fields for every audit):**
+- **Requested by / Trigger:** who asked for the audit and why (ticket id / PR / meeting). Example: `Requested by: TCK-20260212-011 (Launch Readiness)`.
+- **Source documents that motivated the audit:** list exact file paths + section lines (e.g. `docs/flows/MOD-003.md:lines 20-40`).
+- **Tests executed (commands + results):** include exact commands run and their stdout/stderr or test IDs (e.g. `pytest tests/test_model_preloader.py -q -> 3 passed`).
+- **Evidence citations:** for every claim add an evidence line citing file path + line range, log filename + line, or test name + assertion. Never state "fixed" without an evidence citation.
 
-**Add Implementation Details:**
+> Rationale: audits must be reproducible — reviewers must be able to rerun the verification steps and find the same artifacts.
+
+**Update Issue Status:**
+- Move your task from "open" to "completed" only after adding provenance & evidence entries.
+- Update confidence levels if findings differ
+- Add implementation notes (see template below)
+
+**Add Implementation Details (use `docs/audit/AUDIT_RECORD_TEMPLATE.md`):**
 ```
 ## Implementation Details
 
@@ -213,9 +221,9 @@ new_code()
 ```
 
 **Testing:**
-- Added test: `test_new_functionality()`
-- Verified: [test results]
-- Coverage: [impact on test coverage]
+- Commands run: `pytest tests/test_foo.py -q` → `3 passed`
+- Manual steps: `curl /health` → `200 OK {"model_ready": true}`
+- Evidence citations: `server.log:13-16`, `macapp/.../SessionBundle.swift:240-260`
 
 **Configuration:**
 - New env var: `NEW_SETTING=value`
@@ -223,6 +231,8 @@ new_code()
 
 **Breaking Changes:** [none/minor/major]
 ```
+
+> Use the dedicated template `docs/audit/AUDIT_RECORD_TEMPLATE.md` (added to the repo) when updating audit documents.
 
 ### 6.2 Create Work Log
 **Add to `docs/WORKLOG_TICKETS.md`:**
@@ -233,14 +243,23 @@ new_code()
 ### Summary
 [Brief description of work completed]
 
+### Request Origin
+- Requested by: [user / ticket / PR]
+- Source docs: [list of audit/flow docs that led to this task]
+
 ### Investigation
 [What you found during analysis]
 
 ### Implementation
 [Technical details of the fix]
 
-### Testing
-[How you verified it works]
+### Tests Executed
+- Unit: `pytest tests/test_xyz.py -q` → [results]
+- Integration: [commands and results]
+
+### Evidence
+- `server.log:12-15` — model warmup error
+- `tests/test_model_preloader.py::test_warmup` — added assertion
 
 ### Impact
 [What changed, any side effects]
@@ -248,11 +267,15 @@ new_code()
 ### Time Spent: [X hours]
 ```
 
+> If an audit claim cannot be evidenced, mark it as **Still open** and add the exact reason why (missing test, environment precondition, not reproducible locally).
+
 ### 6.3 Update Status Documents
 **If applicable:**
 - Update `docs/STATUS_AND_ROADMAP.md`
 - Update `docs/IMPLEMENTATION_PLAN.md`
 - Update any relevant feature docs
+
+**Note:** Audits are *evidence-first*. If you cannot provide reproducible evidence for a closure claim, do NOT mark it closed.
 
 ## Step 7: Final Review & Submission
 

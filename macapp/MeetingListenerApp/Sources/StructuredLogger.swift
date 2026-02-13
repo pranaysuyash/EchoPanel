@@ -10,7 +10,6 @@ import os.log
 /// Usage:
 ///   logger.info("Session started", metadata: ["audio_source": "both"])
 ///   logger.error("ASR failed", error: error, metadata: ["source": "mic"])
-@MainActor
 final class StructuredLogger {
     
     // MARK: - Log Levels

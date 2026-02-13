@@ -233,7 +233,12 @@ final class ResilientWebSocket: NSObject {
     init(url: URL, configuration: ReconnectionConfiguration) {
         self.url = url
         self.configuration = configuration
-        self.session = URLSession(configuration: .default)
+        // Ensure URLSession delegate callbacks are invoked on the main queue to
+// keep all observer / UI updates on the main thread and avoid race conditions
+// between NSURLSession delegate threads and SwiftUI/Combine.
+let delegateQueue = OperationQueue.main
+delegateQueue.qualityOfService = .userInitiated
+self.session = URLSession(configuration: .default, delegate: nil, delegateQueue: delegateQueue)
         self.messageBuffer = MessageBuffer<Data>(
             capacity: configuration.messageBufferCapacity,
             ttl: configuration.messageBufferTTL

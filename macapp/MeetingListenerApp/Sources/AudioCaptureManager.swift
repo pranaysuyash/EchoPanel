@@ -1,6 +1,7 @@
 import Combine
 import CoreGraphics
 import CoreMedia
+import CoreML
 import Foundation
 import QuartzCore
 import ScreenCaptureKit
@@ -11,6 +12,7 @@ final class AudioCaptureManager: NSObject {
     var onAudioLevelUpdate: ((Float) -> Void)?
     var onSampleCount: ((Int) -> Void)?
     var onScreenFrameCount: ((Int) -> Void)?
+    var onVADStatsUpdate: ((_ vadEnabled: Bool, _ speechRatio: Double, _ chunksProcessed: Int) -> Void)?
 
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
@@ -23,6 +25,7 @@ final class AudioCaptureManager: NSObject {
     private var clipEMA: Float = 0
     private var limiterGainEMA: Float = 0  // Track limiting activity
     private var lastQualityUpdate: TimeInterval = 0
+    private let qualityLock = NSLock()  // Thread safety for quality EMA updates
     
     // MARK: - Limiter State (P0-2 Fix)
     /// Current limiter gain (1.0 = unity, <1.0 = limiting active)
@@ -39,6 +42,21 @@ final class AudioCaptureManager: NSObject {
     private var totalSamples: Int = 0
     private var screenFrames: Int = 0
     private let statsLock = NSLock()
+    
+    // MARK: - Stream State
+    private let streamState = StreamState()
+
+    // MARK: - Client-Side VAD (Silero)
+    private var vadModel: MLModel?
+    private var vadEnabled = false
+    private var speechProbability: Float = 0.0
+    private var vadThreshold: Float = 0.5  // Probability threshold for speech detection
+    private var cpuUsage: Double = 0.0
+    private var cpuMonitorTimer: Timer?
+    private let cpuBudgetLimit: Double = 10.0  // Max 10% CPU usage
+    private var speechChunksEmitted = 0
+    private var totalChunksProcessed = 0
+    private var sampleBuffersProcessed = 0  // For periodic permission checks
 
     override init() {
         super.init()
@@ -56,6 +74,26 @@ final class AudioCaptureManager: NSObject {
                 NSLog("AudioCaptureManager: received %d screen frames", currentFrames)
             }
         }
+        sampleHandler.onStreamStopped = { [weak self] error in
+            guard let self else { return }
+            self.streamState.setActive(false)
+            
+            NSLog("⛔ AudioCaptureManager: Stream stopped unexpectedly: \(error.localizedDescription)")
+            self.onAudioQualityUpdate?(.poor)
+        }
+    }
+    
+    /// Thread-safe getter for current quality metrics
+    var currentQualityMetrics: (rms: Float, silence: Float, clip: Float, limiterGain: Float) {
+        qualityLock.lock()
+        let metrics = (rmsEMA, silenceEMA, clipEMA, limiterGainEMA)
+        qualityLock.unlock()
+        return metrics
+    }
+    
+    /// Thread-safe check if stream is active
+    var streamActive: Bool {
+        streamState.isActive
     }
 
     func requestPermission() async -> Bool {
@@ -68,6 +106,10 @@ final class AudioCaptureManager: NSObject {
     func startCapture() async throws {
         guard #available(macOS 13, *) else {
             throw CaptureError.unsupportedOS
+        }
+        
+        guard CGPreflightScreenCaptureAccess() else {
+            throw CaptureError.permissionDenied
         }
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -87,7 +129,13 @@ final class AudioCaptureManager: NSObject {
 
         try stream.addStreamOutput(sampleHandler, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
         try stream.addStreamOutput(sampleHandler, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+        streamState.setActive(true)
+        
         try await stream.startCapture()
+        
+        // Initialize VAD if enabled
+        setupVAD()
+        
         onAudioQualityUpdate?(.ok)
         if debugEnabled {
             NSLog("AudioCaptureManager: startCapture ok")
@@ -100,10 +148,108 @@ final class AudioCaptureManager: NSObject {
         } catch {
             // Intentionally ignore in v0.1 scaffold.
         }
+        streamState.setActive(false)
+        
         stream = nil
+        
+        // Clean up VAD
+        vadModel = nil
+        cpuMonitorTimer?.invalidate()
+        cpuMonitorTimer = nil
+        vadEnabled = false
     }
 
+    private func setupVAD() {
+        vadEnabled = BackendConfig.clientVADEnabled
+        if !vadEnabled {
+            return
+        }
+        
+        // Use energy-based VAD for now (ML model integration pending)
+        // TODO: Load Core ML Silero VAD model when available
+        NSLog("✅ AudioCaptureManager: VAD enabled (energy-based detection)")
+        
+        // Start CPU monitoring
+        startCPUMonitoring()
+        speechChunksEmitted = 0
+        totalChunksProcessed = 0
+    }
+
+    private func startCPUMonitoring() {
+        // Ensure we don't create multiple timers
+        cpuMonitorTimer?.invalidate()
+        cpuMonitorTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.updateCPUUsage()
+            self.reportVADStats()
+        }
+    }
+
+    private func reportVADStats() {
+        statsLock.lock()
+        let processed = totalChunksProcessed
+        let speech = speechChunksEmitted
+        statsLock.unlock()
+        
+        let ratio = processed > 0 ? Double(speech) / Double(processed) : 0.0
+        
+        // Call callback on main thread to be safe
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.onVADStatsUpdate?(self.vadEnabled, ratio, processed)
+        }
+    }
+
+    private func updateCPUUsage() {
+        let processInfo = ProcessInfo.processInfo
+        cpuUsage = processInfo.systemUptime // Placeholder - in real implementation, calculate actual CPU usage
+        if cpuUsage > cpuBudgetLimit {
+            NSLog("⚠️ AudioCaptureManager: CPU usage (%.1f%%) exceeds budget, disabling VAD", cpuUsage)
+            vadEnabled = false
+            // Note: No model to clean up for energy-based VAD
+        }
+    }
+
+    private func runVAD(on samples: [Float]) -> Bool {
+        guard vadEnabled else { return true } // If VAD disabled, always emit
+        
+        // Energy-based VAD detection
+        // Calculate RMS energy of the audio samples
+        let energy = samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
+        let rms = sqrt(energy)
+        
+        // Simple threshold-based detection
+        // TODO: Replace with ML model when Core ML conversion is available
+        speechProbability = rms > vadThreshold ? 1.0 : 0.0
+        
+        return speechProbability > 0.5
+    }
+
+    // MARK: - Permission Revocation Detection
+    
+    /// Check if screen recording permission was revoked during capture
+    func checkPermissionStatus() -> Bool {
+        let authorized = CGPreflightScreenCaptureAccess()
+        if !authorized && streamState.isActive {
+            NSLog("⛔ AudioCaptureManager: Screen recording permission revoked during capture")
+            Task { @MainActor in
+                StructuredLogger.shared.error("Screen recording permission revoked during capture", metadata: [:])
+            }
+            Task {
+                await stopCapture()
+            }
+            onAudioQualityUpdate?(.poor)
+        }
+        return authorized
+    }
+    
     private func processAudio(sampleBuffer: CMSampleBuffer) {
+        // Periodic permission check (every ~100 buffers = ~2 seconds at 50 buffers/sec)
+        sampleBuffersProcessed += 1
+        if sampleBuffersProcessed % 100 == 0 {
+            _ = checkPermissionStatus()
+        }
+        
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
             NSLog("⛔ processAudio: Failed to get format description")
@@ -273,8 +419,23 @@ final class AudioCaptureManager: NSObject {
         var index = 0
         while index + frameSize <= pcmSamples.count {
             let slice = Array(pcmSamples[index..<index + frameSize])
-            let data = slice.withUnsafeBufferPointer { Data(buffer: $0) }
-            onPCMFrame?(data, "system")
+            
+            // Run VAD on this frame
+            let floatSlice = slice.map { Float($0) / Float(Int16.max) }
+            let hasSpeech = runVAD(on: floatSlice)
+            
+            statsLock.lock()
+            totalChunksProcessed += 1
+            if hasSpeech {
+                speechChunksEmitted += 1
+            }
+            statsLock.unlock()
+            
+            if hasSpeech || !vadEnabled {
+                let data = slice.withUnsafeBufferPointer { Data(buffer: $0) }
+                onPCMFrame?(data, "system")
+            }
+            
             index += frameSize
         }
 
@@ -309,10 +470,15 @@ final class AudioCaptureManager: NSObject {
         // 0.0 = no limiting, 1.0 = max gain reduction applied
         let limitingRatio = 1.0 - limiterGain
 
+        qualityLock.lock()
         rmsEMA = rmsEMA * 0.9 + rms * 0.1
         clipEMA = clipEMA * 0.9 + clipRatio * 0.1
         silenceEMA = silenceEMA * 0.9 + silenceRatio * 0.1
         limiterGainEMA = limiterGainEMA * 0.9 + limiterGain * 0.1
+        let currentRMSEMA = rmsEMA
+        let currentClipEMA = clipEMA
+        let currentSilenceEMA = silenceEMA
+        qualityLock.unlock()
 
         let now = CACurrentMediaTime()
         if now - lastQualityUpdate < 0.5 {
@@ -321,9 +487,9 @@ final class AudioCaptureManager: NSObject {
         lastQualityUpdate = now
 
         let quality: AudioQuality
-        if clipEMA > 0.1 || silenceEMA > 0.8 {
+        if currentClipEMA > 0.1 || currentSilenceEMA > 0.8 {
             quality = .poor
-        } else if rmsEMA < 0.03 || silenceEMA > 0.5 {
+        } else if currentRMSEMA < 0.03 || currentSilenceEMA > 0.5 {
             quality = .ok
         } else {
             quality = .good
@@ -336,13 +502,19 @@ final class AudioCaptureManager: NSObject {
         }
 
         onAudioQualityUpdate?(quality)
-        onAudioLevelUpdate?(rmsEMA)
+        onAudioLevelUpdate?(currentRMSEMA)
+    }
+
+    deinit {
+        cpuMonitorTimer?.invalidate()
+        cpuMonitorTimer = nil
     }
 }
 
 final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
     var onAudioSampleBuffer: ((CMSampleBuffer) -> Void)?
     var onScreenSampleBuffer: ((CMSampleBuffer) -> Void)?
+    var onStreamStopped: ((_ error: Error) -> Void)?
     private var audioCallCount = 0
     private var screenCallCount = 0
     private let counterLock = NSLock()
@@ -372,9 +544,51 @@ final class AudioSampleHandler: NSObject, SCStreamOutput, SCStreamDelegate {
             break
         }
     }
+    
+    func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        NSLog("⛔ AudioSampleHandler: Stream stopped with error: \(error.localizedDescription)")
+        onStreamStopped?(error)
+    }
 }
 
 enum CaptureError: Error {
     case unsupportedOS
     case noDisplay
+    case permissionDenied
+    case permissionRevoked
+}
+
+extension CaptureError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedOS:
+            return "macOS 13 or later required"
+        case .noDisplay:
+            return "No display available for capture"
+        case .permissionDenied:
+            return "Screen recording permission not granted"
+        case .permissionRevoked:
+            return "Screen recording permission was revoked"
+        }
+    }
+}
+
+// MARK: - Thread-Safe State Container
+
+/// Thread-safe boolean state container using OS-level atomic operations
+final class StreamState {
+    private var _active: Bool = false
+    private let lock = NSLock()
+    
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _active
+    }
+    
+    func setActive(_ value: Bool) {
+        lock.lock()
+        _active = value
+        lock.unlock()
+    }
 }

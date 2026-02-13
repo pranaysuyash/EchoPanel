@@ -136,7 +136,7 @@ struct TranscriptLineRow: View {
         .background(rowBackground)
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                .stroke(rowStroke, lineWidth: 1)
+                .stroke(rowStroke, lineWidth: isFocused ? 2 : 1)
         )
         .transaction { transaction in
             transaction.animation = .easeInOut(duration: AnimationDuration.quick)
