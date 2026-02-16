@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import subprocess
 from dataclasses import dataclass
@@ -130,18 +131,21 @@ class CapabilityDetector:
         "low": {  # 4-8GB RAM
             "provider": "faster_whisper",
             "model": "base.en",
-            "chunk_seconds": 4,
+            # Live meetings: lower chunk for latency; base.en is fast enough on CPU.
+            "chunk_seconds": 2,
             "compute_type": "int8",
             "device": "cpu",
-            "vad_enabled": True,
+            # Default OFF for compute stability; can be enabled explicitly or by future adaptive logic.
+            "vad_enabled": False,
         },
         "medium": {  # 8-16GB RAM, no GPU
             "provider": "faster_whisper",
-            "model": "small.en",
-            "chunk_seconds": 4,
+            # Reliability-first default: small.en is often slower-than-realtime on CPU in live mode.
+            "model": "base.en",
+            "chunk_seconds": 2,
             "compute_type": "int8",
             "device": "cpu",
-            "vad_enabled": True,
+            "vad_enabled": False,
         },
         "medium_gpu": {  # 8-16GB RAM, with Metal/CUDA
             "provider": "whisper_cpp",
@@ -349,6 +353,15 @@ class CapabilityDetector:
         
         config = self.TIER_CONFIGS[tier].copy()
         config["reason"] = reason
+
+        # Reliability guard: do not auto-select Voxtral by default.
+        # Voxtral requires a large local model + binary and can delay startup significantly.
+        if config.get("provider") == "voxtral_realtime":
+            auto_voxtral = os.getenv("ECHOPANEL_AUTO_SELECT_VOXTRAL", "0").strip().lower()
+            if auto_voxtral in {"0", "false", "no", "off", ""}:
+                logger.info("Voxtral auto-select disabled (set ECHOPANEL_AUTO_SELECT_VOXTRAL=1 to enable)")
+                config = self.TIER_CONFIGS["high"].copy()
+                config["reason"] = f"{reason} (voxtral auto-select disabled)"
         
         # Adjust for specific hardware
         if config["provider"] == "whisper_cpp":
@@ -399,19 +412,31 @@ class CapabilityDetector:
 
     def _whisper_cpp_available(self) -> bool:
         """Check if whisper.cpp is available."""
-        from . import provider_whisper_cpp
-        provider = provider_whisper_cpp.WhisperCppProvider(
-            ASRConfig(model_name="base.en", device="auto", compute_type="int8")
-        )
-        return provider.is_available
+        try:
+            from .asr_providers import ASRConfig
+            from . import provider_whisper_cpp
+
+            provider = provider_whisper_cpp.WhisperCppProvider(
+                ASRConfig(model_name="base.en", device="auto", compute_type="int8")
+            )
+            return bool(provider.is_available)
+        except Exception as e:  # pragma: no cover - best-effort probe
+            logger.debug("whisper.cpp availability probe failed: %s", e)
+            return False
 
     def _voxtral_available(self) -> bool:
         """Check if voxtral is available."""
-        from . import provider_voxtral_realtime
-        provider = provider_voxtral_realtime.VoxtralRealtimeProvider(
-            ASRConfig(model_name="base", device="auto", compute_type="bf16")
-        )
-        return provider.is_available
+        try:
+            from .asr_providers import ASRConfig
+            from . import provider_voxtral_realtime
+
+            provider = provider_voxtral_realtime.VoxtralRealtimeProvider(
+                ASRConfig(model_name="base", device="auto", compute_type="bf16")
+            )
+            return bool(provider.is_available)
+        except Exception as e:  # pragma: no cover - best-effort probe
+            logger.debug("voxtral availability probe failed: %s", e)
+            return False
 
     def can_run_model(self, model: str, profile: Optional[MachineProfile] = None) -> tuple[bool, str]:
         """Check if a specific model can run on this machine.

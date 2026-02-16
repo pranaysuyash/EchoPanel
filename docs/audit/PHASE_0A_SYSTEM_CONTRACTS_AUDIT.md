@@ -3,8 +3,20 @@
 **Date:** 2026-02-11
 **Auditor:** Amp (AI Agent)
 **Scope:** Client/Server Streaming Truth Contracts
-**Status:** OPEN
-**Last reviewed:** 2026-02-11 (Audit Queue Runner)
+**Status:** PARTIAL
+**Last reviewed:** 2026-02-13
+
+---
+
+## Update (2026-02-13)
+
+This audit was partially executed post-2026-02-11. Notable changes since the original review:
+- Client now sends `attempt_id` in the `start` message (`macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`).
+- Server now injects correlation IDs (`session_id`, `attempt_id`, `connection_id`) into outgoing WS events when available (`server/api/ws_live_listener.py` `ws_send(...)`), enabling safe client-side validation.
+- Client drops late/out-of-order WS messages with mismatched `attempt_id` (`macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`).
+- Added regression coverage asserting `attempt_id` is present on `asr_final` events: `tests/test_ws_segment_ids.py`.
+
+Remaining gaps from this audit still exist (e.g. no explicit `session_ack`, server still sends `status.state="streaming"` before ASR readiness is proven, no metrics staleness UX).
 
 ---
 

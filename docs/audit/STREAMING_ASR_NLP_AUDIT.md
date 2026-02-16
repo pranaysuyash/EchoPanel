@@ -4,6 +4,21 @@
 **Scope:** Client capture → WebSocket transport → ASR → NLP → diarization  
 **Goal:** Identify root causes of unreliable streaming ASR/NLP and provide patch-level fixes
 
+## Update (2026-02-13)
+
+This audit is a point-in-time report from 2026-02-04. As of 2026-02-13, several sections below are now stale because the underlying implementation has been hardened:
+
+- WebSocket audio transport is not strictly JSON+base64 anymore: the client supports binary audio frames (EP v1 header) with JSON/base64 fallback, and defaults to binary for localhost. Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 208-252), `macapp/MeetingListenerApp/Sources/BackendConfig.swift` (lines 40-52, 89-97), `server/api/ws_live_listener.py` (lines 1079-1112, 160-166).
+- WebSocket auth headers exist: the client attaches `Authorization: Bearer <token>` and `x-echopanel-token`; the server accepts legacy `?token=` but prefers headers/Authorization. Evidence: `macapp/MeetingListenerApp/Sources/BackendConfig.swift` (lines 44-52), `server/api/ws_live_listener.py` (lines 305-318).
+- Transcript ordering before final NLP is explicitly enforced (`transcript_snapshot = sorted(...)`) prior to summary/cards/entities generation. Evidence: `server/api/ws_live_listener.py` (line 1031).
+- Backpressure handling includes bounded per-source ingest queues with drop-oldest behavior and a throttled `status.backpressure` signal to the client. Evidence: `server/api/ws_live_listener.py` (lines 478-541).
+- ASR provider registry instance creation is protected by a thread lock to prevent races under concurrent access. Evidence: `server/services/asr_providers.py` (lines 304-345).
+- Effective ASR config defaults were tuned: chunk default is 2s and VAD is default ON in `_get_default_config()` (even though `ASRConfig` dataclass defaults may differ). Evidence: `server/services/asr_stream.py` (lines 24-33), `server/services/asr_providers.py` (lines 49-58).
+- Session-end diarization is implemented per source with bounded buffers and merges into the final transcript when enabled. Evidence: `server/api/ws_live_listener.py` (lines 196-208, 1024-1059).
+- Metrics now include provider health plus corrected `realtime_factor` computed from actual (processing_time / audio_duration) samples. Evidence: `server/api/ws_live_listener.py` (lines 269-286, 702-809).
+
+Remaining gaps from this doc are mostly around long-run soak/load testing harnesses and CI gates (recommendations only; not implemented in this update).
+
 ---
 
 ## Executive Summary

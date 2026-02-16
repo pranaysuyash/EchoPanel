@@ -27,6 +27,14 @@ final class SessionStore: ObservableObject {
         setupDirectory()
         checkForRecoverableSession()
     }
+
+    // MARK: - Introspection / Utilities
+
+    /// Best-effort URL to the on-disk directory for a session (local-only).
+    /// Used by UI surfaces like History to support "Reveal in Finder".
+    func sessionDirectoryURL(sessionId: String) -> URL? {
+        sessionsDirectory?.appendingPathComponent(sessionId)
+    }
     
     // MARK: - Directory Setup
     
@@ -41,7 +49,8 @@ final class SessionStore: ObservableObject {
         
         do {
             try fileManager.createDirectory(at: sessionsDirectory!, withIntermediateDirectories: true)
-            NSLog("SessionStore: Sessions directory: \(sessionsDirectory!.path)")
+            // Avoid leaking the user's local username via absolute paths.
+            NSLog("SessionStore: Sessions directory: \(bundleId)/sessions")
         } catch {
             NSLog("SessionStore: Failed to create sessions directory: \(error)")
         }
@@ -318,6 +327,163 @@ final class SessionStore: ObservableObject {
         }
         
         return sessions.sorted { $0.date > $1.date }
+    }
+    
+    // MARK: - Storage Statistics (Privacy Dashboard)
+    
+    /// Get storage statistics for the Privacy Dashboard
+    func getStorageStatistics() -> StorageStatistics {
+        guard let sessionsDir = sessionsDirectory else {
+            return StorageStatistics()
+        }
+        
+        var totalSize: UInt64 = 0
+        var sessionCount = 0
+        var oldestDate: Date?
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey])
+            
+            for url in contents {
+                guard url.hasDirectoryPath else { continue }
+                
+                sessionCount += 1
+                
+                // Calculate size of session directory
+                if let size = directorySize(at: url) {
+                    totalSize += size
+                }
+                
+                // Track oldest session
+                if let date = try? url.resourceValues(forKeys: [.creationDateKey]).creationDate {
+                    if oldestDate == nil || date < oldestDate! {
+                        oldestDate = date
+                    }
+                }
+            }
+        } catch {
+            NSLog("SessionStore: Failed to calculate storage statistics: \(error)")
+        }
+        
+        return StorageStatistics(
+            totalSizeBytes: totalSize,
+            sessionCount: sessionCount,
+            oldestSessionDate: oldestDate,
+            storagePath: sessionsDir.path
+        )
+    }
+    
+    /// Calculate the total size of a directory
+    private func directorySize(at url: URL) -> UInt64? {
+        var totalSize: UInt64 = 0
+        
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        
+        for case let fileURL as URL in enumerator {
+            do {
+                let attributes = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+                if let size = attributes.fileSize {
+                    totalSize += UInt64(size)
+                }
+            } catch {
+                // Skip files we can't read
+            }
+        }
+        
+        return totalSize
+    }
+    
+    /// Delete all session data
+    func deleteAllSessions() -> Bool {
+        guard let sessionsDir = sessionsDirectory else { return false }
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: nil)
+            
+            for url in contents {
+                guard url.hasDirectoryPath else { continue }
+                try fileManager.removeItem(at: url)
+            }
+            
+            NSLog("SessionStore: Deleted all session data")
+            NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
+            return true
+        } catch {
+            NSLog("SessionStore: Failed to delete all sessions: \(error)")
+            return false
+        }
+    }
+    
+    /// Export all session data as a ZIP archive
+    func exportAllSessions() async -> URL? {
+        guard let sessionsDir = sessionsDirectory else { return nil }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        let exportName = "echopanel_all_sessions_\(timestamp).zip"
+        
+        let tempDir = FileManager.default.temporaryDirectory
+        let exportURL = tempDir.appendingPathComponent(exportName)
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.arguments = ["-r", "-q", exportURL.path, "."]
+        process.currentDirectoryURL = sessionsDir
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            if process.terminationStatus == 0 {
+                NSLog("SessionStore: Exported all sessions to \(exportURL.path)")
+                return exportURL
+            } else {
+                NSLog("SessionStore: ZIP export failed with status \(process.terminationStatus)")
+                return nil
+            }
+        } catch {
+            NSLog("SessionStore: Failed to export sessions: \(error)")
+            return nil
+        }
+    }
+}
+
+// MARK: - Storage Statistics
+
+struct StorageStatistics {
+    let totalSizeBytes: UInt64
+    let sessionCount: Int
+    let oldestSessionDate: Date?
+    let storagePath: String
+    
+    init(totalSizeBytes: UInt64 = 0, sessionCount: Int = 0, oldestSessionDate: Date? = nil, storagePath: String = "") {
+        self.totalSizeBytes = totalSizeBytes
+        self.sessionCount = sessionCount
+        self.oldestSessionDate = oldestSessionDate
+        self.storagePath = storagePath
+    }
+    
+    /// Human-readable size string
+    var formattedSize: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(totalSizeBytes))
+    }
+    
+    /// Human-readable date string
+    var formattedOldestDate: String {
+        guard let date = oldestSessionDate else { return "N/A" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
     }
 }
 

@@ -65,6 +65,14 @@ extension SidePanelView {
                     .controlSize(.small)
                 }
 
+                Toggle(isOn: $alwaysOnTop) {
+                    Image(systemName: alwaysOnTop ? "pin.fill" : "pin")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help(alwaysOnTop ? "Always on top (On)" : "Always on top (Off)")
+                .accessibilityLabel(alwaysOnTop ? "Disable always on top" : "Enable always on top")
+
                 Spacer()
             }
 
@@ -110,7 +118,7 @@ extension SidePanelView {
                     Text(appState.audioSource.rawValue)
                         .font(Typography.caption)
                         .fontWeight(.semibold)
-                    Toggle("Follow", isOn: $followLive)
+                    Toggle("Follow", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.mini)
                         .labelsHidden()
@@ -148,7 +156,7 @@ extension SidePanelView {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: Spacing.md) {
-                    Toggle("Follow", isOn: $followLive)
+                    Toggle("Follow", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .accessibilityLabel("Follow live")
@@ -182,7 +190,7 @@ extension SidePanelView {
                     .accessibilityLabel("Audio source")
                     .layoutPriority(1)
 
-                    Toggle("Follow", isOn: $followLive)
+                    Toggle("Follow", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .accessibilityLabel("Follow live")

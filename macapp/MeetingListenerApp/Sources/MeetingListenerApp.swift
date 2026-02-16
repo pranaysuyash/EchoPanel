@@ -15,6 +15,9 @@ struct MeetingListenerApp: App {
         // Start backend server on app launch
         BackendManager.shared.startServer()
         
+        // Start data retention manager for automatic cleanup
+        DataRetentionManager.shared.start()
+        
         // Gap 5 fix: Check for recoverable session
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if SessionStore.shared.hasRecoverableSession {
@@ -37,7 +40,7 @@ struct MeetingListenerApp: App {
         }
         .commands {
             CommandMenu("EchoPanel") {
-                Button(appState.sessionState == .listening ? "Stop Listening" : "Start Listening") {
+                Button(appState.sessionState == .listening ? "End Session" : "Start Listening") {
                     toggleSession()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
@@ -47,15 +50,17 @@ struct MeetingListenerApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
 
-                Button("Export JSON") {
+                Button("Export for Apps (JSON)") {
                     appState.exportJSON()
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .help("Export transcript as JSON for use in other applications")
 
-                Button("Export Markdown") {
+                Button("Export for Notes (Markdown)") {
                     appState.exportMarkdown()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
+                .help("Export transcript as Markdown for notes and documents")
 
                 Divider()
                 
@@ -77,6 +82,13 @@ struct MeetingListenerApp: App {
                     openWindow(id: "history")
                 }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
+                
+                Divider()
+                
+                Button("Keyboard Shortcuts...") {
+                    openWindow(id: "keyboard-cheatsheet")
+                }
+                .keyboardShortcut("?", modifiers: [.command])
                 
                 Divider()
                 Button("Quit") { 
@@ -125,7 +137,13 @@ struct MeetingListenerApp: App {
         Window("EchoPanel Settings", id: "settings") {
             SettingsView(appState: appState, backendManager: backendManager)
         }
-        .defaultSize(width: 450, height: 300)
+        .defaultSize(width: 500, height: 350)
+        
+        Window("Keyboard Shortcuts", id: "keyboard-cheatsheet") {
+            KeyboardCheatsheetView()
+        }
+        .defaultSize(width: 600, height: 500)
+        .windowResizability(.contentSize)
     }
 
     private var labelContent: some View {
@@ -150,11 +168,24 @@ struct MeetingListenerApp: App {
         .help(backendStatusHelpText)
     }
     
+    /// Format date for recent sessions menu
+    private func formatRecentSessionDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+    
     private var backendStatusHelpText: String {
+        let hasSessions = UserDefaults.standard.integer(forKey: "totalSessionsRecorded") > 0
+        
+        if !hasSessions && appState.sessionState != .listening {
+            return "Click to start your first session"
+        }
+        
         if backendManager.isServerReady {
-            return "Backend ready"
+            return "Backend ready - Click to start/stop listening"
         } else {
-            return "Backend \(backendManager.serverStatus.rawValue)"
+            return "Backend \(backendManager.serverStatus.rawValue) - Waiting for backend..."
         }
     }
     
@@ -214,7 +245,7 @@ struct MeetingListenerApp: App {
                             Image(systemName: "stop.circle.fill")
                                 .font(.system(size: 18))
                                 .foregroundColor(.red)
-                            Text("Stop Listening")
+                            Text("End Session")
                                 .fontWeight(.medium)
                             Spacer()
                             Text("⌘⇧L")
@@ -293,6 +324,41 @@ struct MeetingListenerApp: App {
                 }
                 .buttonStyle(.plain)
                 .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
+            }
+            
+            // Recent Sessions
+            let recentSessions = sessionStore.listSessions().prefix(3)
+            if !recentSessions.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Sessions")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 12)
+                    
+                    ForEach(Array(recentSessions), id: \.id) { session in
+                        Button {
+                            openWindow(id: "history")
+                        } label: {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Text(formatRecentSessionDate(session.date))
+                                    .font(.subheadline)
+                                Spacer()
+                                if session.hasTranscript {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
             
             // Recovery
@@ -489,6 +555,9 @@ private struct ASRModelRecommendation {
 struct DiagnosticsView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var backendManager: BackendManager
+    @State private var crashLogs: [CrashReporter.CrashLog] = []
+    @State private var selectedCrashId: String?
+    @State private var showCrashDetail = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -535,20 +604,92 @@ struct DiagnosticsView: View {
                 .padding(.vertical, 5)
             }
             
+            GroupBox("Crash Reports") {
+                VStack(alignment: .leading, spacing: 10) {
+                    if crashLogs.isEmpty {
+                        Text("No crashes recorded")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("\(crashLogs.count) crash(es) recorded")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        ForEach(crashLogs.prefix(3).map { $0 }, id: \.id) { (log: CrashReporter.CrashLog) in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(log.formattedDate)
+                                        .font(.caption)
+                                    Text(log.exceptionName)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                                
+                                Button("Copy") {
+                                    if CrashReporter.shared.copyCrashReportToClipboard(id: log.id) {
+                                        appState.setUserNotice("Crash report copied.", level: .success)
+                                    }
+                                }
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        if crashLogs.count > 3 {
+                            Text("+ \(crashLogs.count - 3) more")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            Button("Export All...") {
+                                if let url = CrashReporter.shared.exportAllCrashLogs() {
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                }
+                            }
+                            .controlSize(.small)
+                            
+                            Button("Clear All") {
+                                _ = CrashReporter.shared.deleteAllCrashLogs()
+                                refreshCrashLogs()
+                            }
+                            .controlSize(.small)
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .padding(.vertical, 5)
+                .onAppear {
+                    refreshCrashLogs()
+                }
+            }
+            
             GroupBox("Troubleshooting") {
                 VStack(alignment: .leading) {
                     Text("If you encounter issues, please export a debug bundle to share with support.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    
+
                     Button("Export Debug Bundle...") {
                         appState.exportDebugBundle()
                     }
                     .frame(maxWidth: .infinity)
-                    
+
+                    Button("Copy Session ID") {
+                        guard let sessionId = appState.sessionID else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(sessionId, forType: .string)
+                        appState.setUserNotice("Session ID copied.", level: .success)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(appState.sessionID == nil)
+
                     Button("Report Issue...") {
-                        let subject = "EchoPanel Beta Issue Report"
+                        let subject = "EchoPanel Issue Report"
                         let body = """
                         Describe the issue:
                         
@@ -558,6 +699,7 @@ struct DiagnosticsView: View {
                         Backend Status: \(backendManager.serverStatus.rawValue)
                         Server Ready: \(backendManager.isServerReady)
                         Input Source: \(appState.audioSource.rawValue)
+                        Session ID: \(appState.sessionID ?? "none")
                         """
                         let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                         let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
@@ -573,6 +715,10 @@ struct DiagnosticsView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 400, height: 300)
+        .frame(width: 400, height: 450)
+    }
+    
+    private func refreshCrashLogs() {
+        crashLogs = CrashReporter.shared.getCrashLogs()
     }
 }

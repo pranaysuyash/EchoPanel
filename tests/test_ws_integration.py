@@ -145,6 +145,80 @@ def test_start_ack_and_final_summary_include_client_feature_flags():
         assert "clock_spread_ms" in final_summary["json"]
 
 
+def test_binary_audio_flow_with_source_header():
+    """
+    Verifies the server accepts binary WebSocket frames containing PCM16 audio
+    with a small v1 header for source-tagging:
+      b"EP" + version(1) + source(0=system,1=mic) + raw PCM16 bytes
+    """
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-listener") as websocket:
+        connected = websocket.receive_json()
+        assert connected["type"] == "status"
+        assert connected["state"] == "connected"
+
+        websocket.send_json({"type": "start", "session_id": "test_binary_audio"})
+        started = websocket.receive_json()
+        assert started["type"] == "status"
+        assert started["state"] == "streaming"
+
+        silent_frame = bytes(640)  # small PCM payload
+        header = b"EP" + bytes([1, 1])  # v1, mic
+        websocket.send_bytes(header + silent_frame)
+
+        websocket.send_json({"type": "stop", "session_id": "test_binary_audio"})
+
+        final_summary = None
+        for _ in range(12):
+            msg = websocket.receive_json()
+            if msg.get("type") == "final_summary":
+                final_summary = msg
+                break
+        assert final_summary is not None, "Expected final_summary event"
+
+
+def test_rejects_third_source_over_limit(monkeypatch):
+    monkeypatch.setenv("ECHOPANEL_MAX_ACTIVE_SOURCES_PER_SESSION", "2")
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-listener") as websocket:
+        connected = websocket.receive_json()
+        assert connected["type"] == "status"
+        assert connected["state"] == "connected"
+
+        websocket.send_json({"type": "start", "session_id": "test_source_limit"})
+        started = websocket.receive_json()
+        assert started["type"] == "status"
+        assert started["state"] == "streaming"
+
+        silent_frame = bytes(640)
+        b64 = base64.b64encode(silent_frame).decode("utf-8")
+
+        # Source 1
+        websocket.send_json({"type": "audio", "source": "system", "data": b64})
+        # Source 2
+        websocket.send_json({"type": "audio", "source": "mic", "data": b64})
+        # Source 3 should be rejected with a warning status.
+        websocket.send_json({"type": "audio", "source": "extra", "data": b64})
+
+        websocket.send_json({"type": "stop", "session_id": "test_source_limit"})
+
+        warning_seen = False
+        final_seen = False
+        for _ in range(20):
+            msg = websocket.receive_json()
+            if msg.get("type") == "status" and msg.get("state") == "warning":
+                if "Too many active sources" in (msg.get("message") or ""):
+                    warning_seen = True
+            if msg.get("type") == "final_summary":
+                final_seen = True
+                break
+
+        assert warning_seen, "Expected warning when third source is sent"
+        assert final_seen, "Expected final_summary"
+
+
 def test_ws_auth_rejects_missing_token(monkeypatch):
     monkeypatch.setenv("ECHOPANEL_WS_AUTH_TOKEN", "secret-token")
     client = TestClient(app)

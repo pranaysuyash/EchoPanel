@@ -103,11 +103,82 @@ private let session: URLSession = {
     private var attemptID: String?
     private var reconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 10
+    private var reconnectAttempts: Int = 0
+    private let maxReconnectAttempts: Int = 5
     private var finalSummaryWaiter: CheckedContinuation<Bool, Never>?
 
     // P0: Bounded send queue to prevent blocking capture thread on network stall
     private let sendQueue = OperationQueue()
     private let maxQueuedSends = 100
+
+    // Ping/pong liveness: treat the socket as dead if we don't get a ping completion for too long.
+    private var lastPongTime: Date?
+    private let pongTimeout: TimeInterval = 15
+
+    // Audio pacing + buffering:
+    // Capture callbacks must never block on pacing logic. We buffer frames per source and
+    // drain them on a background task at (approx) real-time pace.
+    private struct PendingAudioFrame {
+        let data: Data
+        let source: String
+        let sampleCount: Int
+        let enqueuedAtUptimeNs: UInt64
+    }
+
+    private final class RingBuffer<T> {
+        private var storage: [T?]
+        private var head: Int = 0
+        private var tail: Int = 0
+        private(set) var count: Int = 0
+
+        let capacity: Int
+
+        init(capacity: Int) {
+            self.capacity = max(1, capacity)
+            self.storage = Array(repeating: nil, count: self.capacity)
+        }
+
+        func removeAll() {
+            storage = Array(repeating: nil, count: capacity)
+            head = 0
+            tail = 0
+            count = 0
+        }
+
+        // Push newest. If full, evict oldest and return it.
+        func pushEvictingOldest(_ value: T) -> T? {
+            var evicted: T? = nil
+            if count == capacity {
+                evicted = pop()
+            }
+            storage[tail] = value
+            tail = (tail + 1) % capacity
+            count += 1
+            return evicted
+        }
+
+        func pop() -> T? {
+            guard count > 0 else { return nil }
+            let value = storage[head]
+            storage[head] = nil
+            head = (head + 1) % capacity
+            count -= 1
+            return value
+        }
+    }
+
+    private let audioBufferLock = NSLock()
+    private var audioBuffersBySource: [String: RingBuffer<PendingAudioFrame>] = [:]
+    private var audioDropsBySource: [String: Int] = [:]
+    private var audioDrainTask: Task<Void, Never>?
+    // MainActor-owned because it’s driven by WS status events delivered to the main queue.
+    @MainActor private var serverStreamingAcked: Bool = false
+
+    // 16kHz mono PCM16. Defaults are tuned for “Both” mode:
+    // keep at most ~2.4s buffered per source (120 frames * 20ms).
+    private let audioSampleRate: Double = 16000.0
+    private let audioBytesPerSample: Int = 2
+    private let maxBufferedFramesPerSource: Int = 120
 
     override init() {
         super.init()
@@ -118,6 +189,8 @@ private let session: URLSession = {
     func connect(sessionID: String, attemptID: String? = nil) {
         self.sessionID = sessionID
         self.attemptID = attemptID ?? UUID().uuidString
+        Task { @MainActor in self.serverStreamingAcked = false }
+        resetAudioBuffers()
         
         // V1: Generate correlation IDs for this connection
         self._correlationIDs = CorrelationIDs.generate(
@@ -126,12 +199,15 @@ private let session: URLSession = {
         )
         
         reconnectDelay = 1
+        reconnectAttempts = 0
+        lastPongTime = nil
 
         task?.cancel(with: .goingAway, reason: nil)
         task = session.webSocketTask(with: webSocketRequest)
         task?.resume()
         receiveLoop()
         schedulePing()
+        startAudioDrainLoop()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.sendStart()
         }
@@ -168,6 +244,11 @@ private let session: URLSession = {
         task = nil
         sessionID = nil
         stopPing()
+        stopAudioDrainLoop()
+        resetAudioBuffers()
+        Task { @MainActor in self.serverStreamingAcked = false }
+        reconnectAttempts = 0
+        lastPongTime = nil
         finalSummaryWaiter = nil
         if debugEnabled {
             NSLog("WebSocketStreamer: disconnect")
@@ -197,6 +278,9 @@ private let session: URLSession = {
         task = nil
         sessionID = nil
         stopPing()
+        stopAudioDrainLoop()
+        resetAudioBuffers()
+        self.serverStreamingAcked = false
         finalSummaryWaiter = nil
         return didReceive
     }
@@ -205,14 +289,159 @@ private let session: URLSession = {
         if debugEnabled {
             NSLog("📤 WebSocketStreamer sending PCM frame: %d bytes, source: %@", data.count, source)
         }
-        
-        let payload: [String: Any] = [
-            "type": "audio",
-            "source": source,
-            "data": data.base64EncodedString()
-        ]
-        
-        sendJSON(payload)
+
+        // Never pace on the capture thread. Buffer and let the drain loop handle pacing + backpressure.
+        enqueueAudioFrame(data, source: source)
+    }
+
+    private func sendBinaryAudioFrame(_ data: Data, source: String) {
+        // Binary audio framing (v1):
+        // Header: "EP" + version byte + source byte + raw PCM16 payload.
+        // - source byte: 0=system, 1=mic
+        let sourceByte: UInt8
+        switch source.lowercased() {
+        case "mic", "microphone":
+            sourceByte = 1
+        default:
+            sourceByte = 0
+        }
+
+        var framed = Data([0x45, 0x50, 0x01, sourceByte]) // "EP", v1, source
+        framed.append(data)
+        sendBinary(framed, payloadType: "audio_bin_v1")
+    }
+
+    private func resetAudioBuffers() {
+        audioBufferLock.lock()
+        audioBuffersBySource.removeAll()
+        audioDropsBySource.removeAll()
+        audioBufferLock.unlock()
+    }
+
+    private func bufferForSource(_ source: String) -> RingBuffer<PendingAudioFrame> {
+        if let existing = audioBuffersBySource[source] {
+            return existing
+        }
+        let buffer = RingBuffer<PendingAudioFrame>(capacity: maxBufferedFramesPerSource)
+        audioBuffersBySource[source] = buffer
+        return buffer
+    }
+
+    private func enqueueAudioFrame(_ data: Data, source: String) {
+        // Cheap validation: ignore empty frames.
+        guard !data.isEmpty else { return }
+
+        // Estimate sample count from PCM16.
+        let samples = max(0, data.count / audioBytesPerSample)
+        let frame = PendingAudioFrame(
+            data: data,
+            source: source,
+            sampleCount: samples,
+            enqueuedAtUptimeNs: DispatchTime.now().uptimeNanoseconds
+        )
+
+        audioBufferLock.lock()
+        let buffer = bufferForSource(source)
+        let evicted = buffer.pushEvictingOldest(frame)
+        if evicted != nil {
+            audioDropsBySource[source, default: 0] += 1
+            let dropped = audioDropsBySource[source, default: 0]
+            audioBufferLock.unlock()
+            // Sampled warning to avoid log spam at 50fps.
+            StructuredLogger.shared.logSampled(
+                level: .warning,
+                message: "Audio buffer full; dropping oldest frame to keep near real-time",
+                sampleKey: "ws_audio_drop_\(source)",
+                sampleRate: 50,
+                metadata: [
+                    "source": source,
+                    "drops_total": dropped,
+                    "buffer_capacity_frames": maxBufferedFramesPerSource
+                ]
+            )
+            return
+        }
+        audioBufferLock.unlock()
+    }
+
+    private func popAudioFrame(source: String) -> PendingAudioFrame? {
+        audioBufferLock.lock()
+        let frame = audioBuffersBySource[source]?.pop()
+        audioBufferLock.unlock()
+        return frame
+    }
+
+    private func startAudioDrainLoop() {
+        stopAudioDrainLoop()
+        audioDrainTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            // Per-source pacing (20ms frames at 16kHz, but compute from sampleCount to be robust).
+            var nextSendNsBySource: [String: UInt64] = [:]
+            let sources = ["system", "mic"]
+
+            while !Task.isCancelled {
+                // Don’t send audio until:
+                // - the socket exists, and
+                // - the server has ACKed streaming (ensures "start" processed).
+                let acked = await MainActor.run { self.serverStreamingAcked }
+                if self.task == nil || acked == false {
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                    continue
+                }
+
+                let nowNs = DispatchTime.now().uptimeNanoseconds
+                var didSend = false
+                var soonestDueNs: UInt64? = nil
+
+                for source in sources {
+                    let dueNs = nextSendNsBySource[source] ?? nowNs
+                    soonestDueNs = min(soonestDueNs ?? dueNs, dueNs)
+                    guard nowNs >= dueNs else { continue }
+
+                    guard let frame = self.popAudioFrame(source: source) else { continue }
+                    didSend = true
+
+                    // Schedule next send for this source based on audio duration.
+                    let durationS = Double(frame.sampleCount) / self.audioSampleRate
+                    let durationNs = UInt64(max(1.0, durationS * 1_000_000_000.0))
+                    let nextNs = max(dueNs, nowNs) &+ durationNs
+                    nextSendNsBySource[source] = nextNs
+                    soonestDueNs = min(soonestDueNs ?? nextNs, nextNs)
+
+                    if BackendConfig.useBinaryAudioFrames {
+                        self.sendBinaryAudioFrame(frame.data, source: frame.source)
+                    } else {
+                        let payload: [String: Any] = [
+                            "type": "audio",
+                            "source": frame.source,
+                            "data": frame.data.base64EncodedString()
+                        ]
+                        self.sendJSON(payload)
+                    }
+                }
+
+                if didSend {
+                    // Allow other tasks to run; keep loop responsive.
+                    try? await Task.sleep(nanoseconds: 1_000_000)
+                    continue
+                }
+
+                // Nothing to send; sleep until the soonest due time or a short default.
+                let sleepNs: UInt64
+                if let due = soonestDueNs, due > nowNs {
+                    sleepNs = min(due - nowNs, 20_000_000)
+                } else {
+                    sleepNs = 10_000_000
+                }
+                try? await Task.sleep(nanoseconds: sleepNs)
+            }
+        }
+    }
+
+    private func stopAudioDrainLoop() {
+        audioDrainTask?.cancel()
+        audioDrainTask = nil
     }
 
     private func sendStart() {
@@ -265,7 +494,79 @@ private let session: URLSession = {
         sendJSON(payload)
     }
 
+    private func sendBinary(_ data: Data, payloadType: String) {
+        // If capture starts before the WS task exists (or after it is torn down),
+        // do not enqueue sends that will never complete and will back up the send queue.
+        guard task != nil else {
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("Dropping WebSocket binary send (not connected)", metadata: [
+                    "payload_type": payloadType
+                ])
+            }
+            return
+        }
+
+        // P0: Enqueue send instead of blocking capture thread
+        guard sendQueue.operationCount < maxQueuedSends else {
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("WebSocket send queue overflow, dropping frame", metadata: [
+                    "payload_type": payloadType,
+                    "queue_depth": self.sendQueue.operationCount,
+                    "max_queue": self.maxQueuedSends
+                ])
+            }
+            return
+        }
+
+        sendQueue.addOperation { [weak self] in
+            guard let self = self else { return }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var sendError: Error?
+
+            guard let task = self.task else {
+                DispatchQueue.main.async {
+                    StructuredLogger.shared.warning("Dropping WebSocket binary send (disconnected)", metadata: [
+                        "payload_type": payloadType
+                    ])
+                }
+                return
+            }
+
+            task.send(.data(data)) { error in
+                sendError = error
+                semaphore.signal()
+            }
+
+            let result = semaphore.wait(timeout: .now() + 5)
+            if result == .timedOut {
+                DispatchQueue.main.async {
+                    StructuredLogger.shared.warning("WebSocket send timeout", metadata: [
+                        "payload_type": payloadType
+                    ])
+                }
+            }
+
+            if let error = sendError {
+                DispatchQueue.main.async {
+                    self.handleError(error)
+                }
+            }
+        }
+    }
+
     private func sendJSON(_ payload: [String: Any]) {
+        // If capture starts before the WS task exists (or after it is torn down),
+        // do not enqueue sends that will never complete and will back up the send queue.
+        guard task != nil else {
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("Dropping WebSocket send (not connected)", metadata: [
+                    "payload_type": payload["type"] as? String ?? "unknown"
+                ])
+            }
+            return
+        }
+
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
         guard let text = String(data: data, encoding: .utf8) else { return }
         
@@ -291,7 +592,16 @@ private let session: URLSession = {
             let semaphore = DispatchSemaphore(value: 0)
             var sendError: Error?
             
-            self.task?.send(.string(text)) { error in
+            guard let task = self.task else {
+                DispatchQueue.main.async {
+                    StructuredLogger.shared.warning("Dropping WebSocket send (disconnected)", metadata: [
+                        "payload_type": payloadType
+                    ])
+                }
+                return
+            }
+
+            task.send(.string(text)) { error in
                 sendError = error
                 semaphore.signal()
             }
@@ -351,16 +661,40 @@ private let session: URLSession = {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
               let type = object["type"] as? String else { return }
 
+        // V1: Drop late/out-of-order messages from previous start attempts.
+        if let msgAttempt = object["attempt_id"] as? String,
+           let expected = self.attemptID,
+           !msgAttempt.isEmpty,
+           msgAttempt != expected {
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("Dropping WS message for mismatched attempt_id", metadata: [
+                    "type": type,
+                    "expected_attempt_id": expected,
+                    "message_attempt_id": msgAttempt
+                ])
+            }
+            return
+        }
+
         switch type {
         case "status":
             let state = (object["state"] as? String) ?? "error"
             let message = (object["message"] as? String) ?? ""
             DispatchQueue.main.async {
-                if state == "streaming" || state == "backpressure" || state == "warning" {
+                switch state {
+                case "streaming", "backpressure", "warning", "buffering", "overloaded":
+                    self.serverStreamingAcked = true
                     self.onStatus?(.streaming, message)
-                } else if state == "reconnecting" {
+                case "connected", "connecting", "preparing", "reconnecting":
+                    self.serverStreamingAcked = false
+                    // Server uses "connected" while waiting for the client "start" message.
+                    // Treating this as an error causes the mac client to abort a session immediately.
                     self.onStatus?(.reconnecting, message)
-                } else {
+                case "error":
+                    self.serverStreamingAcked = false
+                    self.onStatus?(.error, message)
+                default:
+                    self.serverStreamingAcked = false
                     self.onStatus?(.error, message)
                 }
             }
@@ -505,6 +839,16 @@ private let session: URLSession = {
 
     private func reconnect() {
         guard let sessionID else { return }
+        reconnectAttempts += 1
+        if reconnectAttempts > maxReconnectAttempts {
+            stopPing()
+            task?.cancel(with: .goingAway, reason: nil)
+            task = nil
+            DispatchQueue.main.async {
+                self.onStatus?(.error, "Connection lost. Unable to reconnect (attempts=\(self.reconnectAttempts)).")
+            }
+            return
+        }
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         stopPing()
@@ -514,7 +858,8 @@ private let session: URLSession = {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
-            self.connect(sessionID: sessionID)
+            // Preserve attempt ID across reconnects to keep correlation stable for the UI.
+            self.connect(sessionID: sessionID, attemptID: self.attemptID)
         }
     }
 
@@ -522,9 +867,17 @@ private let session: URLSession = {
         stopPing()
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             guard let self else { return }
+            if let lastPong = self.lastPongTime,
+               Date().timeIntervalSince(lastPong) > self.pongTimeout {
+                self.handleError(NSError(domain: "WebSocketStreamer", code: -1,
+                                         userInfo: [NSLocalizedDescriptionKey: "Pong timeout"]))
+                return
+            }
             self.task?.sendPing { error in
                 if let error {
                     self.handleError(error)
+                } else {
+                    self.lastPongTime = Date()
                 }
             }
         }

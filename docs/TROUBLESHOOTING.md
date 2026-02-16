@@ -88,14 +88,22 @@ If using manual backend on a non-8000 port, set Settings → Backend host/port i
 Symptoms:
 - App shows "permission required" or no audio is captured.
 
-Checks:
-- System Settings -> Privacy & Security -> Screen Recording
-- Ensure EchoPanel is enabled.
- - If prompts keep reappearing, you are likely running multiple identities (swift-run binary vs .app bundle) and macOS ties permission to the exact identity.
-   - Recommended: build a stable bundle and keep using it:
-     - `./scripts/build-dev-app.sh`
-     - `./scripts/run-dev-app.sh`
-   - After toggling Screen Recording, macOS often requires quitting and relaunching the app for it to take effect.
+CRITICAL - App Location:
+- **ALWAYS use:** `/Users/pranay/Applications/MeetingListenerApp-Dev.app`
+- Build with: `./scripts/build-dev-app.sh`
+- macOS ties permission to the EXACT app location + signature
+
+If permission keeps breaking:
+1. System Settings → Privacy & Security → Screen Recording
+2. Remove ALL EchoPanel/MeetingListener entries
+3. Run: `./scripts/build-dev-app.sh`  
+4. Launch: `open "/Users/pranay/Applications/MeetingListenerApp-Dev.app"`
+5. Grant permission to THIS location
+
+DO NOT use:
+- dist/EchoPanel.app (outdated)
+- Raw .build/ binaries (unsigned)
+- Any other path
 
 Notes:
 - ScreenCaptureKit system audio capture requires Screen Recording permission.

@@ -7,6 +7,21 @@
 
 ---
 
+## Update (2026-02-13)
+
+Groundwork implemented for future offline canonical transcript merge:
+- Realtime `asr_final` events now include deterministic `segment_id` computed as a content hash of `(source, t0, t1, normalized_text)`:
+  - `server/services/transcript_ids.py`
+  - `server/api/ws_live_listener.py` (`_asr_loop` attaches `segment_id` when missing)
+  - Test: `tests/test_ws_segment_ids.py`
+- macOS session persistence and exports now include `segment_id` for each transcript segment:
+  - `macapp/MeetingListenerApp/Sources/TranscriptIDs.swift`
+  - `macapp/MeetingListenerApp/Sources/AppState.swift` (transcript.jsonl append + export payload)
+
+This does **not** implement offline raw-audio storage or a canonical transcript job queue yet; those remain open.
+
+---
+
 ## Executive Summary
 
 1. **No offline canonical transcript pipeline exists today.** The system relies entirely on real-time streaming ASR with session-end diarization applied to the realtime transcript (`server/api/ws_live_listener.py:436-448`).

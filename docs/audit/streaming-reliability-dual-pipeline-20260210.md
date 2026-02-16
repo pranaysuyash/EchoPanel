@@ -7,6 +7,21 @@
 
 ---
 
+## Update (2026-02-13)
+
+This audit is a point-in-time report (2026-02-10, with a follow-up table on 2026-02-11). As of 2026-02-13, several items in the executive summary / failure mode table have been implemented and the older file/line citations are no longer accurate due to subsequent refactors.
+
+Key reconciliations (observed):
+
+- FM-2 (Model preload / cold-start latency): server startup now runs an eager warmup via the model preloader in lifespan. Evidence: `server/main.py` (lines 135-155).
+- FM-3 (Queue metrics to client): the server emits per-source metrics including `queue_depth`, `queue_fill_ratio`, `dropped_total/recent`, and `realtime_factor` every 1s. Evidence: `server/api/ws_live_listener.py` (lines 702-809).
+- FM-4 (Analysis pile-up): analysis is run as a single background loop task started once per session (not a per-interval task append), and NLP work is guarded by `asyncio.wait_for` timeouts. Evidence: `server/api/ws_live_listener.py` (lines 628-667, 955-958).
+- FM-10 (Binary frame source tagging): binary audio framing supports a header that encodes the source (system vs mic) and the server decodes it; it is no longer hardcoded to "system". Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 237-252), `server/api/ws_live_listener.py` (lines 1083-1112).
+- FM-11 (Pong timeout): the client now treats the socket as dead if pings stop completing for >15s and triggers reconnect. Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 118-120, 678-694).
+- FM-6 (Reconnect max attempts): reconnect attempts are now capped (5) and surface an explicit `.error` status to the UI after exceeding the cap. Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 104-108, 653-675).
+
+The remaining material in this doc is still useful as design rationale (UI truthfulness, backpressure UX, dual-pipeline vision), but readers should treat pre-2026-02-13 implementation details as historical.
+
 ## Files Inspected
 
 **Client (Swift):**

@@ -37,6 +37,8 @@ All structured messages are UTF-8 JSON text frames.
 {
   "type": "start",
   "session_id": "uuid-string",
+  "attempt_id": "uuid-string (optional but recommended)",
+  "connection_id": "uuid-string (optional; diagnostics only)",
   "sample_rate": 16000,
   "format": "pcm_s16le",
   "channels": 1,
@@ -53,6 +55,7 @@ All structured messages are UTF-8 JSON text frames.
   - `{"type":"error","message":"Unsupported audio format: ..."}`
   - then closes connection.
 - `client_features` is optional; these flags are telemetry/staging controls and do not change default processing behavior yet.
+- `attempt_id` is used to correlate a single start attempt across reconnects and to drop late/out-of-order messages.
 
 ### `audio` (preferred)
 ```json
@@ -67,7 +70,17 @@ All structured messages are UTF-8 JSON text frames.
 
 ### Binary frame (legacy fallback)
 - Raw PCM16 bytes in binary websocket frames are still accepted.
-- Binary frames are treated as `source="system"`.
+- If the binary payload starts with the v1 header, the server will extract `source` from the header.
+- Otherwise, legacy binary frames are treated as `source="system"`.
+
+#### Binary frame (v1 header)
+Header format:
+- Bytes 0-1: ASCII `"EP"`
+- Byte 2: Version `1`
+- Byte 3: Source (`0` = `system`, `1` = `mic`)
+- Bytes 4..: Raw PCM16 mono @ 16kHz
+
+This is the preferred binary encoding used by the macOS client when `BackendConfig.useBinaryAudioFrames` is enabled.
 
 ### `stop`
 ```json
@@ -84,6 +97,9 @@ All structured messages are UTF-8 JSON text frames.
 ```json
 {
   "type": "status",
+  "session_id": "uuid-string (optional)",
+  "attempt_id": "uuid-string (optional)",
+  "connection_id": "uuid-string (optional)",
   "state": "streaming | warning | backpressure | error",
   "message": "human-readable message",
   "dropped_frames": 3
@@ -95,6 +111,9 @@ All structured messages are UTF-8 JSON text frames.
 ```json
 {
   "type": "asr_partial | asr_final",
+  "session_id": "uuid-string (optional)",
+  "attempt_id": "uuid-string (optional)",
+  "connection_id": "uuid-string (optional)",
   "text": "recognized text",
   "t0": 12.3,
   "t1": 14.0,
@@ -109,6 +128,9 @@ All structured messages are UTF-8 JSON text frames.
 ```json
 {
   "type": "entities_update",
+  "session_id": "uuid-string (optional)",
+  "attempt_id": "uuid-string (optional)",
+  "connection_id": "uuid-string (optional)",
   "people": [],
   "orgs": [],
   "dates": [],
@@ -121,6 +143,9 @@ All structured messages are UTF-8 JSON text frames.
 ```json
 {
   "type": "cards_update",
+  "session_id": "uuid-string (optional)",
+  "attempt_id": "uuid-string (optional)",
+  "connection_id": "uuid-string (optional)",
   "actions": [],
   "decisions": [],
   "risks": [],
@@ -132,6 +157,9 @@ All structured messages are UTF-8 JSON text frames.
 ```json
 {
   "type": "metrics",
+  "session_id": "uuid-string (optional)",
+  "attempt_id": "uuid-string (optional)",
+  "connection_id": "uuid-string (optional)",
   "source": "system | mic",
   "queue_depth": 1,
   "queue_max": 48,

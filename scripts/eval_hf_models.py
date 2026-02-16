@@ -25,6 +25,31 @@ from huggingface_hub import InferenceClient
 DEFAULT_MANIFEST = Path("server/config/hf_model_manifest.json")
 DEFAULT_RECEIPT_DIR = Path("docs/audit/artifacts")
 
+def _load_local_dotenv_defaults() -> None:
+    """Best-effort `.env` loader (does not override explicit env vars)."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for raw in env_path.read_text(errors="ignore").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if not k or not v:
+                continue
+            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
+    except Exception:
+        return
+
 
 @dataclass
 class EvalSpec:
@@ -100,6 +125,7 @@ def _output_shape(task: str, output: Any) -> dict[str, Any]:
 
 
 def main() -> int:
+    _load_local_dotenv_defaults()
     args = _parse_args()
     if not args.manifest.exists():
         print(f"Manifest not found: {args.manifest}", file=sys.stderr)

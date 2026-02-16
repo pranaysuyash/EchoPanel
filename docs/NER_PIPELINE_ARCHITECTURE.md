@@ -1,4 +1,17 @@
-# NER Pipeline Architecture (v0.3 Specification)
+# NER Pipeline Architecture
+
+## Implementation Status
+
+| Feature | Status | Version | Notes |
+|---------|--------|---------|-------|
+| Regex/Pattern Matching | ✅ **Implemented** | v0.2 | Current production implementation |
+| Keyword-based Extraction | ✅ **Implemented** | v0.2 | Actions, Decisions, Risks via patterns |
+| GLiNER Integration | 🚧 **Planned** | v0.3 | Specification complete, pending implementation |
+| Transformer NER (spaCy) | 🚧 **Planned** | v0.3 | en_core_web_trf for post-call analysis |
+| Evidence Pointer API | 🚧 **Planned** | v0.3 | Standardized pointer format |
+| Dynamic Label Adjustment | 🚧 **Planned** | v0.3 | Runtime context-aware labels |
+
+> **Current Implementation (v0.2):** The NER pipeline currently uses **regex-based pattern matching** for entity extraction (versions, money, dates, URLs, emails) and **keyword-based extraction** for actions, decisions, and risks. GLiNER integration is planned for v0.3.
 
 ## Overview
 EchoPanel's NER pipeline provides the structured "Evidence Anchors" that drive precision query routing. It transitions from basic string matching to a hybrid system that treats entities as first-class citizens in the RAG index.

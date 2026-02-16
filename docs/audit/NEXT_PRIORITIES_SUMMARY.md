@@ -4,6 +4,12 @@
 **Context:** Post-SidePanel remediation, pre-v0.2 launch  
 **Status:** SidePanel P0 remediation ✅ COMPLETE
 
+**Update (2026-02-13):** This doc is a historical snapshot from 2026-02-09. The top priorities below were executed and are now tracked as DONE in `docs/WORKLOG_TICKETS.md`:
+- Backend hardening follow-ups: `TCK-20260213-016`, `TCK-20260213-022`, `TCK-20260213-024`, `TCK-20260213-025` (see also `docs/audit/BACKEND_HARDENING_AUDIT_2026-02-09.md`, `docs/audit/BACKEND_HARDENING_VERIFICATION_2026-02-09.md`)
+- Accessibility deep pass: `TCK-20260213-017` (see also `docs/audit/ACCESSIBILITY_DEEP_PASS_2026-02-09.md`)
+- Performance quick win: `TCK-20260213-014` (LazyVStack transcript rows). A full profiling/baseline pass is still not captured as a dedicated ticket.
+- Test stability: `TCK-20260213-028` (visual snapshot tests opt-in to keep `swift test` stable by default)
+
 ---
 
 ## Current State (Validated)
@@ -24,8 +30,8 @@
 
 ## Recommended Review Order
 
-### Priority 1: Backend Hardening (P0/P1) 🔵 OPEN
-**Ticket:** TCK-20260209-003
+### Priority 1: Backend Hardening (P0/P1) ✅ DONE (2026-02-13)
+**Ticket:** TCK-20260209-003 (historical) + follow-ups: `TCK-20260213-016`, `TCK-20260213-022`, `TCK-20260213-024`, `TCK-20260213-025`
 
 **Why first:** Backend reliability is a launch blocker. Users will blame the app if transcription fails silently.
 
@@ -66,8 +72,8 @@
 
 ---
 
-### Priority 3: Accessibility Deep Pass (P1)
-**Ticket:** (To be created from findings)
+### Priority 3: Accessibility Deep Pass (P1) ✅ DONE (2026-02-13)
+**Ticket:** `TCK-20260213-017` (follow-up to `docs/audit/ACCESSIBILITY_DEEP_PASS_2026-02-09.md`)
 
 **Why third:** Current a11y is "implemented" but not validated with real VoiceOver workflows.
 
@@ -121,10 +127,8 @@
    - `decisionBeadPositions` has O(n²) search
    - *Note: Address in Priority 2*
 
-3. **Backend reliability unknowns:**
-   - WebSocket retry logic not reviewed
-   - Backend crash handling not validated
-   - *Note: Address in Priority 1 (CRITICAL)*
+3. **Backend reliability unknowns (historical):**
+   - This was addressed post-2026-02-09; see Priority 1 follow-up tickets in `docs/WORKLOG_TICKETS.md`.
 
 ---
 
@@ -196,6 +200,7 @@ Evidence log:
 ## Questions?
 
 - **Which priority should I start with?** → Priority 1 (Backend Hardening) unless you have specific expertise elsewhere
+- **Updated guidance (2026-02-13):** Start with the currently **OPEN 🔵** tickets in `docs/WORKLOG_TICKETS.md` (this doc is historical).
 - **Can I combine priorities?** → No. Each has distinct deliverables and validation criteria
 - **What if I find issues outside scope?** → Create new ticket, don't expand scope
 - **How do I mark a ticket done?** → Update status to ✅, fill evidence log, update worklog

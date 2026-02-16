@@ -117,6 +117,30 @@ enum KeychainHelper {
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
+
+    /// Ensure there is a backend auth token stored in Keychain.
+    ///
+    /// This allows the local backend to be token-protected by default without forcing the
+    /// user to manually provision a secret.
+    @discardableResult
+    static func ensureBackendToken() -> String? {
+        if let existing = loadBackendToken(), !existing.isEmpty {
+            return existing
+        }
+
+        // 256-bit random token, base64url (no padding).
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else { return nil }
+
+        var token = Data(bytes).base64EncodedString()
+        token = token.replacingOccurrences(of: "+", with: "-")
+        token = token.replacingOccurrences(of: "/", with: "_")
+        token = token.replacingOccurrences(of: "=", with: "")
+
+        guard saveBackendToken(token) else { return nil }
+        return token
+    }
     
     // MARK: - Migration
     

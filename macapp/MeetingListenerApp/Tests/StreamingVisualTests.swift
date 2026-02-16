@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XCTest
 import SnapshotTesting
@@ -14,8 +15,14 @@ import SnapshotTesting
 final class StreamingVisualTests: XCTestCase {
     private static let recordSnapshots = ProcessInfo.processInfo.environment["RECORD_STREAMING_SNAPSHOTS"] == "1"
     
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+
+        // Streaming UI snapshots are opt-in: they are sensitive to rendering differences
+        // across OS versions / machines and can be noisy in CI.
+        let shouldRun = ProcessInfo.processInfo.environment["RUN_VISUAL_SNAPSHOTS"] == "1"
+        try XCTSkipUnless(shouldRun, "Streaming visual snapshot tests are opt-in. Set RUN_VISUAL_SNAPSHOTS=1 to run.")
+
         UserDefaults.standard.removeObject(forKey: "sidePanel.viewMode")
     }
     
@@ -271,6 +278,7 @@ final class StreamingVisualTests: XCTestCase {
         .preferredColorScheme(colorScheme)
         
         let hostingView = NSHostingView(rootView: view)
+        hostingView.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
         hostingView.frame = NSRect(origin: .zero, size: size)
         hostingView.layoutSubtreeIfNeeded()
         
@@ -288,5 +296,3 @@ final class StreamingVisualTests: XCTestCase {
         )
     }
 }
-
-

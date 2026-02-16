@@ -119,7 +119,13 @@ final class BackendManager: ObservableObject {
         
         // Ensure token is migrated from UserDefaults to Keychain
         _ = KeychainHelper.migrateFromUserDefaults()
-        
+
+        // Secure local backend by default: if no token is configured yet, generate one and
+        // start the backend with it. The app will automatically send it in WS/HTTP headers.
+        if BackendConfig.isLocalHost {
+            _ = KeychainHelper.ensureBackendToken()
+        }
+
         if let hfToken = KeychainHelper.loadHFToken(), !hfToken.isEmpty {
             env["ECHOPANEL_HF_TOKEN"] = hfToken
             env["ECHOPANEL_DIARIZATION"] = "1"
@@ -279,6 +285,11 @@ final class BackendManager: ObservableObject {
     private func checkHealth() {
         var request = URLRequest(url: healthCheckURL)
         request.timeoutInterval = BackendConfig.healthCheckTimeout
+        if let token = KeychainHelper.loadBackendToken(),
+           !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "x-echopanel-token")
+        }
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
@@ -361,6 +372,11 @@ final class BackendManager: ObservableObject {
 
         var request = URLRequest(url: healthCheckURL)
         request.timeoutInterval = timeout
+        if let token = KeychainHelper.loadBackendToken(),
+           !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "x-echopanel-token")
+        }
 
         URLSession.shared.dataTask(with: request) { data, response, error in
             defer { semaphore.signal() }

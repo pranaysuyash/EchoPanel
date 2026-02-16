@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Test harness for EchoPanel UI testing with real audio file.
-Plays llm_recording_pranay.wav through WebSocket and captures transcript output.
+Test harness for EchoPanel UI testing with a real audio file.
+
+Important:
+- If you send audio without pacing, the server may drop frames under backpressure
+  ("Dropping system due to extreme overload"), which is expected behavior.
+- If you wrap this script in a short `timeout` (e.g. 60s) and your audio is >60s,
+  it will be terminated before completion. Use `--speed` to control pacing.
 """
 
 import asyncio
+import argparse
 import base64
 import json
 import sys
@@ -15,10 +21,9 @@ from pathlib import Path
 
 import websockets
 
-# Configuration
-AUDIO_FILE = Path("/Users/pranay/Projects/EchoPanel/llm_recording_pranay.wav")
-WS_URL = "ws://127.0.0.1:8000/ws/live-listener"
-CHUNK_DURATION = 0.5  # seconds per chunk
+DEFAULT_AUDIO_FILE = Path("/Users/pranay/Projects/EchoPanel/llm_recording_pranay.wav")
+DEFAULT_WS_URL = "ws://127.0.0.1:8000/ws/live-listener"
+DEFAULT_CHUNK_SECONDS = 0.5  # seconds per chunk
 SAMPLE_RATE = 16000
 
 # Statistics
@@ -34,7 +39,27 @@ stats = {
 }
 
 
-async def stream_audio(websocket, audio_path):
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Stream a WAV file to EchoPanel's WS listener and capture transcript output.")
+    parser.add_argument("--audio", type=Path, default=DEFAULT_AUDIO_FILE, help="Path to WAV file")
+    parser.add_argument("--ws-url", default=DEFAULT_WS_URL, help="WebSocket URL (default: local server)")
+    parser.add_argument("--chunk-seconds", type=float, default=DEFAULT_CHUNK_SECONDS, help="Seconds of audio per chunk")
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Pacing speed multiplier. 1.0=realtime, 2.0=2x faster, 0=send as fast as possible (can overload server).",
+    )
+    return parser.parse_args()
+
+
+def _estimate_runtime(audio_seconds: float, speed: float) -> float:
+    if speed <= 0:
+        return 0.0
+    return audio_seconds / speed
+
+
+async def stream_audio(websocket, audio_path: Path, *, chunk_seconds: float, speed: float):
     """Stream audio file to WebSocket in chunks."""
     with wave.open(str(audio_path), 'rb') as wav_file:
         n_channels = wav_file.getnchannels()
@@ -42,9 +67,14 @@ async def stream_audio(websocket, audio_path):
         framerate = wav_file.getframerate()
         n_frames = wav_file.getnframes()
         
-        print(f"Audio: {n_frames/framerate:.1f}s, {framerate}Hz, {n_channels}ch, {sample_width}bytes")
+        audio_seconds = n_frames / framerate if framerate else 0.0
+        est = _estimate_runtime(audio_seconds, speed)
+        pacing_desc = "unpaced" if speed <= 0 else f"{speed:.2f}x"
+        print(f"Audio: {audio_seconds:.1f}s, {framerate}Hz, {n_channels}ch, {sample_width}bytes | pacing={pacing_desc} | est_runtime≈{est:.1f}s")
         
-        chunk_frames = int(framerate * CHUNK_DURATION)
+        if chunk_seconds <= 0:
+            raise ValueError("--chunk-seconds must be > 0")
+        chunk_frames = int(framerate * chunk_seconds)
         frames_sent = 0
         
         while frames_sent < n_frames:
@@ -64,8 +94,9 @@ async def stream_audio(websocket, audio_path):
             
             frames_sent += frames_to_read
             
-            # Small delay to simulate real-time streaming
-            await asyncio.sleep(CHUNK_DURATION * 0.8)
+            # Pace to approximate realtime unless unpaced.
+            if speed > 0:
+                await asyncio.sleep(chunk_seconds / speed)
             
             if frames_sent % (framerate * 10) == 0:  # Every 10 seconds
                 elapsed = time.time() - stats["start_time"]
@@ -147,20 +178,21 @@ async def receive_messages(websocket):
 
 async def run_test():
     """Run the full test."""
+    args = _parse_args()
     print("=" * 60)
     print("EchoPanel UI Test with Audio File")
     print("=" * 60)
-    print(f"Audio file: {AUDIO_FILE}")
-    print(f"WebSocket: {WS_URL}")
+    print(f"Audio file: {args.audio}")
+    print(f"WebSocket: {args.ws_url}")
     print()
     
     # Check if audio file exists
-    if not AUDIO_FILE.exists():
-        print(f"❌ Audio file not found: {AUDIO_FILE}")
+    if not args.audio.exists():
+        print(f"❌ Audio file not found: {args.audio}")
         sys.exit(1)
     
     try:
-        async with websockets.connect(WS_URL) as websocket:
+        async with websockets.connect(args.ws_url) as websocket:
             print("✅ Connected to WebSocket")
             
             # Send start message
@@ -184,7 +216,7 @@ async def run_test():
             
             # Stream audio
             print("🎵 Streaming audio...")
-            await stream_audio(websocket, AUDIO_FILE)
+            await stream_audio(websocket, args.audio, chunk_seconds=args.chunk_seconds, speed=args.speed)
             print()
             
             # Send stop
@@ -202,7 +234,7 @@ async def run_test():
                 pass
                 
     except websockets.exceptions.ConnectionRefused:
-        print(f"❌ Cannot connect to {WS_URL}")
+        print(f"❌ Cannot connect to {args.ws_url}")
         print("   Make sure the server is running: uv run uvicorn server.main:app --reload")
         sys.exit(1)
     

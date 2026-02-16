@@ -97,6 +97,7 @@ struct TranscriptLineRow: View {
                         .monospacedDigit()
                         .foregroundColor(confidenceColor)
                         .frame(minWidth: Layout.confidenceMinWidth, alignment: .leading)
+                        .accessibilityLabel(confidenceAccessibilityLabel)
 
                     if segment.confidence < lowConfidenceThreshold {
                         needsReviewBadge
@@ -141,6 +142,16 @@ struct TranscriptLineRow: View {
         .transaction { transaction in
             transaction.animation = .easeInOut(duration: AnimationDuration.quick)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(transcriptAccessibilityLabel)
+    }
+    
+    /// Combined accessibility label for the entire transcript row
+    var transcriptAccessibilityLabel: String {
+        let speaker = speakerAccessibilityLabel.replacingOccurrences(of: "Speaker: ", with: "")
+        let confidence = confidenceAccessibilityLabel.replacingOccurrences(of: " percent", with: "%")
+        let text = segment.text
+        return "\(speaker), \(confidence): \(text)"
     }
 
     var speakerBadge: some View {
@@ -167,6 +178,21 @@ struct TranscriptLineRow: View {
             return isMic ? "Speaker: You" : "Speaker: System"
         }
         return "Unknown speaker"
+    }
+    
+    /// Accessibility label for confidence percentage
+    /// Provides clear description for VoiceOver users instead of just color
+    var confidenceAccessibilityLabel: String {
+        let percentage = Int(segment.confidence * 100)
+        if segment.confidence >= 0.85 {
+            return "High confidence: \(percentage) percent"
+        } else if segment.confidence >= 0.70 {
+            return "Medium confidence: \(percentage) percent"
+        } else if segment.confidence >= 0.50 {
+            return "Low confidence: \(percentage) percent, review recommended"
+        } else {
+            return "Very low confidence: \(percentage) percent, needs review"
+        }
     }
 
     func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
@@ -266,6 +292,8 @@ struct TranscriptLineRow: View {
             Capsule()
                 .stroke(NeedsReviewBadgeStyle.foreground.opacity(0.25), lineWidth: 0.5)
         )
+        .accessibilityLabel("Low confidence transcript - review recommended")
+        .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel("Low confidence transcript, needs review")
     }
 }

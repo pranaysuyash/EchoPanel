@@ -1,5 +1,19 @@
 # Mac Premium UX Audit: EchoPanel
 
+## Update (2026-02-13)
+
+This audit is a point-in-time critique (authored 2026-02-06). As of 2026-02-13, several items called out here have been addressed in the current app:
+
+- Session History is no longer raw JSON only: it has Summary/Transcript/JSON tabs, search/filter, deletion with confirmation, and "Reveal in Finder". Evidence: `macapp/MeetingListenerApp/Sources/SessionHistoryView.swift`, `macapp/MeetingListenerApp/Sources/SessionStore.swift`.
+- Onboarding diarization token friction is no longer present as an onboarding step; HuggingFace token entry lives in Settings and is stored in Keychain (with legacy UserDefaults migration). Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift`, `macapp/MeetingListenerApp/Sources/SettingsView.swift`, `macapp/MeetingListenerApp/Sources/KeychainHelper.swift`.
+- Side panel supports a narrow companion layout (Roll/Compact) rather than a single landscape-heavy window. Evidence: `macapp/MeetingListenerApp/Sources/SidePanel/`.
+- Session terminology has been partially unified: the menu bar now uses "End Session" (instead of "Stop Listening") to match the side panel and communicate a finalization step. Evidence: `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift`.
+
+Items still open from this report:
+
+- Onboarding "first success" audio metering remains a real UX opportunity: the current permissions step includes a beep test, but does not show live audio levels. Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift`.
+- Global hotkey behavior (Cmd+Shift+L when menu is closed) remains constrained by macOS global hotkey requirements; implementing it would require a separate approach (event tap / registered hotkey) and likely additional permissions.
+
 ## Executive Summary
 This audit evaluates EchoPanel through two distinct lenses:
 1.  **The Current Utility**: How well does it perform as a premium Mac recorder? (Scorecard & Issues UX-001 to UX-008)

@@ -51,5 +51,11 @@ Results:
 
 ## Residual Notes
 
-- The transcript rotor currently targets transcript segment navigation only; no additional custom rotor channels were added for non-transcript surfaces.
+- Resolved 2026-02-13: Added additional custom rotor channels for non-transcript insight surfaces and Full mode Context panel (see Follow-up).
 - Existing snapshot and contract tests remain green after accessibility updates.
+
+## Follow-up
+
+- 2026-02-13: Added VoiceOver rotor channels for non-transcript insight surfaces (Summary/Actions/Risks/Pins/Entities) and Full mode Context panel.
+  - Ticket: TCK-20260213-017
+  - Validation: `swift build` + `swift test` (73 tests) in `macapp/MeetingListenerApp`

@@ -95,23 +95,17 @@ struct SidePanelView: View {
         }
     }
 
-    struct FilterCacheKey: Equatable {
-        let transcriptRevision: Int
-        let entityFilterID: UUID?
-        let normalizedFullQuery: String
-        let viewMode: ViewMode
-    }
-
     @ObservedObject var appState: AppState
     let onEndSession: () -> Void
     let onModeChange: ((ViewMode) -> Void)?
+    let onAlwaysOnTopChange: ((Bool) -> Void)?
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @AppStorage("sidePanel.viewMode") var storedViewModeRaw = ViewMode.roll.rawValue
+    @AppStorage("sidePanel.alwaysOnTop") var alwaysOnTop = true
 
     @State var viewMode: ViewMode = .roll
-    @State var followLive = true
     @State var highlightMode: EntityHighlighter.HighlightMode = .extracted
     @State var showHighlightHelp = false
     @State var showShortcutOverlay = false
@@ -119,23 +113,9 @@ struct SidePanelView: View {
     @State var activeSurface: Surface = .summary
     @State var fullInsightTab: FullInsightTab = .summary
     @State var fullWorkMode: FullWorkMode = .live
-    @State var fullSearchQuery = ""
     @State var selectedSessionID: String = "live"
     @State var timelinePosition = 1.0
-    @State var filteredCacheKey: FilterCacheKey?
-    @State var filteredSegmentsCache: [TranscriptSegment] = []
-
-    @State var focusedSegmentID: UUID?
-    @State var lensSegmentID: UUID?
-    @State var pinnedSegmentIDs: Set<UUID> = []
-
-    @State var pendingNewSegments = 0
-    @State var lastTranscriptCount = 0
-    @State var scrollToBottomToken = UUID()
-    @State var pendingScrollTarget: UUID?
-
-    @State var selectedEntity: EntityItem?
-    @State var entityFilter: EntityItem?
+    @StateObject var transcriptUI = SidePanelTranscriptUIState()
     @State var decisionFirstSeen: [UUID: TimeInterval] = [:]
     @State var showCaptureDetails = false
 
@@ -145,11 +125,13 @@ struct SidePanelView: View {
     init(
         appState: AppState,
         onEndSession: @escaping () -> Void,
-        onModeChange: ((ViewMode) -> Void)? = nil
+        onModeChange: ((ViewMode) -> Void)? = nil,
+        onAlwaysOnTopChange: ((Bool) -> Void)? = nil
     ) {
         self.appState = appState
         self.onEndSession = onEndSession
         self.onModeChange = onModeChange
+        self.onAlwaysOnTopChange = onAlwaysOnTopChange
     }
 
     var body: some View {
@@ -199,12 +181,13 @@ struct SidePanelView: View {
                 storedViewModeRaw = ViewMode.roll.rawValue
                 viewMode = .roll
             }
-            lastTranscriptCount = appState.transcriptSegments.count
+            transcriptUI.lastTranscriptCount = appState.transcriptSegments.count
             refreshFilteredSegmentsCache(force: true)
             sanitizeStateForTranscript()
             installKeyboardMonitor()
             showCaptureDetails = false
             onModeChange?(viewMode)
+            onAlwaysOnTopChange?(alwaysOnTop)
         }
         .onDisappear {
             removeKeyboardMonitor()
@@ -233,9 +216,12 @@ struct SidePanelView: View {
             refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
+        .onChange(of: alwaysOnTop) { newValue in
+            onAlwaysOnTopChange?(newValue)
+        }
         .onChange(of: appState.transcriptSegments.count) { newCount in
-            let diff = newCount - lastTranscriptCount
-            lastTranscriptCount = newCount
+            let diff = newCount - transcriptUI.lastTranscriptCount
+            transcriptUI.lastTranscriptCount = newCount
             refreshFilteredSegmentsCache()
             guard diff > 0 else {
                 sanitizeStateForTranscript()
@@ -244,14 +230,14 @@ struct SidePanelView: View {
 
             announceTranscriptUpdate(delta: diff)
 
-            if followLive {
-                pendingNewSegments = 0
-                if lensSegmentID == nil {
-                    focusedSegmentID = visibleTranscriptSegments.last?.id
+            if transcriptUI.followLive {
+                transcriptUI.pendingNewSegments = 0
+                if transcriptUI.lensSegmentID == nil {
+                    transcriptUI.focusedSegmentID = visibleTranscriptSegments.last?.id
                 }
-                scrollToBottomToken = UUID()
+                transcriptUI.scrollToBottomToken = UUID()
             } else {
-                pendingNewSegments += diff
+                transcriptUI.pendingNewSegments += diff
             }
 
             sanitizeStateForTranscript()
@@ -260,17 +246,17 @@ struct SidePanelView: View {
             refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
-        .onChange(of: entityFilter?.id) { _ in
+        .onChange(of: transcriptUI.entityFilter?.id) { _ in
             refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
-        .onChange(of: fullSearchQuery) { _ in
+        .onChange(of: transcriptUI.fullSearchQuery) { _ in
             refreshFilteredSegmentsCache()
             sanitizeStateForTranscript()
         }
-        .onChange(of: followLive) { isOn in
+        .onChange(of: transcriptUI.followLive) { isOn in
             if isOn {
-                pendingNewSegments = 0
+                transcriptUI.pendingNewSegments = 0
                 jumpToLive()
             }
         }
@@ -290,7 +276,7 @@ struct SidePanelView: View {
                 activeSurface = surface
             }
         }
-        .onChange(of: focusedSegmentID) { _ in
+        .onChange(of: transcriptUI.focusedSegmentID) { _ in
             syncTimelineToFocus()
         }
     }

@@ -1,4 +1,17 @@
-# RAG Pipeline Architecture (v0.3 Specification)
+# RAG Pipeline Architecture
+
+## Implementation Status
+
+| Feature | Status | Version | Notes |
+|---------|--------|---------|-------|
+| Lexical Search (BM25) | ✅ **Implemented** | v0.2 | Current production implementation |
+| Vector Storage (LanceDB) | 🚧 **Planned** | v0.3 | Specification complete, pending implementation |
+| Embedding Generation | 🚧 **Planned** | v0.3 | EmbeddingGemma/BGE-M3 planned |
+| Semantic Search | 🚧 **Planned** | v0.3 | Hybrid vector+lexical planned |
+| Hybrid Reranking | 🚧 **Planned** | v0.3 | bge-reranker-v2-m3 planned |
+| Visual Memory RAG | 🚧 **Planned** | v0.4 | Frame transcript retrieval |
+
+> **Current Implementation (v0.2):** The RAG pipeline currently uses **lexical BM25 search only** via SQLite FTS5. Semantic search and embeddings are planned for v0.3.
 
 ## Overview
 EchoPanel's RAG system focuses on **Evidence Retrieval** as the primary UX. It transitions from simple lexical search to a high-density "Semantic + Lexical" hybrid pipeline using legally safe, local-first models, with the Gemma ecosystem available for high-performance on-device needs.

@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import hmac
+from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from server.api.documents import router as documents_router
 from server.api.ws_live_listener import router as ws_router
@@ -13,6 +15,81 @@ from server.services.asr_stream import _get_default_config
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
+HF_TOKEN_ENV = "ECHOPANEL_HF_TOKEN"
+
+def _load_local_dotenv_defaults() -> None:
+    """
+    Best-effort local `.env` loader for developer runs.
+
+    - Does not override already-set environment variables.
+    - Avoids adding a python-dotenv dependency.
+    - Intended to make `python -m server.main` and scripts work when `.env` exists.
+    """
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+
+    try:
+        for raw in env_path.read_text(errors="ignore").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if not k or not v:
+                continue
+            # Strip a single layer of wrapping quotes.
+            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
+    except Exception:
+        # Deliberately silent: `.env` is optional and should not block startup.
+        return
+
+
+def _sync_huggingface_token_env() -> None:
+    """
+    If the user configured `ECHOPANEL_HF_TOKEN`, propagate it to the standard
+    Hugging Face env vars so provider downloads (faster-whisper / hub) can
+    benefit from authenticated/pro plans without requiring duplicate config.
+    """
+    token = os.getenv(HF_TOKEN_ENV, "").strip()
+    if not token:
+        return
+
+    # Only fill if unset so explicit user configuration wins.
+    os.environ.setdefault("HF_TOKEN", token)
+    os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", token)
+
+
+def _extract_token(request: Request) -> str:
+    query_token = request.query_params.get("token", "").strip()
+    if query_token:
+        return query_token
+
+    header_token = request.headers.get("x-echopanel-token", "").strip()
+    if header_token:
+        return header_token
+
+    auth_header = request.headers.get("authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return ""
+
+
+def _require_http_auth(request: Request) -> None:
+    required_token = os.getenv(AUTH_TOKEN_ENV, "").strip()
+    if not required_token:
+        return
+    provided_token = _extract_token(request)
+    if not provided_token or not hmac.compare_digest(provided_token, required_token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -94,6 +171,12 @@ def _auto_select_provider():
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
     logger.info("Starting EchoPanel server...")
+
+    # Developer convenience: load `.env` if present (without overriding explicit env vars).
+    _load_local_dotenv_defaults()
+
+    # Ensure HF token is available for model downloads (if configured).
+    _sync_huggingface_token_env()
     
     # TCK-20260211-009: Auto-select provider based on capabilities
     _auto_select_provider()
@@ -107,6 +190,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Model preloading failed: {e}")
         # Continue anyway - will load on first request
+
+    # QW-003: Preload embedding model for RAG
+    try:
+        from server.services.embeddings import get_embedding_service
+        embedding_service = get_embedding_service()
+        if embedding_service.is_available():
+            # Warmup is lightweight, do it synchronously
+            embedding_service.warmup()
+            logger.info("Embedding model warmed up successfully")
+        else:
+            logger.warning("Embedding service not available (sentence-transformers not installed)")
+    except Exception as e:
+        logger.warning(f"Embedding model warmup failed: {e}")
+        # Continue anyway - RAG will work without embeddings (lexical only)
 
     diarization_prewarm_task: asyncio.Task[bool] | None = None
     if _env_flag("ECHOPANEL_PREWARM_DIARIZATION", default=True):
@@ -157,13 +254,15 @@ app.include_router(documents_router)
 
 
 @app.get("/")
-async def root() -> dict:
+async def root(request: Request) -> dict:
+    _require_http_auth(request)
     logger.info("Root endpoint accessed.")
     return {"status": "ok", "service": "echopanel"}
 
 
 @app.get("/health")
-async def health_check() -> dict:
+async def health_check(request: Request) -> dict:
+    _require_http_auth(request)
     """
     Health check that reflects ASR readiness.
 
@@ -193,6 +292,7 @@ async def health_check() -> dict:
                 "model_state": model_health.state.name,
                 "load_time_ms": model_health.load_time_ms,
                 "warmup_time_ms": model_health.warmup_time_ms,
+                "process_rss_mb": model_health.process_rss_mb,
             }
         
         # Not ready - determine why
@@ -221,7 +321,8 @@ async def health_check() -> dict:
 
 
 @app.get("/capabilities")
-async def get_capabilities() -> dict:
+async def get_capabilities(request: Request) -> dict:
+    _require_http_auth(request)
     """
     Get machine capabilities and ASR recommendations.
     
@@ -239,7 +340,8 @@ async def get_capabilities() -> dict:
 
 
 @app.get("/model-status")
-async def get_model_status() -> dict:
+async def get_model_status(request: Request) -> dict:
+    _require_http_auth(request)
     """
     Get model preloader status and statistics.
     

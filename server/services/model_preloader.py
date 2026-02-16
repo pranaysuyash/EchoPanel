@@ -19,6 +19,8 @@ Usage:
 import asyncio
 import inspect
 import logging
+import os
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -28,6 +30,25 @@ import numpy as np
 from .asr_providers import ASRProvider, ASRConfig, ASRProviderRegistry
 
 logger = logging.getLogger(__name__)
+
+def _get_process_rss_mb() -> Optional[float]:
+    """Best-effort process RSS in MB (used for health endpoints/observability)."""
+    try:
+        import psutil  # optional dependency
+
+        rss = psutil.Process(os.getpid()).memory_info().rss
+        return float(rss) / (1024 * 1024)
+    except Exception:
+        # Fallback: ru_maxrss is max RSS (not current RSS), units differ by platform.
+        try:
+            import resource  # stdlib
+
+            rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+            if sys.platform == "darwin":
+                return rss / (1024 * 1024)  # bytes → MB
+            return rss / 1024  # KB → MB (Linux)
+        except Exception:
+            return None
 
 
 class ModelState(Enum):
@@ -50,6 +71,7 @@ class ModelHealth:
     load_time_ms: float
     warmup_time_ms: float
     last_error: Optional[str] = None
+    process_rss_mb: Optional[float] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -60,6 +82,7 @@ class ModelHealth:
             "load_time_ms": round(self.load_time_ms, 1),
             "warmup_time_ms": round(self.warmup_time_ms, 1),
             "last_error": self.last_error,
+            "process_rss_mb": round(self.process_rss_mb, 1) if self.process_rss_mb is not None else None,
         }
 
 
@@ -383,6 +406,7 @@ class ModelManager:
             load_time_ms=self._load_time_ms,
             warmup_time_ms=self._warmup_time_ms,
             last_error=self._last_error,
+            process_rss_mb=_get_process_rss_mb(),
         )
     
     def get_stats(self) -> Dict[str, Any]:

@@ -10,6 +10,8 @@ __pycache__/
 *.pyc
 .swiftpm/
 .build/
+build/
+dist/
 xcuserdata/
 *.xcuserstate
 *.log
@@ -31,3 +33,7 @@ output/playwright/
 *.swp
 *.swo
 *~
+
+# Local per-developer agent/session/context files
+.agent/
+.agent/*

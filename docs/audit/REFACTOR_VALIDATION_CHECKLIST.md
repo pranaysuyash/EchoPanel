@@ -1,27 +1,37 @@
 # Refactoring Validation Checklist
 
-**Context:** Another agent is working on the SidePanelView decomposition based on the UI/UX audit findings. This checklist validates the refactoring quality.
+**Context:** Use this when refactoring large SwiftUI surfaces (especially `SidePanelView`) to validate correctness, test stability, and maintainability.
+
+**Source of truth for status/evidence:** `docs/WORKLOG_TICKETS.md`
 
 ---
 
 ## Phase 1: Build & Test Verification ✅/❌
 
 ```bash
-# 1. Clean build
+# 1. Build
 cd macapp/MeetingListenerApp && swift build
 
-# 2. All tests pass (including snapshots)
-swift test 2>&1 | grep -E "(passed|failed|Executed)"
+# 2. Unit/contract tests pass (visual snapshots are opt-in)
+swift test
 
-# 3. No new warnings
-swift build 2>&1 | grep -i warning | wc -l
+# 3. Check for compiler warnings (goal: no new warnings)
+swift build 2>&1 | rg -n "warning:" || true
+
+# 4. Visual snapshot tests (opt-in; stable by default)
+RUN_VISUAL_SNAPSHOTS=1 swift test --filter SidePanelVisualSnapshotTests
+RUN_VISUAL_SNAPSHOTS=1 swift test --filter StreamingVisualTests
+
+# Record baselines (only when intentional visual change)
+RUN_VISUAL_SNAPSHOTS=1 RECORD_SNAPSHOTS=1 swift test --filter SidePanelVisualSnapshotTests
+RUN_VISUAL_SNAPSHOTS=1 RECORD_STREAMING_SNAPSHOTS=1 swift test --filter StreamingVisualTests
 ```
 
-**Expected (Current State - All Pass):**
-- [x] Build succeeds
-- [x] Contract tests pass (5 tests)
-- [x] Snapshot tests pass (6 tests including dark mode)
-- [x] Zero compiler warnings
+**Expected:**
+- [ ] Build succeeds
+- [ ] `swift test` succeeds without requiring snapshot env vars
+- [ ] Visual snapshot tests run when `RUN_VISUAL_SNAPSHOTS=1`
+- [ ] No new compiler warnings introduced (or new warnings are ticketed + explained)
 
 ---
 
@@ -31,12 +41,13 @@ swift build 2>&1 | grep -i warning | wc -l
 
 | File | Purpose | Line Target | Status |
 |------|---------|-------------|--------|
-| SidePanelView.swift | Container only | <300 lines | |
-| SidePanel/Roll/ | Roll mode views | ~200 lines | |
-| SidePanel/Compact/ | Compact mode views | ~200 lines | |
-| SidePanel/Full/ | Full mode views | ~400 lines | |
-| SidePanel/Shared/ | Common components | ~800 lines total | |
-| SidePanel/Shared/SidePanelStateLogic.swift | Business logic | ~650 lines (acceptable for logic) | ✅ |
+| `Sources/SidePanelView.swift` | Container only | <350 lines | |
+| `Sources/SidePanelController.swift` | Wiring/controller | <250 lines | |
+| `Sources/SidePanel/Roll/` | Roll mode views | <250 lines | |
+| `Sources/SidePanel/Compact/` | Compact mode views | <250 lines | |
+| `Sources/SidePanel/Full/` | Full mode views | <800 lines | |
+| `Sources/SidePanel/Shared/` | Common components | keep files <800 lines when feasible | |
+| `Sources/SidePanel/Shared/SidePanelStateLogic.swift` | Business logic | <900 lines (logic can be larger) | |
 
 ### 2.2 State Management Check
 
@@ -151,11 +162,10 @@ wc -l SidePanel/*/*.swift
 
 | Metric | Before | Target | After |
 |--------|--------|--------|-------|
-| Lines in SidePanelView.swift | 2,738 | <300 | 271 ✅ |
-| Number of files | 1 | 8-10 | 9 ✅ |
-| Avg lines per file | 2,738 | View<400, Logic<700 | 286 ✅ |
-| @State properties in main view | 24 | 24 (architectural) | 24 ✅ |
-| Methods per file | 50+ | <15 | ~12 ✅ |
+| Lines in `Sources/SidePanelView.swift` | 2,738 | <350 | |
+| Number of SidePanel files | 1 | 8-12 | |
+| `@State` properties in main view | 24 | <20 | |
+| Visual snapshots opt-in | N/A | YES | |
 
 ---
 
@@ -230,10 +240,13 @@ echo "=== Build Check ==="
 swift build 2>&1 | tail -3
 
 echo "=== Test Check ==="
-swift test 2>&1 | grep "Executed"
+swift test 2>&1 | rg "Executed"
+
+echo "=== Visual Snapshots (Opt-In) ==="
+RUN_VISUAL_SNAPSHOTS=1 swift test --filter SidePanelVisualSnapshotTests 2>&1 | rg "Executed|Skipping"
 
 echo "=== File Sizes ==="
-wc -l Sources/SidePanelView.swift Sources/SidePanel/*.swift Sources/SidePanel/*/*.swift 2>/dev/null | tail -1
+wc -l Sources/SidePanelView.swift Sources/SidePanelController.swift Sources/SidePanel/*/*.swift Sources/SidePanel/Shared/*.swift 2>/dev/null | tail -n 15
 
 echo "=== State Property Count ==="
 grep -c "@State" Sources/SidePanelView.swift
@@ -244,14 +257,21 @@ find Sources/SidePanel -name "*.swift" | wc -l
 
 ---
 
-## Current Status (as of audit)
+## Current Observed State (2026-02-13)
 
-| Check | Status |
-|-------|--------|
-| Build passes | ✅ |
-| New SidePanel/ directory created | ✅ |
-| SidePanelStateLogic.swift extracted | ✅ (647 lines) |
-| SidePanelRollViews.swift extracted | ✅ (55 lines) |
-| Other mode views extracted | ✅ (Compact 36, Full 374) |
-| Tests pass | ✅ (11/11 including 6 snapshots) |
-| Main view <300 lines | ✅ (271 lines) |
+These are observed from the repo state on 2026-02-13 (do not assume they stay true after further edits):
+
+- File sizes (Swift LOC):
+  - `macapp/MeetingListenerApp/Sources/SidePanelView.swift`: 284
+  - `macapp/MeetingListenerApp/Sources/SidePanelController.swift`: 134
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Compact/SidePanelCompactViews.swift`: 66
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Full/SidePanelFullViews.swift`: 683
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Roll/SidePanelRollViews.swift`: 69
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelStateLogic.swift`: 743
+- `@State` count:
+  - `macapp/MeetingListenerApp/Sources/SidePanelView.swift`: 14
+- Snapshot tests:
+  - Opt-in via `RUN_VISUAL_SNAPSHOTS=1` (see `macapp/MeetingListenerApp/Tests/SidePanelVisualSnapshotTests.swift`, `macapp/MeetingListenerApp/Tests/StreamingVisualTests.swift`)
+- Known build warnings exist (Swift concurrency / Swift 6 mode):
+  - `macapp/MeetingListenerApp/Sources/SessionBundle.swift`: `NSLock.lock/unlock` in `async` contexts; optional-to-Any coercions
+  - `macapp/MeetingListenerApp/Sources/ResilientWebSocket.swift`: actor isolation warnings in sendable closures

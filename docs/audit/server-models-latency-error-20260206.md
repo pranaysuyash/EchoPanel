@@ -1,5 +1,15 @@
 # Server Models / Latency / Error Audit (2026-02-06)
 
+## Update (2026-02-13)
+
+This audit is a point-in-time capture from **2026-02-06**. The codebase has changed since then (additional providers, metrics, diarization integration, packaging).
+
+Key deltas observed as of **2026-02-13**:
+- Multiple ASR providers exist and are registered (`faster_whisper`, `whisper_cpp`, `voxtral_realtime`) via `server/services/asr_stream.py`.
+- macOS Settings still exposes `large-v3-turbo`, and the backend model sanitizer allow-list now includes it (no longer silently falling back to base). Evidence: `macapp/MeetingListenerApp/Sources/SettingsView.swift`, `macapp/MeetingListenerApp/Sources/BackendManager.swift`.
+- Server emits 1Hz WS `metrics` including `avg_infer_ms`, `realtime_factor`, and `provider_health` (provider-reported RTF/latency). Evidence: `server/api/ws_live_listener.py`.
+- Session-end diarization is enabled behind `ECHOPANEL_DIARIZATION=1` (set when HF token exists) and runs per source. Evidence: `server/api/ws_live_listener.py`, `macapp/MeetingListenerApp/Sources/BackendManager.swift`.
+
 ## 1) Scope contract
 - In-scope:
   - EchoPanel model configuration and runtime behavior for ASR/diarization.
@@ -11,11 +21,11 @@
 - Behavior change allowed: NO
 
 ## 2) What exists today (Observed only)
-- EchoPanel server ASR pipeline uses a provider abstraction with one registered provider (`faster_whisper`) and chunked streaming (`server/services/asr_stream.py:22`, `server/services/provider_faster_whisper.py:45`).
-- EchoPanel runtime default model from env/config path is `base` (`server/services/asr_stream.py:25`).
-- macOS Settings exposes model choices `base`, `small`, `medium`, `large-v3-turbo` (`macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift:344`).
-- Diarization execution is currently commented out in session stop flow (`server/api/ws_live_listener.py:313`).
-- Backpressure (dropped frame) is tracked/logged, but no built-in ASR latency/error-rate counters are emitted by EchoPanel session code (`server/api/ws_live_listener.py:137`, `server/api/ws_live_listener.py:403`).
+- EchoPanel server ASR pipeline uses a provider abstraction and chunked streaming (`server/services/asr_stream.py`, `server/services/provider_faster_whisper.py`).
+- EchoPanel runtime default model from env/config path is `base.en` (see `server/services/asr_stream.py` + client default `@AppStorage("whisperModel")` in `macapp/MeetingListenerApp/Sources/SettingsView.swift`).
+- macOS Settings exposes model choices including `large-v3-turbo` (`macapp/MeetingListenerApp/Sources/SettingsView.swift`).
+- Session-end diarization is conditional (requires `ECHOPANEL_DIARIZATION=1`), and is implemented in the session stop path (`server/api/ws_live_listener.py`).
+- Server emits streaming metrics including inference timing and RTF via WS `metrics` messages (`server/api/ws_live_listener.py`).
 - Model-lab benchmark doc includes ASR model comparison with WER/RTF/latency tables (`/Users/pranay/Projects/speech_experiments/model-lab/PERFORMANCE_RESULTS.md:43`).
 - Fresh model-lab streaming benchmark runs (executed during this audit) show ~0.36-0.39 RTF and first-event chunk latency roughly 0.8-1.4s on the 10s sample (`/Users/pranay/Projects/speech_experiments/model-lab/runs/streaming_bench/streaming_asr_20260206T113202Z.json:20`, `/Users/pranay/Projects/speech_experiments/model-lab/runs/streaming_bench/streaming_asr_20260206T113214Z.json:20`, `/Users/pranay/Projects/speech_experiments/model-lab/runs/streaming_bench/streaming_asr_20260206T113227Z.json:20`).
 
@@ -25,10 +35,11 @@
 - Severity: P1
 - Claim type: Observed
 - Evidence:
-  - UI allows `large-v3-turbo` (`macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift:348`).
-  - Sanitizer allow-list omits `large-v3-turbo`, so selection falls back to `base` (`macapp/MeetingListenerApp/Sources/BackendManager.swift:292`).
-- User impact: Users selecting “Large v3 Turbo (Best)” do not actually run that model, causing silent quality/performance mismatch.
-- Recommendation: Add `large-v3-turbo` to allow-list or align UI options to exactly what sanitizer accepts.
+  - UI allows `large-v3-turbo` (`macapp/MeetingListenerApp/Sources/SettingsView.swift`).
+  - Sanitizer allow-list includes `large-v3-turbo` (`macapp/MeetingListenerApp/Sources/BackendManager.swift`).
+- User impact (2026-02-06): Users selecting “Large v3 Turbo” could silently fall back to a smaller model.
+- Status (2026-02-13): ✅ Resolved (sanitizer allow-list includes `large-v3-turbo`).
+- Recommendation: Keep UI options aligned with sanitizer and server-supported model ids.
 - Verification steps:
   - `rg -n "large-v3-turbo|sanitizeWhisperModel|allowed" macapp/MeetingListenerApp/Sources -S`
   - Select `large-v3-turbo` in settings, restart server, verify `/health` model field.
@@ -37,10 +48,9 @@
 - Severity: P1
 - Claim type: Observed
 - Evidence:
-  - EchoPanel tracks dropped frames only (`server/api/ws_live_listener.py:137`, `server/api/ws_live_listener.py:403`).
-  - No emitted `avg_asr_latency`, no per-session ASR error-rate counters in server responses/events.
-- User impact: Latency/error regressions cannot be measured from product telemetry, making model decisions hard to validate.
-- Recommendation: Add per-session counters (ASR events, ASR failures, avg/p95 ASR latency, dropped frame rate) and emit on session end.
+  - Server emits WS `metrics` including `avg_infer_ms`, `realtime_factor`, and `provider_health` (which can include p95/p99 infer ms depending on provider) (`server/api/ws_live_listener.py`).
+- User impact: Without consistent per-session summary metrics and explicit error counters, regressions are still hard to validate.
+- Recommendation: Keep 1Hz metrics, and add explicit session-end summary counters (events, errors, p95) if needed for release gating.
 - Verification steps:
   - `rg -n "dropped_frames|latency|error rate|metrics" server/api/ws_live_listener.py server/services -S`
   - Run a session and inspect server log and emitted WS status/final events.
@@ -49,10 +59,10 @@
 - Severity: P1
 - Claim type: Observed
 - Evidence:
-  - Diarization call path is commented out (`server/api/ws_live_listener.py:315`).
-  - Roadmap/status docs present diarization as completed capability (`docs/STATUS_AND_ROADMAP.md:13`).
-- User impact: Speaker-label expectations can diverge from actual behavior (empty diarization segments in final summary).
-- Recommendation: Either re-enable diarization or explicitly mark it as disabled/experimental in product docs and UI.
+  - Session-end diarization is implemented and gated by `ECHOPANEL_DIARIZATION=1` (`server/api/ws_live_listener.py`).
+  - App sets `ECHOPANEL_DIARIZATION=1` when HF token is present (`macapp/MeetingListenerApp/Sources/BackendManager.swift`).
+- User impact: Diarization is optional and may be disabled without an HF token; user expectations need to match this.
+- Recommendation: Ensure UI/docs clearly communicate “Speaker labels require HF token” and that diarization runs at session end.
 - Verification steps:
   - `rg -n "diarization" server/api/ws_live_listener.py docs/STATUS_AND_ROADMAP.md -S`
   - Complete session and inspect `final_summary.json.diarization` payload.

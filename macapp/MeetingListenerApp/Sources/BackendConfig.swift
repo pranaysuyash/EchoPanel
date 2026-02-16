@@ -85,4 +85,14 @@ enum BackendConfig {
     static var clientVADEnabled: Bool {
         UserDefaults.standard.bool(forKey: "broadcast_useClientVAD")
     }
+
+    // Audio transport: when enabled, the client sends PCM as binary WebSocket frames instead of base64-in-JSON.
+    // Default: enabled for localhost to reduce overhead; can be overridden via UserDefaults.
+    static var useBinaryAudioFrames: Bool {
+        let key = "ws_useBinaryAudioFrames"
+        if UserDefaults.standard.object(forKey: key) != nil {
+            return UserDefaults.standard.bool(forKey: key)
+        }
+        return isLocalHost
+    }
 }

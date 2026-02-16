@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
-import threading
 import time
 from typing import AsyncIterator, Optional, List
 
@@ -44,7 +43,8 @@ class FasterWhisperProvider(ASRProvider):
     def __init__(self, config: ASRConfig):
         super().__init__(config)
         self._model: Optional["WhisperModel"] = None
-        self._infer_lock = threading.Lock()
+        # NOTE: Removed global _infer_lock - CTranslate2 models are thread-safe
+        # Each transcribe_stream call runs independently for true per-session concurrency
         self._infer_times: List[float] = []  # Track inference times for health
         self._model_loaded_at: Optional[float] = None
         self._chunks_processed = 0
@@ -159,16 +159,26 @@ class FasterWhisperProvider(ASRProvider):
                 self.log(f"Processing chunk #{chunk_count}, {len(audio_bytes)} bytes, t={t0:.1f}-{t1:.1f}s")
 
                 audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                
+                # Debug: check audio content
+                audio_min = float(np.min(audio))
+                audio_max = float(np.max(audio))
+                audio_mean = float(np.mean(np.abs(audio)))
+                if audio_mean < 0.001:
+                    self.log(f"DEBUG: Audio is SILENT/NEAR-ZERO! min={audio_min:.4f}, max={audio_max:.4f}, mean={audio_mean:.6f}")
+                else:
+                    self.log(f"DEBUG: Audio OK - min={audio_min:.4f}, max={audio_max:.4f}, mean={audio_mean:.4f}")
 
                 infer_start = time.perf_counter()
                 
                 def _transcribe():
-                    with self._infer_lock:
-                        segments, info = model.transcribe(
-                            audio,
-                            vad_filter=self.config.vad_enabled,
-                            language=self.config.language,
-                        )
+                    # CTranslate2 models are thread-safe - no lock needed
+                    # This allows true per-session concurrency instead of global serialization
+                    segments, info = model.transcribe(
+                        audio,
+                        vad_filter=False,  # Force OFF for testing
+                        language=self.config.language,
+                    )
                     return list(segments), info
 
                 segments, info = await asyncio.to_thread(_transcribe)
@@ -182,7 +192,20 @@ class FasterWhisperProvider(ASRProvider):
                     self._infer_times = self._infer_times[-100:]
                 detected_lang = getattr(info, 'language', None)
                 
-                self.log(f"Transcribed {len(segments)} segments in {infer_ms:.1f}ms, language={detected_lang}")
+                # Calculate RTF (Real-Time Factor) - critical metric for streaming performance
+                # RTF = processing_time / audio_time. < 1.0 means faster than real-time (good)
+                audio_duration_sec = len(audio_bytes) / (sample_rate * bytes_per_sample)
+                rtf = (infer_ms / 1000.0) / audio_duration_sec if audio_duration_sec > 0 else 0.0
+                
+                # Log with RTF - this is the key metric for diagnosing backpressure
+                rtf_status = "OK" if rtf < 1.0 else ("WARN" if rtf < 1.5 else "CRITICAL")
+                self.log(f"Transcribed {len(segments)} segments in {infer_ms:.1f}ms, language={detected_lang}, "
+                         f"audio={audio_duration_sec:.2f}s, RTF={rtf:.2f} [{rtf_status}]")
+
+                if len(segments) > 0:
+                    self.log(f"DEBUG: First segment: text='{segments[0].text}', start={segments[0].start}, end={segments[0].end}")
+                else:
+                    self.log(f"DEBUG: No segments returned - empty audio?")
 
                 for segment in segments:
                     text = segment.text.strip()
@@ -236,18 +259,26 @@ class FasterWhisperProvider(ASRProvider):
                 return
 
             def _transcribe():
-                with self._infer_lock:
-                    segments, info = model.transcribe(
-                        audio,
-                        vad_filter=True,  # P2 Fix: Always use VAD for final chunk
-                        language=self.config.language,
-                    )
+                # CTranslate2 models are thread-safe - no lock needed
+                segments, info = model.transcribe(
+                    audio,
+                    vad_filter=True,  # P2 Fix: Always use VAD for final chunk
+                    language=self.config.language,
+                )
                 return list(segments), info
 
+            infer_start = time.perf_counter()
             segments, info = await asyncio.to_thread(_transcribe)
+            infer_ms = (time.perf_counter() - infer_start) * 1000
             detected_lang = getattr(info, 'language', None)
             
-            self.log(f"Transcribed {len(segments)} segments, language={detected_lang}")
+            # Calculate RTF for final chunk
+            audio_duration_sec = len(audio_bytes) / (sample_rate * bytes_per_sample)
+            rtf = (infer_ms / 1000.0) / audio_duration_sec if audio_duration_sec > 0 else 0.0
+            rtf_status = "OK" if rtf < 1.0 else ("WARN" if rtf < 1.5 else "CRITICAL")
+            
+            self.log(f"Transcribed {len(segments)} segments (final), language={detected_lang}, "
+                     f"audio={audio_duration_sec:.2f}s, RTF={rtf:.2f} [{rtf_status}]")
 
             for segment in segments:
                 text = segment.text.strip()
@@ -291,6 +322,9 @@ class FasterWhisperProvider(ASRProvider):
             chunk_seconds = self.config.chunk_seconds
             rtf = (avg_ms / 1000.0) / chunk_seconds
             
+            # Log RTF to help debug
+            self.log(f"RTF: {rtf:.2f} (avg_infer={avg_ms:.0f}ms for {chunk_seconds}s chunk, p95={p95_ms:.0f}ms)")
+            
             health.realtime_factor = rtf
             health.avg_infer_ms = avg_ms
             health.p95_infer_ms = p95_ms
@@ -304,8 +338,7 @@ class FasterWhisperProvider(ASRProvider):
 
     async def unload(self) -> None:
         """Release model reference so memory can be reclaimed."""
-        with self._infer_lock:
-            self._model = None
+        self._model = None
         self._model_loaded_at = None
         self._infer_times.clear()
         self._chunks_processed = 0

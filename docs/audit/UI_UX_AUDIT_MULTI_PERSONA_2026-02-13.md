@@ -8,6 +8,19 @@
 
 ---
 
+## Update (2026-02-13)
+
+This multi-persona audit was written on 2026-02-13, but several cited issues were already remediated during the same day as part of ongoing audit remediation work:
+
+- Menu bar label already shows backend readiness via a green/orange dot overlay on the icon. Evidence: `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift` (`labelContent`).
+- Side panel transcript has an explicit empty state ("Waiting for speech" + troubleshooting hints) until the first segment arrives. Evidence: `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelChromeViews.swift` (`emptyTranscriptState`) and `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelTranscriptSurfaces.swift`.
+- Confidence is not color-only: each transcript row renders an explicit confidence percentage, plus a "Needs review" badge under the low-confidence threshold. Evidence: `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelSupportViews.swift` (`TranscriptLineRow`).
+- Onboarding already blocks advancing past the permissions step without Screen Recording authorization. Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift` (`canProceedFromPermissions` + disabled Next).
+- Focus indicator contrast has been improved to use the system focus ring color and system accent tinting (instead of hardcoded blue). Evidence: `macapp/MeetingListenerApp/Sources/DesignTokens.swift`.
+- Keyboard: Escape now clears/closes the Full-mode search field on macOS 13+ (not only macOS 14+). Evidence: `macapp/MeetingListenerApp/Sources/SidePanel/Full/SidePanelFullViews.swift` (`searchTextField` uses `.onExitCommand`).
+
+Remaining high-value opportunities from this audit are mostly copywriting/clarity (plain-language settings labels), and richer menu-bar UX hierarchy (beyond the existing readiness dot).
+
 ## A. Executive Summary
 
 **What the app actually is:** EchoPanel is a sophisticated real-time speech recognition system disguised as a menu bar app. It captures system audio (via ScreenCaptureKit) and/or microphone (via AVAudioEngine), streams PCM audio to a local FastAPI backend running Faster-Whisper/Voxtral, and renders live transcripts with continuous NLP analysis (actions, decisions, risks, entities, rolling summaries, speaker diarization). The floating side panel supports three view modes optimized for different workflows: Roll (live meetings), Compact (quick glance), and Full (post-meeting review).

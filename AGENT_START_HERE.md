@@ -147,6 +147,43 @@ docs/
 
 ---
 
+## ⚠️ CRITICAL: App Location & Permissions
+
+**Screen Recording permission is tied to the EXACT app location and signature.** If you build from different locations or have multiple app builds, permissions won't work.
+
+### Standard App Location (USE THIS)
+```
+/Users/pranay/Applications/MeetingListenerApp-Dev.app
+```
+
+### Build Command
+```bash
+# Always use this script - installs to the standard location
+./scripts/build-dev-app.sh
+
+# Then launch from standard location
+open "/Users/pranay/Applications/MeetingListenerApp-Dev.app"
+```
+
+### When Permission Breaks
+If the app says "permission required" but you've granted it:
+1. **System Settings > Privacy & Security > Screen Recording**
+2. **Remove** ALL EchoPanel/MeetingListener entries
+3. **Re-launch** the app from `/Users/pranay/Applications/MeetingListenerApp-Dev.app`
+4. Grant permission to THIS exact location
+
+### Why This Matters
+- macOS ties Screen Recording permission to the app's **code signature + bundle path**
+- Building with `swift build` creates a new unsigned binary = new permission
+- Using `scripts/build-dev-app.sh` ensures consistent signing and location
+
+### Old/Broken Locations (DO NOT USE)
+- `dist/EchoPanel.app` (unsigned, outdated)
+- `macapp/MeetingListenerApp/.build/.../MeetingListenerApp` (raw build, no signing)
+- Any other path
+
+---
+
 **Last Updated:** 2026-02-12  
 **Version:** 0.2.0  
 **Status:** Ready for code signing + distribution

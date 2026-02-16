@@ -2,6 +2,12 @@
 
 Comprehensive technical audits organized by date and scope.
 
+## How To Use These Audits
+
+- **Current status of fixes lives in** `docs/WORKLOG_TICKETS.md` (each remediated finding should have a ticket + evidence log).
+- When a finding is implemented, add an **`Update (YYYY-MM-DD)`** block near the top of the audit doc summarizing what changed and pointing to the exact file paths/tests.
+- Treat each remediation as a small, reviewable work unit (one ticket, clear acceptance criteria, commands run).
+
 ## Quick Navigation
 
 | Priority | Audit | Scope | Lines |
@@ -13,6 +19,7 @@ Comprehensive technical audits organized by date and scope.
 | 🔴 **P0** | [Streaming Reliability](./streaming-reliability-dual-pipeline-20260210.md) | End-to-end streaming, backpressure, UI truthfulness | 788 |
 | 🟡 **P1** | [UI/UX Full Audit](./UI_UX_AUDIT_2026-02-09.md) | Visual design, interactions, accessibility | 463 |
 | 🟡 **P1** | [Streaming ASR](./STREAMING_ASR_AUDIT_2026-02.md) | ASR pipeline, VAD, provider architecture | 1707 |
+| 🔴 **P0** | [Senior Stakeholder Red‑Team Review (2026-02-13)](./SENIOR_STAKEHOLDER_RED_TEAM_REVIEW_20260213.md) | Executive red‑team: stop‑ship verdict, gap map, 2‑week rescue plan | 1200+ |
 | 🟡 **P1** | [Backend Hardening](./BACKEND_HARDENING_AUDIT_2026-02-09.md) | Server reliability, error handling | 239 |
 | 🟢 **P2** | [Offline Transcript Merge](./OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md) | Post-processing, reconciliation | 610 |
 
@@ -26,8 +33,9 @@ Comprehensive technical audits organized by date and scope.
 |------|------|-------|-------|
 | 2026-02-12 | [AUDIT_04_BROADCAST_READINESS.md](./AUDIT_04_BROADCAST_READINESS.md) | Broadcast industry readiness, 10-scenario playbook, operator UX | 700+ |
 | 2026-02-12 | [SENIOR_ARCHITECT_REVIEW_2026-02-12.md](./SENIOR_ARCHITECT_REVIEW_2026-02-12.md) | Full-stack architecture, security, performance, concrete patches | 648 |
-| 2026-02-12 | [PHASE_2D_ASR_PROVIDER_AUDIT.md](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | ASR providers, residency, streaming, Apple Silicon, 11 failure modes | 900+ |
-| 2026-02-11 | [PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | Streaming reliability, backpressure policy, 14 failure modes | 1100+ |
+| 2026-02-11 | [PHASE_2D_ASR_PROVIDER_AUDIT.md](./PHASE_2D_ASR_PROVIDER_AUDIT.md) | ASR providers, residency, streaming, Apple Silicon, 11 failure modes | 900+ |
+| 2026-02-13 | [SENIOR_STAKEHOLDER_RED_TEAM_REVIEW_20260213.md](./SENIOR_STAKEHOLDER_RED_TEAM_REVIEW_20260213.md) | Senior stakeholder red‑team review — stop‑ship verdict + rescue plan | 1200+ |
+| 2026-02-10 | [PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md](./PHASE_1C_STREAMING_BACKPRESSURE_AUDIT.md) | Streaming reliability, backpressure policy, 14 failure modes | 1100+ |
 | 2026-02-11 | [PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md](./PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) | State machines, protocol contracts, race conditions | 691 |
 | 2026-02-10 | [OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md](./OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md) | Offline pipeline, transcript reconciliation | 610 |
 | 2026-02-10 | [streaming-reliability-dual-pipeline-20260210.md](./streaming-reliability-dual-pipeline-20260210.md) | Streaming reliability, metrics contract | 788 |

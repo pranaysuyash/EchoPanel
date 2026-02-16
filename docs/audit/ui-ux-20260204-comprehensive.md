@@ -2,6 +2,16 @@
 
 Prompt used: `prompts/ui/ui-ux-design-audit-v1.1.0.md`
 
+## Update (2026-02-13)
+
+This audit is a point-in-time document from 2026-02-04. As of 2026-02-13, the three primary History-related findings in this doc have been addressed:
+
+- F-001 (human-readable History): History now has Summary/Transcript/JSON tabs and renders a readable markdown summary (final summary preferred, fallback to rendered snapshot markdown). Evidence: `macapp/MeetingListenerApp/Sources/SessionHistoryView.swift` (`Tab`, `snapshotMarkdown`, `transcriptPane`).
+- F-002 (delete controls): History includes "Delete…" with confirmation and deletes the on-disk session directory. Evidence: `macapp/MeetingListenerApp/Sources/SessionHistoryView.swift` (delete alert), `macapp/MeetingListenerApp/Sources/SessionStore.swift` (`deleteSession`).
+- F-003 (search/filter): History includes a sidebar search field that filters sessions by date/time. Evidence: `macapp/MeetingListenerApp/Sources/SessionHistoryView.swift` (`searchText`, `filteredSessions`).
+
+Additional UX affordance added: "Reveal in Finder" for the selected session to make local storage more transparent. Evidence: `macapp/MeetingListenerApp/Sources/SessionHistoryView.swift`, `macapp/MeetingListenerApp/Sources/SessionStore.swift` (`sessionDirectoryURL`).
+
 ## Personas (primary)
 1) **Recruiter / Hiring manager** — wants a clean transcript, reliable action items, named entities, and fast export/share right after calls.  
 2) **Privacy-conscious user** — wants explicit consent, visible listening indicators, and clear local vs network behavior.
@@ -93,4 +103,3 @@ P1 quick wins (≤1 day):
 
 P2 polish:
 - F-003 Search/filter sessions
-

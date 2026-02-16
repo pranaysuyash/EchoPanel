@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import AsyncIterator, Optional, Tuple
 from dataclasses import dataclass
 
-from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource
+from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource, ProviderCapabilities
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ class StreamingSession:
     """Manages a resident voxtral.c process for streaming transcription."""
     process: asyncio.subprocess.Process
     started_at: float
+    chunk_seconds: float
     chunks_processed: int = 0
     total_infer_ms: float = 0.0
     
@@ -72,13 +73,11 @@ class StreamingSession:
     
     @property
     def realtime_factor(self) -> float:
-        """RTF based on average inference time per 4s chunk."""
+        """RTF based on average inference time per configured chunk size."""
         if self.chunks_processed == 0:
             return 0.0
-        # Assume 4s chunks (configurable)
-        chunk_seconds = 4.0
         avg_infer_s = self.avg_infer_ms / 1000.0
-        return avg_infer_s / chunk_seconds
+        return avg_infer_s / max(self.chunk_seconds, 0.001)
 
 
 class VoxtralRealtimeProvider(ASRProvider):
@@ -103,6 +102,25 @@ class VoxtralRealtimeProvider(ASRProvider):
     @property
     def is_available(self) -> bool:
         return self._bin.is_file() and (self._model / "consolidated.safetensors").is_file()
+    
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """Report provider capabilities.
+        
+        Voxtral supports Metal on macOS for GPU acceleration.
+        """
+        return ProviderCapabilities(
+            supports_streaming=True,  # True streaming with --stdin mode
+            supports_batch=True,
+            supports_gpu=True,
+            supports_metal=True,  # ✅ Metal support on Apple Silicon
+            supports_cuda=False,
+            supports_vad=False,
+            supports_diarization=False,
+            supports_multilanguage=True,
+            min_ram_gb=4.0,
+            recommended_ram_gb=8.0,
+        )
 
     async def _start_session(self) -> StreamingSession:
         """Start voxtral.c in streaming mode with --stdin.
@@ -138,8 +156,8 @@ class VoxtralRealtimeProvider(ASRProvider):
             raise RuntimeError(f"Failed to start voxtral.c: {e}")
         
         # Wait for model to load (parse stderr for "Metal GPU" or similar ready signal)
-        # This is typically the slow part (~2-11s depending on hardware)
-        ready = await self._wait_for_ready(process, timeout=30.0)
+        # This is typically the slow part (~10-60s for large models like 4B/8B on first load)
+        ready = await self._wait_for_ready(process, timeout=120.0)
         load_time = time.perf_counter() - t0
         
         if not ready:
@@ -152,49 +170,63 @@ class VoxtralRealtimeProvider(ASRProvider):
         return StreamingSession(
             process=process,
             started_at=time.perf_counter(),
+            chunk_seconds=float(self.config.chunk_seconds),
         )
 
     async def _wait_for_ready(self, process: asyncio.subprocess.Process, timeout: float) -> bool:
         """Wait for voxtral.c to finish loading and signal readiness.
         
-        Looks for indicators in stderr like "Metal GPU" or "BLAS" that indicate
+        Looks for indicators in stdout/stderr like "Metal:" or "Model loaded" that indicate
         the model is loaded and ready for inference.
         """
-        if not process.stderr:
-            return False
-            
         ready_patterns = [
-            b"Metal GPU",      # MPS/Metal backend ready
+            b"Model loaded.",  # Definitive ready signal (appears after all layers loaded)
+            b"Metal:",         # MPS/Metal backend ready (voxtral outputs "Metal: GPU...")
             b"BLAS",           # CPU BLAS backend ready
             b"Ready",          # Generic ready signal
-            b"Model loaded",   # Alternative ready signal
         ]
         
         start_time = time.perf_counter()
-        buffer = b""
+        stdout_buffer = b""
+        stderr_buffer = b""
         
         while time.perf_counter() - start_time < timeout:
-            try:
-                # Read stderr in chunks, non-blocking with timeout
-                chunk = await asyncio.wait_for(
-                    process.stderr.read(1024),
-                    timeout=1.0
-                )
-                if not chunk:
-                    # EOF - process exited
-                    return False
-                buffer += chunk
-                
-                # Check for ready signals
-                for pattern in ready_patterns:
-                    if pattern in buffer:
-                        return True
-                        
-            except asyncio.TimeoutError:
-                # Still waiting, check if process is alive
-                if process.returncode is not None:
-                    return False
-                continue
+            # Try reading from stdout first (voxtral outputs to stdout)
+            if process.stdout:
+                try:
+                    chunk = await asyncio.wait_for(
+                        process.stdout.read(1024),
+                        timeout=0.5
+                    )
+                    if chunk:
+                        stdout_buffer += chunk
+                        # Check for ready signals
+                        for pattern in ready_patterns:
+                            if pattern in stdout_buffer:
+                                self.log(f"Voxtral ready signal detected: {pattern.decode()}")
+                                return True
+                except asyncio.TimeoutError:
+                    pass
+            
+            # Also check stderr
+            if process.stderr:
+                try:
+                    chunk = await asyncio.wait_for(
+                        process.stderr.read(1024),
+                        timeout=0.5
+                    )
+                    if chunk:
+                        stderr_buffer += chunk
+                        for pattern in ready_patterns:
+                            if pattern in stderr_buffer:
+                                self.log(f"Voxtral ready signal detected: {pattern.decode()}")
+                                return True
+                except asyncio.TimeoutError:
+                    pass
+            
+            # Check if process is still alive
+            if process.returncode is not None:
+                return False
         
         return False  # Timeout
 

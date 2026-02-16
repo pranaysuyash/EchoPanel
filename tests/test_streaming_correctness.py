@@ -17,20 +17,32 @@ class TestBackpressure:
 
     @pytest.mark.asyncio
     async def test_put_audio_drops_oldest_on_full(self):
-        """Verify queue drops oldest frame when full."""
-        from server.api.ws_live_listener import put_audio, SessionState
+        """Verify queue drops oldest frame when byte limit exceeded (TCK-20260213-074).
+        
+        With byte-based backpressure, when adding a new chunk would exceed the limit,
+        oldest chunks are dropped first to make room. This keeps the stream "live"
+        rather than accumulating lag.
+        """
+        from server.api.ws_live_listener import put_audio, SessionState, _queue_bytes
 
         state = SessionState()
-        q: asyncio.Queue = asyncio.Queue(maxsize=2)
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)  # Large frame limit, bytes will limit
 
-        await put_audio(q, b"frame1", state, "system")
-        await put_audio(q, b"frame2", state, "system")
-        await put_audio(q, b"frame3", state, "system")  # Should drop frame1
+        # Patch QUEUE_MAX_BYTES to a small value for testing (15 bytes = room for 2 frames of 6 bytes)
+        with patch("server.api.ws_live_listener.QUEUE_MAX_BYTES", 15):
+            await put_audio(q, b"frame1", state, "system")  # 6 bytes, total 6
+            await put_audio(q, b"frame2", state, "system")  # 6 bytes, total 12 <= 15
+            # Now at 12 bytes, adding frame3 (6 bytes) would make 18 > 15
+            # So frame1 is dropped (12-6=6), then frame3 added (6+6=12)
+            await put_audio(q, b"frame3", state, "system")
 
         assert q.qsize() == 2
         assert state.dropped_frames == 1
-        assert await q.get() == b"frame2"
-        assert await q.get() == b"frame3"
+        # frame1 was dropped to make room, so we have frame2 and frame3
+        items = [await q.get(), await q.get()]
+        assert b"frame2" in items
+        assert b"frame3" in items
+        assert b"frame1" not in items
 
     @pytest.mark.asyncio
     async def test_put_audio_empty_chunk_ignored(self):
@@ -71,6 +83,67 @@ class TestBackpressure:
             ]
             assert len(backpressure_calls) == 1
             assert state.backpressure_warned is True
+
+
+class TestDualLanePipeline:
+    """Tests for dual-lane pipeline (TCK-20260213-074).
+    
+    Lane A (Realtime): Bounded queue, may drop to stay live
+    Lane B (Recording): Lossless file write, never drops
+    """
+
+    @pytest.mark.asyncio
+    async def test_recording_lane_writes_all_frames(self):
+        """Verify recording lane writes all frames even when realtime lane drops."""
+        from server.api.ws_live_listener import put_audio, SessionState, _init_recording_lane, _finalize_recording_lane
+        from unittest.mock import patch, MagicMock
+        
+        state = SessionState()
+        state.session_id = "test_session"
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        
+        # Mock recording lane directory and enable it
+        with patch("server.api.ws_live_listener.RECORDING_LANE_ENABLED", True):
+            with patch("server.api.ws_live_listener.RECORDING_LANE_FORMAT", "pcm"):
+                with patch("server.api.ws_live_listener.RECORDING_LANE_DIR") as mock_dir:
+                    mock_dir.mkdir = MagicMock()
+                    mock_dir.__truediv__ = MagicMock(return_value=MagicMock())
+                    
+                    # Initialize recording lane
+                    _init_recording_lane(state, "system", 16000)
+                    
+                    # Write some frames
+                    await put_audio(q, b"frame1", state, "system")
+                    await put_audio(q, b"frame2", state, "system")
+                    await put_audio(q, b"frame3", state, "system")
+                    
+                    # Verify frames went to realtime queue
+                    assert q.qsize() == 3
+                    
+                    # Verify recording lane tracked bytes (would be written to file)
+                    assert state.recording_bytes_written.get("system", 0) == 18  # 6 bytes * 3 frames
+
+    def test_wav_header_writing(self):
+        """Verify WAV header is written with correct format."""
+        from server.api.ws_live_listener import _write_wav_header
+        import struct
+        import io
+        
+        f = io.BytesIO()
+        _write_wav_header(f, 16000, 1000)  # 16000 Hz, 1000 samples
+        
+        f.seek(0)
+        header = f.read()
+        
+        # Check RIFF header
+        assert header[0:4] == b'RIFF'
+        # Check WAVE identifier
+        assert header[8:12] == b'WAVE'
+        # Check fmt chunk
+        assert header[12:16] == b'fmt '
+        # Check sample rate (at offset 24)
+        sample_rate = struct.unpack('<I', header[24:28])[0]
+        assert sample_rate == 16000
 
 
 class TestTranscriptOrdering:
@@ -288,6 +361,26 @@ class TestQueueConfig:
             else:
                 os.environ.pop("ECHOPANEL_AUDIO_QUEUE_MAX", None)
             reload(wsl)
+
+
+class TestMetricsRTF:
+    """Tests for PR6: realtime_factor should use actual audio duration processed."""
+
+    def test_compute_recent_rtf_uses_audio_duration(self):
+        from server.api.ws_live_listener import _compute_recent_rtf
+
+        # Two samples:
+        # - processed 0.5s for 2.0s audio
+        # - processed 0.5s for 1.0s audio
+        # Total processing = 1.0s, total audio = 3.0s => RTF = 0.333...
+        rtf = _compute_recent_rtf([(0.5, 2.0), (0.5, 1.0)])
+        assert rtf == pytest.approx(1.0 / 3.0, abs=1e-6)
+
+    def test_compute_recent_rtf_empty_or_zero_audio_is_zero(self):
+        from server.api.ws_live_listener import _compute_recent_rtf
+
+        assert _compute_recent_rtf([]) == 0.0
+        assert _compute_recent_rtf([(1.0, 0.0)]) == 0.0
 
 
 class TestDebugAudioDumpCleanup:

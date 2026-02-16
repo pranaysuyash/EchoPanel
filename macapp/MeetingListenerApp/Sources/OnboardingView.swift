@@ -6,8 +6,6 @@ struct OnboardingView: View {
     @ObservedObject var appState: AppState
     @ObservedObject private var backendManager = BackendManager.shared
     @State private var currentStep: OnboardingStep = .welcome
-    @State private var hfToken: String = ""
-    @State private var hfTokenSaveError: String?
     @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
     let onStartListening: () -> Void
@@ -16,18 +14,36 @@ struct OnboardingView: View {
         case welcome
         case permissions
         case sourceSelection
-        case diarization // B4 Fix
         case ready
+    }
+
+    private var stepIndexText: String {
+        "Step \(currentStep.rawValue + 1) of \(OnboardingStep.allCases.count)"
+    }
+
+    private var stepTitleText: String {
+        switch currentStep {
+        case .welcome: return "Welcome"
+        case .permissions: return "Permissions"
+        case .sourceSelection: return "Audio Source"
+        case .ready: return "Ready"
+        }
     }
     
     var body: some View {
         VStack(spacing: 0) {
             // Progress indicator
-            HStack(spacing: 8) {
-                ForEach(OnboardingStep.allCases, id: \.rawValue) { step in
-                    Circle()
-                        .fill(step.rawValue <= currentStep.rawValue ? Color.accentColor : Color.secondary.opacity(0.3))
-                        .frame(width: 8, height: 8)
+            VStack(spacing: 8) {
+                Text("\(stepIndexText) \u{00B7} \(stepTitleText)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 8) {
+                    ForEach(OnboardingStep.allCases, id: \.rawValue) { step in
+                        Circle()
+                            .fill(step.rawValue <= currentStep.rawValue ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                    }
                 }
             }
             .padding(.top, 20)
@@ -43,8 +59,6 @@ struct OnboardingView: View {
                     permissionsStep
                 case .sourceSelection:
                     sourceSelectionStep
-                case .diarization:
-                    diarizationStep
                 case .ready:
                     readyStep
                 }
@@ -83,17 +97,6 @@ struct OnboardingView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             appState.refreshPermissionStatuses()
-            // Load HF token from Keychain (with migration from UserDefaults if needed)
-            _ = KeychainHelper.migrateFromUserDefaults()
-            hfToken = KeychainHelper.loadHFToken() ?? ""
-        }
-        .onChange(of: hfToken) { newToken in
-            if KeychainHelper.saveHFToken(newToken) {
-                hfTokenSaveError = nil
-            } else {
-                hfTokenSaveError = "Couldn't save HuggingFace token to Keychain. Verify Keychain access and try again."
-                appState.recordCredentialSaveFailure(field: "HuggingFace token")
-            }
         }
         .onDisappear {
             // If the user closes the window, keep the app consistent.
@@ -215,72 +218,6 @@ struct OnboardingView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-    }
-    
-    // B4 Fix: Diarization Step - OPTIONAL, can skip
-    private var diarizationStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Speaker Labels (Optional)")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("To identify who's speaking, EchoPanel uses a model that requires a HuggingFace token. This is optional - the app works without it.")
-                .foregroundColor(.secondary)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("HuggingFace Token (Optional)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                
-                SecureField("hf_...", text: $hfToken)
-                .textFieldStyle(.roundedBorder)
-
-                if let hfTokenSaveError {
-                    Text(hfTokenSaveError)
-                        .font(.caption2)
-                        .foregroundColor(.red)
-                }
-                
-                SwiftUI.Link("Get a token ->", destination: URL(string: "https://huggingface.co/settings/tokens")!)
-                    .font(.caption)
-            }
-            .padding(12)
-            .background(Color.secondary.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            
-            Text("You can skip this. Speaker labels won't be available without a token.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                Button("Skip") {
-                    withAnimation { nextStep() }
-                }
-                .buttonStyle(.bordered)
-                
-                Spacer()
-                
-                if !hfToken.isEmpty {
-                    Button("Save & Continue") {
-                        saveHuggingFaceToken()
-                        withAnimation { nextStep() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-        }
-    }
-    
-    private func saveHuggingFaceToken() {
-        guard !hfToken.isEmpty else { return }
-        // Save to Keychain
-        let success = KeychainHelper.saveHFToken(hfToken)
-        if !success {
-            hfTokenSaveError = "Couldn't save token. Please try again."
-            return
-        }
-        // Also save to environment for backend
-        setenv("ECHOPANEL_HF_TOKEN", hfToken, 1)
     }
     
     private var readyStep: some View {

@@ -27,9 +27,9 @@ def _get_default_config() -> ASRConfig:
         model_name=os.getenv("ECHOPANEL_WHISPER_MODEL", "base.en"),
         device=os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto"),
         compute_type=os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8"),
-        language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE"),  # None = auto-detect
+        language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE", "en"),  # Default to English
         chunk_seconds=int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2")),  # PR3: Reduced from 4s
-        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "1") == "1",  # PR3: Default ON (was "0")
+        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "0") == "1",  # Default OFF for now
     )
 
 

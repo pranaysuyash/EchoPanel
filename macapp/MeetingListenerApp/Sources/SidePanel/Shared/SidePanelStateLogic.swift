@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import SwiftUI
 
 extension SidePanelView {
@@ -88,14 +89,14 @@ extension SidePanelView {
 
     var filteredSegments: [TranscriptSegment] {
         let key = currentFilterCacheKey
-        if filteredCacheKey == key {
-            return filteredSegmentsCache
+        if transcriptUI.filteredCacheKey == key {
+            return transcriptUI.filteredSegmentsCache
         }
 
         // First render can happen before .onAppear seeds cache.
         return Self.filterTranscriptSegments(
             appState.transcriptSegments,
-            entityFilter: entityFilter,
+            entityFilter: transcriptUI.entityFilter,
             normalizedFullQuery: key.normalizedFullQuery,
             viewMode: viewMode
         )
@@ -118,7 +119,7 @@ extension SidePanelView {
 
     var pinnedSegments: [TranscriptSegment] {
         appState.transcriptSegments
-            .filter { pinnedSegmentIDs.contains($0.id) }
+            .filter { transcriptUI.pinnedSegmentIDs.contains($0.id) }
             .sorted { $0.t0 > $1.t0 }
     }
 
@@ -128,7 +129,7 @@ extension SidePanelView {
     }
 
     var currentFocusedIndex: Int? {
-        guard let id = focusedSegmentID else { return nil }
+        guard let id = transcriptUI.focusedSegmentID else { return nil }
         return visibleTranscriptSegments.firstIndex(where: { $0.id == id })
     }
 
@@ -198,25 +199,25 @@ extension SidePanelView {
     func refreshFilteredSegmentsCache(force: Bool = false) {
         let nextKey = currentFilterCacheKey
 
-        if !force, filteredCacheKey == nextKey {
+        if !force, transcriptUI.filteredCacheKey == nextKey {
             return
         }
 
-        filteredSegmentsCache = Self.filterTranscriptSegments(
+        transcriptUI.filteredSegmentsCache = Self.filterTranscriptSegments(
             appState.transcriptSegments,
-            entityFilter: entityFilter,
+            entityFilter: transcriptUI.entityFilter,
             normalizedFullQuery: nextKey.normalizedFullQuery,
             viewMode: viewMode
         )
-        filteredCacheKey = nextKey
+        transcriptUI.filteredCacheKey = nextKey
     }
 
-    var currentFilterCacheKey: FilterCacheKey {
-        FilterCacheKey(
+    var currentFilterCacheKey: SidePanelTranscriptFilterCacheKey {
+        SidePanelTranscriptFilterCacheKey(
             transcriptRevision: appState.transcriptRevision,
-            entityFilterID: entityFilter?.id,
+            entityFilterID: transcriptUI.entityFilter?.id,
             normalizedFullQuery: normalizedFullSearchQuery,
-            viewMode: viewMode
+            viewModeRaw: viewMode.rawValue
         )
     }
 
@@ -224,7 +225,7 @@ extension SidePanelView {
         if viewMode != .full {
             return ""
         }
-        return fullSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return transcriptUI.fullSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     var speakerChips: [SpeakerChipItem] {
@@ -265,7 +266,7 @@ extension SidePanelView {
     }
 
     var timelineReadoutText: String {
-        if let focusedSegmentID,
+        if let focusedSegmentID = transcriptUI.focusedSegmentID,
            let segment = visibleTranscriptSegments.first(where: { $0.id == focusedSegmentID }) {
             return "Focused \(formatTime(segment.t0))"
         }
@@ -330,28 +331,30 @@ extension SidePanelView {
         let visibleIDs = Set(visibleTranscriptSegments.map(\.id))
         let sourceIDs = Set(appState.transcriptSegments.map(\.id))
 
-        pinnedSegmentIDs = pinnedSegmentIDs.intersection(sourceIDs)
+        transcriptUI.pinnedSegmentIDs = transcriptUI.pinnedSegmentIDs.intersection(sourceIDs)
 
-        if let focusedSegmentID, visibleIDs.contains(focusedSegmentID) == false {
-            self.focusedSegmentID = nil
+        if let focusedSegmentID = transcriptUI.focusedSegmentID,
+           visibleIDs.contains(focusedSegmentID) == false {
+            transcriptUI.focusedSegmentID = nil
         }
-        if let lensSegmentID, visibleIDs.contains(lensSegmentID) == false {
-            self.lensSegmentID = nil
+        if let lensSegmentID = transcriptUI.lensSegmentID,
+           visibleIDs.contains(lensSegmentID) == false {
+            transcriptUI.lensSegmentID = nil
         }
 
         if visibleTranscriptSegments.isEmpty {
-            focusedSegmentID = nil
-            lensSegmentID = nil
+            transcriptUI.focusedSegmentID = nil
+            transcriptUI.lensSegmentID = nil
             return
         }
 
-        if followLive && lensSegmentID == nil {
-            focusedSegmentID = visibleTranscriptSegments.last?.id
+        if transcriptUI.followLive && transcriptUI.lensSegmentID == nil {
+            transcriptUI.focusedSegmentID = visibleTranscriptSegments.last?.id
             return
         }
 
-        if focusedSegmentID == nil {
-            focusedSegmentID = visibleTranscriptSegments.last?.id
+        if transcriptUI.focusedSegmentID == nil {
+            transcriptUI.focusedSegmentID = visibleTranscriptSegments.last?.id
         }
     }
 
@@ -387,52 +390,52 @@ extension SidePanelView {
 
         let current = currentFocusedIndex ?? (visibleTranscriptSegments.count - 1)
         let next = max(0, min(visibleTranscriptSegments.count - 1, current + delta))
-        focusedSegmentID = visibleTranscriptSegments[next].id
+        transcriptUI.focusedSegmentID = visibleTranscriptSegments[next].id
 
-        if followLive {
-            followLive = false
+        if transcriptUI.followLive {
+            transcriptUI.followLive = false
         }
 
-        pendingScrollTarget = focusedSegmentID
+        transcriptUI.pendingScrollTarget = transcriptUI.focusedSegmentID
     }
 
     func toggleLens(_ id: UUID) {
-        lensSegmentID = (lensSegmentID == id) ? nil : id
-        if followLive {
-            followLive = false
+        transcriptUI.lensSegmentID = (transcriptUI.lensSegmentID == id) ? nil : id
+        if transcriptUI.followLive {
+            transcriptUI.followLive = false
         }
-        pendingScrollTarget = id
+        transcriptUI.pendingScrollTarget = id
     }
 
     func togglePin(_ id: UUID) {
-        if pinnedSegmentIDs.contains(id) {
-            pinnedSegmentIDs.remove(id)
+        if transcriptUI.pinnedSegmentIDs.contains(id) {
+            transcriptUI.pinnedSegmentIDs.remove(id)
         } else {
-            pinnedSegmentIDs.insert(id)
+            transcriptUI.pinnedSegmentIDs.insert(id)
         }
     }
 
     func jumpToLive() {
-        followLive = true
-        pendingNewSegments = 0
-        lensSegmentID = nil
+        transcriptUI.followLive = true
+        transcriptUI.pendingNewSegments = 0
+        transcriptUI.lensSegmentID = nil
         if let last = visibleTranscriptSegments.last?.id {
-            focusedSegmentID = last
-            pendingScrollTarget = last
+            transcriptUI.focusedSegmentID = last
+            transcriptUI.pendingScrollTarget = last
         }
         timelinePosition = 1
-        scrollToBottomToken = UUID()
+        transcriptUI.scrollToBottomToken = UUID()
     }
 
     func focusFromTimeline(position: Double) {
         guard !visibleTranscriptSegments.isEmpty else { return }
         let clamped = max(0, min(1, position))
         let target = Int(round(clamped * Double(max(visibleTranscriptSegments.count - 1, 0))))
-        focusedSegmentID = visibleTranscriptSegments[target].id
-        if followLive {
-            followLive = false
+        transcriptUI.focusedSegmentID = visibleTranscriptSegments[target].id
+        if transcriptUI.followLive {
+            transcriptUI.followLive = false
         }
-        pendingScrollTarget = focusedSegmentID
+        transcriptUI.pendingScrollTarget = transcriptUI.focusedSegmentID
     }
 
     func syncTimelineToFocus() {
@@ -441,7 +444,7 @@ extension SidePanelView {
             return
         }
         guard let idx = currentFocusedIndex else {
-            timelinePosition = followLive ? 1 : timelinePosition
+            timelinePosition = transcriptUI.followLive ? 1 : timelinePosition
             return
         }
         let value = Double(idx) / Double(max(visibleTranscriptSegments.count - 1, 1))
@@ -484,8 +487,8 @@ extension SidePanelView {
             showSurfaceOverlay = false
             return
         }
-        if lensSegmentID != nil {
-            lensSegmentID = nil
+        if transcriptUI.lensSegmentID != nil {
+            transcriptUI.lensSegmentID = nil
         }
     }
 
@@ -546,12 +549,12 @@ extension SidePanelView {
             moveFocus(by: 1)
             return true
         case 36: // return
-            if let id = focusedSegmentID {
+            if let id = transcriptUI.focusedSegmentID {
                 toggleLens(id)
             }
             return true
         case 49: // space
-            followLive.toggle()
+            transcriptUI.followLive.toggle()
             return true
         case 124: // right
             handleHorizontalSurface(delta: 1)
@@ -564,7 +567,7 @@ extension SidePanelView {
         }
 
         if charsIgnoring == "p" {
-            if let id = focusedSegmentID {
+            if let id = transcriptUI.focusedSegmentID {
                 togglePin(id)
             }
             return true
@@ -590,7 +593,7 @@ extension SidePanelView {
         guard !segments.isEmpty else { return }
 
         let currentIndex: Int? = {
-            guard let selected = focusedSegmentID else { return nil }
+            guard let selected = transcriptUI.focusedSegmentID else { return nil }
             return segments.firstIndex(where: { $0.id == selected })
         }()
 
@@ -599,18 +602,18 @@ extension SidePanelView {
             let idx = segments[start...].firstIndex(where: {
                 EntityHighlighter.matches(in: $0.text, entities: [entity], mode: .extracted).isEmpty == false
             }) {
-            focusedSegmentID = segments[idx].id
-            pendingScrollTarget = segments[idx].id
-            selectedEntity = resolveEntity(entity)
+            transcriptUI.focusedSegmentID = segments[idx].id
+            transcriptUI.pendingScrollTarget = segments[idx].id
+            transcriptUI.selectedEntity = resolveEntity(entity)
             return
         }
 
         if let idx = segments.firstIndex(where: {
             EntityHighlighter.matches(in: $0.text, entities: [entity], mode: .extracted).isEmpty == false
         }) {
-            focusedSegmentID = segments[idx].id
-            pendingScrollTarget = segments[idx].id
-            selectedEntity = resolveEntity(entity)
+            transcriptUI.focusedSegmentID = segments[idx].id
+            transcriptUI.pendingScrollTarget = segments[idx].id
+            transcriptUI.selectedEntity = resolveEntity(entity)
         }
     }
 
@@ -619,7 +622,7 @@ extension SidePanelView {
         guard !segments.isEmpty else { return }
 
         let currentIndex: Int? = {
-            guard let selected = focusedSegmentID else { return nil }
+            guard let selected = transcriptUI.focusedSegmentID else { return nil }
             return segments.firstIndex(where: { $0.id == selected })
         }()
 
@@ -628,18 +631,18 @@ extension SidePanelView {
             let idx = segments[..<end].lastIndex(where: {
                 EntityHighlighter.matches(in: $0.text, entities: [entity], mode: .extracted).isEmpty == false
             }) {
-            focusedSegmentID = segments[idx].id
-            pendingScrollTarget = segments[idx].id
-            selectedEntity = resolveEntity(entity)
+            transcriptUI.focusedSegmentID = segments[idx].id
+            transcriptUI.pendingScrollTarget = segments[idx].id
+            transcriptUI.selectedEntity = resolveEntity(entity)
             return
         }
 
         if let idx = segments.lastIndex(where: {
             EntityHighlighter.matches(in: $0.text, entities: [entity], mode: .extracted).isEmpty == false
         }) {
-            focusedSegmentID = segments[idx].id
-            pendingScrollTarget = segments[idx].id
-            selectedEntity = resolveEntity(entity)
+            transcriptUI.focusedSegmentID = segments[idx].id
+            transcriptUI.pendingScrollTarget = segments[idx].id
+            transcriptUI.selectedEntity = resolveEntity(entity)
         }
     }
 

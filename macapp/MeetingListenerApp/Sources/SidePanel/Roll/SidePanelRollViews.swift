@@ -36,9 +36,9 @@ extension SidePanelView {
     // HIG Fix: Renamed from rollFooterState to rollFooter for consistency
     var rollFooter: some View {
         HStack(spacing: Spacing.sm) {
-            smallStateBadge(title: followLive ? "Follow ON" : "Follow OFF", tint: followLive ? .green : .orange)
+            smallStateBadge(title: transcriptUI.followLive ? "Follow ON" : "Follow OFF", tint: transcriptUI.followLive ? .green : .orange)
             smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
-            smallStateBadge(title: "Pins \(pinnedSegmentIDs.count)", tint: .indigo)
+            smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
 
             Spacer()
 
@@ -55,7 +55,7 @@ extension SidePanelView {
             .accessibilityLabel("Toggle surfaces overlay")
             .accessibilityHint("Shows summary, actions, pins, and entities")
 
-            if !followLive {
+            if !transcriptUI.followLive {
                 Button("Jump Live") {
                     jumpToLive()
                 }

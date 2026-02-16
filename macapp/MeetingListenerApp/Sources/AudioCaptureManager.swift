@@ -13,6 +13,16 @@ final class AudioCaptureManager: NSObject {
     var onSampleCount: ((Int) -> Void)?
     var onScreenFrameCount: ((Int) -> Void)?
     var onVADStatsUpdate: ((_ vadEnabled: Bool, _ speechRatio: Double, _ chunksProcessed: Int) -> Void)?
+    var onCaptureStatsUpdate: ((_ stats: CaptureStats) -> Void)?
+
+    struct CaptureStats: Sendable {
+        var audioBuffersReceived: UInt64 = 0
+        var audioBuffersDropped: UInt64 = 0
+        var conversionErrors: UInt64 = 0
+        var converterRecreated: UInt64 = 0
+        var pcmFramesProduced: UInt64 = 0
+        var pcmFramesSent: UInt64 = 0
+    }
 
     private let debugEnabled = ProcessInfo.processInfo.arguments.contains("--debug")
     private var stream: SCStream?
@@ -42,6 +52,8 @@ final class AudioCaptureManager: NSObject {
     private var totalSamples: Int = 0
     private var screenFrames: Int = 0
     private let statsLock = NSLock()
+    private var captureStats = CaptureStats()
+    private var lastStatsEmit: TimeInterval = 0
     
     // MARK: - Stream State
     private let streamState = StreamState()
@@ -151,6 +163,7 @@ final class AudioCaptureManager: NSObject {
         streamState.setActive(false)
         
         stream = nil
+        resetCaptureStats()
         
         // Clean up VAD
         vadModel = nil
@@ -244,6 +257,11 @@ final class AudioCaptureManager: NSObject {
     }
     
     private func processAudio(sampleBuffer: CMSampleBuffer) {
+        statsLock.lock()
+        captureStats.audioBuffersReceived += 1
+        statsLock.unlock()
+        maybeEmitCaptureStats()
+
         // Periodic permission check (every ~100 buffers = ~2 seconds at 50 buffers/sec)
         sampleBuffersProcessed += 1
         if sampleBuffersProcessed % 100 == 0 {
@@ -253,11 +271,13 @@ final class AudioCaptureManager: NSObject {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
             NSLog("⛔ processAudio: Failed to get format description")
+            recordAudioDrop(isConversionError: false)
             return
         }
 
         guard let inputFormat = AVAudioFormat(streamDescription: asbd) else {
             NSLog("⛔ processAudio: Failed to create AVAudioFormat from stream description")
+            recordAudioDrop(isConversionError: false)
             return
         }
         
@@ -272,6 +292,7 @@ final class AudioCaptureManager: NSObject {
         // Create AVAudioPCMBuffer directly from the CMSampleBuffer
         guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(numSamples)) else {
             NSLog("⛔ processAudio: Failed to create inputBuffer with capacity %d", numSamples)
+            recordAudioDrop(isConversionError: false)
             return
         }
         inputBuffer.frameLength = AVAudioFrameCount(numSamples)
@@ -287,6 +308,7 @@ final class AudioCaptureManager: NSObject {
         
         guard status == noErr else {
             NSLog("⛔ processAudio: CMSampleBufferCopyPCMDataIntoAudioBufferList failed with status %d", status)
+            recordAudioDrop(isConversionError: false)
             return
         }
 
@@ -295,19 +317,25 @@ final class AudioCaptureManager: NSObject {
             converter = AVAudioConverter(from: inputFormat, to: targetFormat)
             if converter == nil {
                 NSLog("⛔ processAudio: Failed to create AVAudioConverter from %@ to %@", inputFormat.description, targetFormat.description)
+                recordAudioDrop(isConversionError: true)
             } else {
+                statsLock.lock()
+                captureStats.converterRecreated += 1
+                statsLock.unlock()
                 NSLog("✅ processAudio: Created AVAudioConverter")
             }
         }
 
         guard let converter else { 
             NSLog("⛔ processAudio: converter is nil")
+            recordAudioDrop(isConversionError: true)
             return 
         }
 
         let outputFrameCapacity = AVAudioFrameCount(Double(inputBuffer.frameLength) * targetFormat.sampleRate / inputFormat.sampleRate)
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
             NSLog("⛔ processAudio: Failed to create outputBuffer with capacity %d", outputFrameCapacity)
+            recordAudioDrop(isConversionError: false)
             return
         }
 
@@ -325,11 +353,13 @@ final class AudioCaptureManager: NSObject {
 
         if statusConvert == .error {
             NSLog("⛔ processAudio: Conversion failed with error: %@", error?.localizedDescription ?? "unknown")
+            recordAudioDrop(isConversionError: true)
             return
         }
 
         guard let channelData = outputBuffer.floatChannelData else { 
             NSLog("⛔ processAudio: outputBuffer.floatChannelData is nil")
+            recordAudioDrop(isConversionError: false)
             return 
         }
         let samples = channelData[0]
@@ -419,6 +449,10 @@ final class AudioCaptureManager: NSObject {
         var index = 0
         while index + frameSize <= pcmSamples.count {
             let slice = Array(pcmSamples[index..<index + frameSize])
+
+            statsLock.lock()
+            captureStats.pcmFramesProduced += 1
+            statsLock.unlock()
             
             // Run VAD on this frame
             let floatSlice = slice.map { Float($0) / Float(Int16.max) }
@@ -434,6 +468,10 @@ final class AudioCaptureManager: NSObject {
             if hasSpeech || !vadEnabled {
                 let data = slice.withUnsafeBufferPointer { Data(buffer: $0) }
                 onPCMFrame?(data, "system")
+                statsLock.lock()
+                captureStats.pcmFramesSent += 1
+                statsLock.unlock()
+                maybeEmitCaptureStats()
             }
             
             index += frameSize
@@ -508,6 +546,43 @@ final class AudioCaptureManager: NSObject {
     deinit {
         cpuMonitorTimer?.invalidate()
         cpuMonitorTimer = nil
+    }
+
+    private func recordAudioDrop(isConversionError: Bool) {
+        statsLock.lock()
+        captureStats.audioBuffersDropped += 1
+        if isConversionError {
+            captureStats.conversionErrors += 1
+        }
+        statsLock.unlock()
+        maybeEmitCaptureStats()
+    }
+
+    private func maybeEmitCaptureStats() {
+        guard onCaptureStatsUpdate != nil else { return }
+        let now = CACurrentMediaTime()
+
+        let snapshot: CaptureStats
+        statsLock.lock()
+        // Throttle to avoid flooding observers.
+        guard now - lastStatsEmit >= 1.0 else {
+            statsLock.unlock()
+            return
+        }
+        lastStatsEmit = now
+        snapshot = captureStats
+        statsLock.unlock()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onCaptureStatsUpdate?(snapshot)
+        }
+    }
+
+    private func resetCaptureStats() {
+        statsLock.lock()
+        captureStats = CaptureStats()
+        lastStatsEmit = 0
+        statsLock.unlock()
     }
 }
 

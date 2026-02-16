@@ -6,6 +6,20 @@
 
 ---
 
+## Update (2026-02-13)
+
+This audit is a point-in-time document from 2026-02-04. As of 2026-02-13, several issues called out below are now implemented (or the underlying UI architecture has changed substantially):
+
+- Onboarding now shows explicit step labeling ("Step X of Y") in addition to progress dots. Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift`.
+- Server error UX includes actionable CTAs (Retry, Collect Diagnostics) and backend readiness feedback during onboarding. Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift` (ready step).
+- Diarization token is no longer an onboarding step; HuggingFace token entry lives in Settings and is stored in Keychain (with legacy migration). Evidence: `macapp/MeetingListenerApp/Sources/SettingsView.swift`, `macapp/MeetingListenerApp/Sources/KeychainHelper.swift`.
+- Side panel UI is no longer a single monolithic view; it is split across `macapp/MeetingListenerApp/Sources/SidePanel/*` and includes multiple sizes/modes (Roll/Compact/Full). Evidence: `macapp/MeetingListenerApp/Sources/SidePanel/`.
+- Session stop terminology has been partially unified to "End Session" (menu bar + side panel). Evidence: `macapp/MeetingListenerApp/Sources/MeetingListenerApp.swift`, `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelTranscriptSurfaces.swift`.
+
+Remaining UX opportunity from this audit:
+
+- Onboarding "Test Audio" is still a beep-only check (speaker output), not a live input meter. Evidence: `macapp/MeetingListenerApp/Sources/OnboardingView.swift`.
+
 ## Executive Summary
 
 This UX audit evaluates EchoPanel from the perspective of a paying macOS user seeking a premium experience. It applies two lenses: "Ive mode" (minimal, pixel-perfect craft) and "Jobs mode" (end-to-end clarity, trust, user control).

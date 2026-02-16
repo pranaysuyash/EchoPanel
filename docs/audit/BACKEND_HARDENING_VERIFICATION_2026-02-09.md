@@ -222,7 +222,7 @@ Build complete! (23s)
 
 | Risk | Severity | Description | Mitigation |
 |------|----------|-------------|------------|
-| SessionStore logs full path | P2 | `SessionStore.swift:44` logs `sessionsDirectory.path` which contains username | Out of scope for this ticket; accept risk or create follow-up |
+| SessionStore logs full path | P2 | `SessionStore.swift:44` logs `sessionsDirectory.path` which contains username | Resolved 2026-02-13 (TCK-20260213-025): log now prints sanitized `bundleId/sessions` only |
 | No port auto-retry | P2 | Port conflict detected but no automatic bind to alternative port | Existing behavior; user must change port in settings |
 | No circuit breaker | P2 | WebSocket reconnects infinitely with backoff | Max delay caps at 10s; acceptable for desktop app |
 | Keychain migration edge case | P3 | If migration fails, token remains in UserDefaults | Migration retried on every app launch until success |

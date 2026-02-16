@@ -6,6 +6,25 @@
 
 ---
 
+## Update (2026-02-13)
+
+This report reflects what was validated on **2026-02-09**. The repo has changed since then (including additional accessibility + observability work).
+
+Notable deltas observed on **2026-02-13**:
+- Visual snapshot tests are now **opt-in** (they do not run on default `swift test`). See:
+  - `macapp/MeetingListenerApp/Tests/SidePanelVisualSnapshotTests.swift`
+  - `macapp/MeetingListenerApp/Tests/StreamingVisualTests.swift`
+- `swift test list` surfaced **Swift concurrency warnings** in unrelated files (examples):
+  - `macapp/MeetingListenerApp/Sources/SessionBundle.swift`: `NSLock.lock/unlock` in async contexts; optional-to-`Any` coercions
+  - `macapp/MeetingListenerApp/Sources/ResilientWebSocket.swift`: actor isolation warnings in sendable closures
+- Current SidePanel decomposition metrics (Swift LOC) are different from the 2026-02-09 snapshot:
+  - `macapp/MeetingListenerApp/Sources/SidePanelView.swift`: 284 (was reported as 271)
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Full/SidePanelFullViews.swift`: 683 (was reported as 374)
+  - `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelStateLogic.swift`: 743 (was reported as 647)
+  - `@State` in `SidePanelView.swift`: 14 (was reported as 24)
+
+For the current validation workflow, prefer `docs/audit/REFACTOR_VALIDATION_CHECKLIST.md`.
+
 ## Executive Summary
 
 ✅ **REFACTORING COMPLETE AND VALIDATED**
@@ -42,6 +61,8 @@ Test Breakdown:
 ```
 
 **Note:** The agent added dark mode snapshot tests! Excellent attention to detail.
+
+**2026-02-13 note:** Visual snapshot tests are now opt-in via `RUN_VISUAL_SNAPSHOTS=1` (they are intentionally skipped under default `swift test`).
 
 ---
 
@@ -248,7 +269,9 @@ testFullInsightTabSurfaceMappingContract() ✅
 | Avg lines per file | 2,738 | 286 | <400 | ✅ |
 | @State in main view | 24 | 24 | <10 | ⚠️ Same (architectural) |
 | Test count | 7 | 11 | >7 | ✅ +4 tests |
-| Compiler warnings | 0 | 0 | 0 | ✅ |
+| Compiler warnings (2026-02-09) | 0 | 0 | 0 | ✅ |
+
+**2026-02-13 note:** the repo currently emits Swift concurrency warnings in other files; treat “Warnings: 0” as specific to the 2026-02-09 validation point-in-time.
 
 ---
 

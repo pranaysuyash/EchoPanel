@@ -15,6 +15,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from server.services.analysis_stream import extract_cards, extract_cards_incremental, extract_entities, extract_entities_incremental, generate_rolling_summary
 from server.services.asr_stream import stream_asr
 from server.services.diarization import diarize_pcm, merge_transcript_with_speakers
+from server.services.transcript_ids import generate_segment_id
 from server.services.concurrency_controller import (
     get_concurrency_controller,
     BackpressureLevel,
@@ -24,7 +25,16 @@ from server.services.degrade_ladder import DegradeLadder, DegradeLevel
 router = APIRouter()
 logger = logging.getLogger(__name__)
 DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
-QUEUE_MAX = int(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX", "48"))
+# Time-based queue sizing: max buffered audio seconds (not frame count)
+# With 16kHz mono 16-bit: 1 sec = 32000 bytes, 2 sec = 64000 bytes
+QUEUE_MAX_SECONDS = float(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX_SECONDS", "2.0"))
+SAMPLE_RATE = 16000
+BYTES_PER_SAMPLE = 2
+# Calculate max bytes: sample_rate * bytes_per_sample * max_seconds
+QUEUE_MAX_BYTES = int(SAMPLE_RATE * BYTES_PER_SAMPLE * QUEUE_MAX_SECONDS)
+# Legacy: frame count for compatibility (approximate, assumes 20ms frames)
+QUEUE_MAX = int(os.getenv("ECHOPANEL_AUDIO_QUEUE_MAX", "500"))
+MAX_ACTIVE_SOURCES_PER_SESSION = int(os.getenv("ECHOPANEL_MAX_ACTIVE_SOURCES_PER_SESSION", "2"))
 DEBUG_AUDIO_DUMP = os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP", "0") == "1"
 DEBUG_AUDIO_DUMP_DIR = Path(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_DIR", "/tmp/echopanel_audio_dump"))
 DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS = int(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_AGE_SECONDS", "86400"))
@@ -33,6 +43,15 @@ DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES = int(
     os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", str(512 * 1024 * 1024))
 )
 WS_AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
+
+# TCK-20260213-074: Dual-lane pipeline configuration
+# Lane A (Realtime): Bounded queue, may drop to stay live
+# Lane B (Recording): Lossless, never drops, write to disk for post-processing
+RECORDING_LANE_ENABLED = os.getenv("ECHOPANEL_RECORDING_LANE", "1") == "1"
+RECORDING_LANE_DIR = Path(os.getenv("ECHOPANEL_RECORDING_DIR", "/tmp/echopanel_recordings"))
+RECORDING_LANE_FORMAT = os.getenv("ECHOPANEL_RECORDING_FORMAT", "wav")  # wav, pcm, or both
+RECORDING_LANE_MAX_AGE_SECONDS = int(os.getenv("ECHOPANEL_RECORDING_MAX_AGE", "604800"))  # 7 days
+RECORDING_LANE_MAX_TOTAL_BYTES = int(os.getenv("ECHOPANEL_RECORDING_MAX_BYTES", str(10 * 1024 * 1024 * 1024)))  # 10GB
 
 
 @dataclass
@@ -66,6 +85,8 @@ class SessionState:
     # PR2: Metrics tracking
     metrics_task: Optional[asyncio.Task] = None
     asr_processing_times: list[float] = field(default_factory=list)  # Track inference times
+    # PR6: Per-source processing samples (processing_time_s, audio_duration_s) for accurate RTF in metrics.
+    asr_samples_by_source: Dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     asr_last_dropped: int = 0  # For computing dropped_recent
     audio_time_processed: float = 0.0  # Total audio seconds processed
     processing_time_total: float = 0.0  # Total processing time spent
@@ -73,6 +94,8 @@ class SessionState:
     provider_name: str = "unknown"
     model_id: str = "unknown"
     vad_enabled: bool = False
+    # PR3: Hold the ASRConfig used for this session so metrics can query provider.health().
+    asr_config: Any = None
     # U8 groundwork: staged client feature flags (no behavioral change yet)
     client_clock_drift_compensation_enabled: bool = False
     client_vad_enabled: bool = False
@@ -89,6 +112,10 @@ class SessionState:
     last_card_analysis_t1: float = 0.0
     current_entities: Dict[str, Any] = field(default_factory=dict)
     current_cards: Dict[str, Any] = field(default_factory=dict)
+    # TCK-20260213-074: Dual-lane pipeline - Recording lane (lossless)
+    recording_files: Dict[str, Any] = field(default_factory=dict)  # source -> file handles
+    recording_paths: Dict[str, Path] = field(default_factory=dict)  # source -> file paths
+    recording_bytes_written: Dict[str, int] = field(default_factory=dict)  # source -> bytes
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -116,6 +143,62 @@ def _extract_client_features(payload: Dict[str, Any]) -> Dict[str, bool]:
         "clock_drift_telemetry_enabled": bool(features.get("clock_drift_telemetry_enabled", False)),
         "client_vad_telemetry_enabled": bool(features.get("client_vad_telemetry_enabled", False)),
     }
+
+
+def _debug_ws_message_summary(message: Dict[str, Any]) -> str:
+    """Return a privacy-safe summary of a raw Starlette websocket receive() message."""
+    if "text" in message and message["text"] is not None:
+        text = message["text"]
+        if not isinstance(text, str):
+            return "text(non-str)"
+        # Try to parse JSON to avoid logging base64 audio payloads.
+        try:
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                msg_type = payload.get("type", "unknown")
+                source = payload.get("source")
+                data_len = None
+                if msg_type == "audio":
+                    raw = payload.get("data", "")
+                    if isinstance(raw, str):
+                        data_len = len(raw)
+                parts = [f"text json type={msg_type}"]
+                if source:
+                    parts.append(f"source={source}")
+                if data_len is not None:
+                    parts.append(f"b64_len={data_len}")
+                return " ".join(parts)
+        except Exception:
+            pass
+        # Fallback: only log length.
+        return f"text len={len(text)}"
+
+    if "bytes" in message and message["bytes"] is not None:
+        blob = message["bytes"]
+        if not isinstance(blob, (bytes, bytearray)):
+            return "bytes(non-bytes)"
+        b = bytes(blob)
+        # Optional v1 header: b"EP" + version + source + payload.
+        if len(b) >= 4 and b[0:2] == b"EP":
+            version = b[2]
+            source = b[3]
+            src = "system" if source == 0 else ("mic" if source == 1 else str(source))
+            return f"bytes len={len(b)} header=EP v={version} source={src} payload_len={max(0, len(b) - 4)}"
+        return f"bytes len={len(b)}"
+
+    return "unknown"
+
+
+async def _reject_new_source(websocket: WebSocket, state: SessionState, source: str) -> None:
+    await ws_send(
+        state,
+        websocket,
+        {
+            "type": "status",
+            "state": "warning",
+            "message": f"Too many active sources (max {MAX_ACTIVE_SOURCES_PER_SESSION}). Ignoring source '{source}'.",
+        },
+    )
 
 
 def _update_source_clock_spread(state: SessionState) -> None:
@@ -204,6 +287,42 @@ def _flatten_diarization_segments(diarization_by_source: Dict[str, list[dict]]) 
     return flattened
 
 
+def _compute_recent_rtf(samples: list[tuple[float, float]]) -> float:
+    """
+    Compute realtime factor (RTF) from recent samples.
+
+    RTF = processing_time / audio_duration. Lower is better (< 1.0 means faster than real-time).
+    """
+    if not samples:
+        return 0.0
+    total_processing = 0.0
+    total_audio = 0.0
+    for processing_s, audio_s in samples:
+        if processing_s > 0:
+            total_processing += processing_s
+        if audio_s > 0:
+            total_audio += audio_s
+    if total_audio <= 0:
+        return 0.0
+    return total_processing / total_audio
+
+
+def _health_to_payload(value: Any) -> Optional[Dict[str, Any]]:
+    """Best-effort conversion of provider health into a JSON-serializable dict."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            payload = to_dict()
+            return payload if isinstance(payload, dict) else None
+        except Exception:
+            return None
+    return None
+
+
 def _extract_ws_auth_token(websocket: WebSocket) -> str:
     # Priority: query param -> custom header -> Authorization: Bearer <token>
     query_token = websocket.query_params.get("token")
@@ -236,12 +355,30 @@ async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> Non
     """Send event to websocket, safely handling closed connections."""
     if state.closed:
         return
+    # V1: Inject correlation IDs for safer client-side state validation.
+    # Keep this additive and do not mutate the caller's dict.
+    payload = event
+    if state.session_id and "session_id" not in payload:
+        payload = dict(payload)
+        payload["session_id"] = state.session_id
+    if state.attempt_id and "attempt_id" not in payload:
+        if payload is event:
+            payload = dict(payload)
+        payload["attempt_id"] = state.attempt_id
+    if state.connection_id and "connection_id" not in payload:
+        if payload is event:
+            payload = dict(payload)
+        payload["connection_id"] = state.connection_id
     async with state.send_lock:
         try:
-            await websocket.send_text(json.dumps(event))
-        except RuntimeError:
-            # Connection closed during send
+            await websocket.send_text(json.dumps(payload))
+        except (RuntimeError, WebSocketDisconnect):
+            # Connection closed during send (normal race when clients disconnect abruptly).
             state.closed = True
+        except Exception as e:
+            # Be conservative: treat send failures as a closed connection.
+            state.closed = True
+            logger.debug("ws_send failed (marking session closed): %s", e)
 
 
 def _init_audio_dump(state: SessionState, source: str) -> None:
@@ -352,11 +489,267 @@ def _cleanup_audio_dump_dir(now: Optional[float] = None) -> None:
                     logger.warning(f"Failed to remove oversized debug dump {path}: {e}")
 
 
+# =============================================================================
+# TCK-20260213-074: DUAL-LANE PIPELINE - Recording Lane (Lossless)
+# =============================================================================
+# Lane A (Realtime): Bounded queue, may drop to stay live (low latency captions)
+# Lane B (Recording): Lossless file write, never drops, for post-processing
+# =============================================================================
+
+def _cleanup_recording_dir(now: Optional[float] = None) -> None:
+    """Apply retention limits to recording files (age/total-size)."""
+    if not RECORDING_LANE_ENABLED:
+        return
+
+    try:
+        RECORDING_LANE_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Failed to prepare recording directory: {e}")
+        return
+
+    # Get all recording files (wav, pcm)
+    entries: list[tuple[Path, os.stat_result]] = []
+    for pattern in ("*.wav", "*.pcm"):
+        for path in RECORDING_LANE_DIR.glob(pattern):
+            try:
+                entries.append((path, path.stat()))
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                logger.warning(f"Failed to inspect recording file {path}: {e}")
+
+    if not entries:
+        return
+
+    entries.sort(key=lambda item: item[1].st_mtime)  # oldest first
+    cutoff = (now or time.time()) - RECORDING_LANE_MAX_AGE_SECONDS
+    kept_entries: list[tuple[Path, os.stat_result]] = []
+
+    # First pass: remove expired files
+    for path, stat_result in entries:
+        if RECORDING_LANE_MAX_AGE_SECONDS > 0 and stat_result.st_mtime < cutoff:
+            try:
+                path.unlink(missing_ok=True)
+                logger.info(f"Removed expired recording: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove expired recording {path}: {e}")
+            continue
+        kept_entries.append((path, stat_result))
+
+    # Second pass: remove oldest files if over total size limit
+    if RECORDING_LANE_MAX_TOTAL_BYTES > 0:
+        total_bytes = sum(stat_result.st_size for _, stat_result in kept_entries)
+        if total_bytes > RECORDING_LANE_MAX_TOTAL_BYTES:
+            for path, stat_result in kept_entries:
+                if total_bytes <= RECORDING_LANE_MAX_TOTAL_BYTES:
+                    break
+                try:
+                    path.unlink(missing_ok=True)
+                    total_bytes -= stat_result.st_size
+                    logger.info(f"Removed recording to free space: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove recording {path}: {e}")
+
+
+def _write_wav_header(f, sample_rate: int, num_samples: int) -> None:
+    """Write a standard WAV file header.
+    
+    WAV format:
+    - RIFF header (12 bytes)
+    - fmt chunk (24 bytes)
+    - data chunk header (8 bytes)
+    """
+    import struct
+    
+    # Calculate sizes
+    bits_per_sample = 16
+    byte_rate = sample_rate * 2  # 16-bit mono
+    data_size = num_samples * 2  # 16-bit samples
+    riff_size = 36 + data_size  # 44 bytes header - 8 (RIFF size field)
+    
+    # RIFF header
+    f.write(b'RIFF')
+    f.write(struct.pack('<I', riff_size))
+    f.write(b'WAVE')
+    
+    # fmt chunk
+    f.write(b'fmt ')
+    f.write(struct.pack('<I', 16))  # Subchunk1Size (16 for PCM)
+    f.write(struct.pack('<H', 1))   # AudioFormat (1 = PCM)
+    f.write(struct.pack('<H', 1))   # NumChannels (1 = mono)
+    f.write(struct.pack('<I', sample_rate))
+    f.write(struct.pack('<I', byte_rate))
+    f.write(struct.pack('<H', 2))   # BlockAlign (2 bytes per sample)
+    f.write(struct.pack('<H', bits_per_sample))
+    
+    # data chunk header
+    f.write(b'data')
+    f.write(struct.pack('<I', data_size))
+
+
+def _init_recording_lane(state: SessionState, source: str, sample_rate: int = 16000) -> None:
+    """Initialize recording lane files for a source (TCK-20260213-074).
+    
+    Creates WAV and/or PCM files depending on RECORDING_LANE_FORMAT.
+    WAV is preferred for easy playback, PCM is raw for processing.
+    """
+    if not RECORDING_LANE_ENABLED:
+        return
+    
+    if source in state.recording_files:
+        return  # Already initialized
+    
+    try:
+        RECORDING_LANE_DIR.mkdir(parents=True, exist_ok=True)
+        _cleanup_recording_dir()
+        
+        timestamp = int(time.time())
+        session_id = state.session_id or "unknown"
+        base_name = f"{session_id}_{source}_{timestamp}"
+        
+        files = {}
+        paths = {}
+        
+        if RECORDING_LANE_FORMAT in ("wav", "both"):
+            wav_path = RECORDING_LANE_DIR / f"{base_name}.wav"
+            # Open for read/write, we'll update the header at the end
+            wav_file = open(wav_path, "w+b")
+            # Write placeholder header (will be updated on close)
+            _write_wav_header(wav_file, sample_rate, 0)
+            files['wav'] = wav_file
+            paths['wav'] = wav_path
+            logger.info(f"Recording lane (WAV) initialized: {wav_path}")
+        
+        if RECORDING_LANE_FORMAT in ("pcm", "both"):
+            pcm_path = RECORDING_LANE_DIR / f"{base_name}.pcm"
+            pcm_file = open(pcm_path, "wb")
+            files['pcm'] = pcm_file
+            paths['pcm'] = pcm_path
+            logger.info(f"Recording lane (PCM) initialized: {pcm_path}")
+        
+        state.recording_files[source] = files
+        state.recording_paths[source] = paths
+        state.recording_bytes_written[source] = 0
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize recording lane for {source}: {e}")
+
+
+def _write_recording_lane(state: SessionState, source: str, chunk: bytes) -> None:
+    """Write audio chunk to recording lane files (lossless, never drops).
+    
+    This is Lane B of the dual-lane pipeline - always write to disk regardless
+    of realtime lane backpressure. This ensures we never lose audio even if
+    ASR is falling behind.
+    """
+    if not RECORDING_LANE_ENABLED:
+        return
+    
+    if source not in state.recording_files:
+        return
+    
+    try:
+        files = state.recording_files[source]
+        
+        # Write to WAV file (after the 44-byte header)
+        if 'wav' in files:
+            wav_file = files['wav']
+            wav_file.write(chunk)
+        
+        # Write to PCM file
+        if 'pcm' in files:
+            pcm_file = files['pcm']
+            pcm_file.write(chunk)
+        
+        # Track bytes written
+        state.recording_bytes_written[source] = state.recording_bytes_written.get(source, 0) + len(chunk)
+        
+    except Exception as e:
+        logger.error(f"Failed to write to recording lane for {source}: {e}")
+
+
+def _finalize_recording_lane(state: SessionState, source: str, sample_rate: int = 16000) -> Optional[Path]:
+    """Finalize recording files and return the primary path.
+    
+    For WAV files, updates the header with correct sizes.
+    Returns the path to the WAV file (or PCM if WAV not available).
+    """
+    if source not in state.recording_files:
+        return None
+    
+    files = state.recording_files.get(source, {})
+    paths = state.recording_paths.get(source, {})
+    bytes_written = state.recording_bytes_written.get(source, 0)
+    
+    primary_path = None
+    
+    try:
+        # Finalize WAV: update header with actual sizes
+        if 'wav' in files:
+            wav_file = files['wav']
+            try:
+                # Calculate actual number of samples
+                num_samples = bytes_written // 2  # 16-bit samples
+                
+                # Seek to beginning and rewrite header
+                wav_file.seek(0)
+                _write_wav_header(wav_file, sample_rate, num_samples)
+                wav_file.close()
+                
+                wav_path = paths.get('wav')
+                if wav_path:
+                    primary_path = wav_path
+                    duration_sec = num_samples / sample_rate
+                    logger.info(f"Recording lane finalized: {wav_path} ({duration_sec:.1f}s, {bytes_written} bytes)")
+            except Exception as e:
+                logger.error(f"Failed to finalize WAV for {source}: {e}")
+                try:
+                    wav_file.close()
+                except:
+                    pass
+        
+        # Finalize PCM: just close
+        if 'pcm' in files:
+            pcm_file = files['pcm']
+            try:
+                pcm_file.close()
+                pcm_path = paths.get('pcm')
+                if pcm_path and not primary_path:
+                    primary_path = pcm_path
+            except Exception as e:
+                logger.error(f"Failed to close PCM for {source}: {e}")
+        
+    finally:
+        # Clean up state
+        state.recording_files.pop(source, None)
+        state.recording_paths.pop(source, None)
+        state.recording_bytes_written.pop(source, None)
+    
+    return primary_path
+
+
+def _close_all_recording_lanes(state: SessionState, sample_rate: int = 16000) -> Dict[str, Optional[Path]]:
+    """Finalize all recording lanes and return paths by source."""
+    results = {}
+    for source in list(state.recording_files.keys()):
+        results[source] = _finalize_recording_lane(state, source, sample_rate)
+    return results
+
+
 def get_queue(state: SessionState, source: str) -> asyncio.Queue:
     if source not in state.queues:
         state.queues[source] = asyncio.Queue(maxsize=QUEUE_MAX)
         state.active_sources.add(source)
     return state.queues[source]
+
+
+def _queue_bytes(q: asyncio.Queue) -> int:
+    """Estimate total bytes in queue by summing chunk sizes."""
+    # Access the underlying queue data structure
+    # asyncio.Queue stores items in a collections.deque
+    if hasattr(q, '_queue'):
+        return sum(len(item) for item in q._queue if item is not None)
+    return 0
 
 
 async def put_audio(
@@ -366,91 +759,93 @@ async def put_audio(
     source: str = "",
     websocket: Optional[WebSocket] = None,
 ) -> None:
-    """Enqueue audio chunk with backpressure handling.
+    """Enqueue audio chunk with byte-based backpressure handling (Dual-Lane Pipeline).
     
-    PR5: Uses ConcurrencyController for production traffic.
-    Falls back to direct queue for tests and small queues.
+    LANE A (Realtime): Bounded queue with time-based limits for low-latency ASR.
+    - QUEUE_MAX_SECONDS (default 2.0s) max buffered audio per source
+    - Drops oldest chunks to stay "live" when processing falls behind
+    
+    LANE B (Recording): Lossless file write, never drops, for post-processing.
+    - Writes all audio to disk regardless of realtime lane backpressure
+    - Ensures no audio is lost even if ASR is overloaded
+    
+    NOTE:
+    This function must reflect the *actual* ingest queue used by `_asr_loop()`.
+    A previous integration attempt enqueued into an additional controller-owned
+    queue that was never drained, which caused false sustained "overloaded"
+    signals and `Dropping system due to extreme overload` even under normal
+    realtime streaming.
     """
     if not chunk:
         return
+
+    # Track metrics
+    if state is not None:
+        from server.services.metrics_registry import get_registry
+        get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
     
-    # For small queues (tests) or when controller unavailable, use direct queue
-    queue_maxsize = getattr(q, 'maxsize', 0)
-    if queue_maxsize > 0 and queue_maxsize <= 10:
-        # Direct queue path (for tests with small queues)
+    # TCK-20260213-074: LANE B (Recording) - Write to disk BEFORE any dropping
+    # This ensures lossless capture regardless of realtime lane backpressure
+    if state is not None and RECORDING_LANE_ENABLED:
+        _write_recording_lane(state, source, chunk)
+
+    # Byte-based backpressure: ensure we don't exceed QUEUE_MAX_BYTES
+    # This gives predictable max latency (e.g., 2 seconds) regardless of frame size
+    current_bytes = _queue_bytes(q)
+    chunk_bytes = len(chunk)
+    
+    # Drop oldest chunks until we have room for the new chunk
+    dropped_count = 0
+    dropped_bytes = 0
+    while current_bytes + chunk_bytes > QUEUE_MAX_BYTES and not q.empty():
         try:
-            q.put_nowait(chunk)
-            if state is not None:
-                from server.services.metrics_registry import get_registry
-                get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
-        except asyncio.QueueFull:
-            # Drop oldest to avoid lag spiral
-            _ = q.get_nowait()
-            q.put_nowait(chunk)
-            if state is not None:
-                state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-                logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
-                
-                from server.services.metrics_registry import get_registry
-                get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
-                
-                # Send backpressure warning to client (throttled)
-                if websocket is not None and not state.backpressure_warned:
-                    state.backpressure_warned = True
-                    asyncio.create_task(ws_send(state, websocket, {
-                        "type": "status",
-                        "state": "backpressure",
-                        "message": f"Audio queue full, dropping frames (source={source})",
-                        "dropped_frames": state.dropped_frames,
-                    }))
-        return
+            old_chunk = q.get_nowait()
+            if old_chunk is not None:
+                old_size = len(old_chunk)
+                current_bytes -= old_size
+                dropped_bytes += old_size
+                dropped_count += 1
+        except asyncio.QueueEmpty:
+            break
     
-    # PR5: Use concurrency controller for production-sized queues
-    controller = get_concurrency_controller()
-    
-    # Check if this source should be dropped under extreme load
-    if controller.should_drop_source(source):
-        if state is not None:
-            state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-            logger.warning(f"Dropping {source} due to extreme overload")
-        return
-    
-    # Submit chunk (will drop oldest if queue full)
-    success, dropped_oldest = await controller.submit_chunk(chunk, source)
-    
-    # Track dropped frames in state (for tests and backward compat)
-    if dropped_oldest and state is not None:
-        state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-    
-    if success:
-        # Also add to original queue for compatibility
-        try:
-            q.put_nowait(chunk)
-        except asyncio.QueueFull:
-            pass
+    # Try to enqueue the new chunk (should succeed now unless queue is weird)
+    try:
+        q.put_nowait(chunk)
+    except asyncio.QueueFull:
+        # Shouldn't happen with byte-based management, but handle gracefully
+        dropped_count += 1
+        dropped_bytes += chunk_bytes
+        logger.warning(f"Queue full even after dropping - discarding new chunk for {source}")
+
+    # Log backpressure events
+    if dropped_count > 0 and state is not None:
+        state.dropped_frames = getattr(state, "dropped_frames", 0) + dropped_count
+        # Estimate dropped time: bytes / bytes_per_second
+        dropped_sec = dropped_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
         
-        # Track metrics
-        if state is not None:
-            from server.services.metrics_registry import get_registry
-            get_registry().inc_counter("audio_bytes_received", amount=len(chunk), labels={"source": source})
-            
-            # Send backpressure warning if we dropped frames
-            if dropped_oldest and websocket is not None and not state.backpressure_warned:
-                state.backpressure_warned = True
-                asyncio.create_task(ws_send(state, websocket, {
-                    "type": "status",
-                    "state": "backpressure",
-                    "message": f"Audio queue full, dropping frames (source={source})",
-                    "dropped_frames": state.dropped_frames,
-                }))
-    else:
-        # Submission failed (queue full and couldn't make space)
-        if state is not None:
-            state.dropped_frames = getattr(state, 'dropped_frames', 0) + 1
-            logger.warning(f"Backpressure: dropped frame for {source}, total={state.dropped_frames}")
-            
-            from server.services.metrics_registry import get_registry
-            get_registry().inc_counter("audio_frames_dropped", labels={"source": source})
+        logger.warning(
+            "Backpressure: dropped %d frames (%d bytes, ~%.2fs) for %s "
+            "(max=%d bytes = %.1fs), total_dropped=%d",
+            dropped_count, dropped_bytes, dropped_sec,
+            source, QUEUE_MAX_BYTES, QUEUE_MAX_SECONDS,
+            state.dropped_frames,
+        )
+
+        from server.services.metrics_registry import get_registry
+        get_registry().inc_counter("audio_frames_dropped", amount=dropped_count, labels={"source": source})
+        get_registry().inc_counter("audio_bytes_dropped", amount=dropped_bytes, labels={"source": source})
+
+        # Send backpressure warning to client (throttled)
+        if websocket is not None and not state.backpressure_warned:
+            state.backpressure_warned = True
+            asyncio.create_task(ws_send(state, websocket, {
+                "type": "status",
+                "state": "backpressure",
+                "message": f"Audio backlog, dropped ~{dropped_sec:.1f}s to stay realtime (source={source})",
+                "dropped_frames": state.dropped_frames,
+                "dropped_seconds": round(dropped_sec, 2),
+                "backlog_seconds": round(current_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE), 2),
+            }))
 
 
 async def _pcm_stream(queue: asyncio.Queue) -> AsyncIterator[bytes]:
@@ -489,6 +884,12 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
                     
                     # Store for metrics
                     state.asr_processing_times.append(processing_time)
+                    source_key = _normalize_source(event.get("source", source))
+                    samples = state.asr_samples_by_source.setdefault(source_key, [])
+                    samples.append((processing_time, audio_duration))
+                    # Bound memory: keep a moderate amount of history per source.
+                    if len(samples) > 200:
+                        del samples[: len(samples) - 200]
                     state.audio_time_processed += audio_duration
                     state.processing_time_total += processing_time
                     
@@ -506,6 +907,14 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
                 # Add source if missing (stream_asr does it, but double check)
                 if "source" not in event:
                     event["source"] = source
+                # Stable transcript segment IDs (groundwork for offline canonical merge).
+                if "segment_id" not in event:
+                    event["segment_id"] = generate_segment_id(
+                        source=event.get("source", source),
+                        t0=float(event.get("t0", 0.0) or 0.0),
+                        t1=float(event.get("t1", 0.0) or 0.0),
+                        text=str(event.get("text", "") or ""),
+                    )
                 source_key = _normalize_source(event.get("source", source))
                 state.asr_last_t1_by_source[source_key] = float(event.get("t1", 0.0))
                 _update_source_clock_spread(state)
@@ -523,10 +932,37 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
                 logger.error(f"Failed to report error to degrade ladder: {degrade_err}")
 
 
+def _has_new_transcript_segments(state: SessionState, last_t1: float) -> bool:
+    """Check if there are new transcript segments since last analysis."""
+    if not state.transcript:
+        return False
+    # Find max t1 in transcript
+    max_t1 = max((seg.get("t1", 0.0) for seg in state.transcript), default=0.0)
+    return max_t1 > last_t1
+
+
 async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
+    """
+    Analysis loop with activity-gated processing.
+    
+    QW-001: Only runs analysis when new transcript segments exist,
+    reducing CPU usage during silence.
+    """
+    # Configuration
+    ENTITY_INTERVAL = 12.0  # Min seconds between entity analysis
+    CARD_INTERVAL = 28.0    # Min seconds between card analysis
+    IDLE_POLL_INTERVAL = 1.0  # Short poll when idle
+    
     try:
         while True:
-            await asyncio.sleep(12)
+            # QW-001: Activity-gated entity extraction
+            await asyncio.sleep(ENTITY_INTERVAL)
+            
+            if not _has_new_transcript_segments(state, state.last_entity_analysis_t1):
+                # No new content, skip this cycle
+                logger.debug("Skipping entity analysis: no new transcript segments")
+                continue
+            
             snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
@@ -537,11 +973,19 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
                 )
                 state.current_entities = entities
                 await ws_send(state, websocket, {"type": "entities_update", **entities})
+                logger.debug(f"Entity analysis completed, tracked {len(entities)} entity types")
             except asyncio.TimeoutError:
                 logger.warning("Entity extraction timed out after 10s, skipping this cycle")
                 await ws_send(state, websocket, {"type": "status", "state": "warning", "message": "Analysis delayed"})
 
-            await asyncio.sleep(28)
+            # QW-001: Activity-gated card extraction
+            await asyncio.sleep(CARD_INTERVAL)
+            
+            if not _has_new_transcript_segments(state, state.last_card_analysis_t1):
+                # No new content, skip this cycle
+                logger.debug("Skipping card analysis: no new transcript segments")
+                continue
+            
             snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
@@ -551,6 +995,8 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
                     timeout=15.0  # 15 second timeout for card extraction (more complex)
                 )
                 state.current_cards = cards
+                total_cards = len(cards.get("actions", [])) + len(cards.get("decisions", [])) + len(cards.get("risks", []))
+                logger.debug(f"Card analysis completed, found {total_cards} cards")
             except asyncio.TimeoutError:
                 logger.warning("Card extraction timed out after 15s, skipping this cycle")
                 cards = {"actions": [], "decisions": [], "risks": []}
@@ -563,6 +1009,7 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
                 "window": {"t0": 0.0, "t1": 600.0},
             })
     except asyncio.CancelledError:
+        logger.debug("Analysis loop cancelled")
         return
 
 
@@ -605,45 +1052,64 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
             
             if state.closed:
                 return
+
+            # PR3: Provider health metrics (queried once per tick; repeated in each source payload for simplicity).
+            provider_health_payload: Optional[Dict[str, Any]] = None
+            try:
+                if state.provider_name not in {"", "unknown"} and state.asr_config is not None:
+                    from server.services.asr_providers import ASRProviderRegistry
+                    provider = ASRProviderRegistry.get_provider(name=state.provider_name, config=state.asr_config)
+                    if provider is not None:
+                        provider_health_payload = _health_to_payload(await provider.health())
+            except Exception as e:
+                logger.debug(f"Failed to query provider health: {e}")
             
             for source, q in state.queues.items():
+                source_key = _normalize_source(source)
+                
+                # Byte-based queue metrics for predictable latency
+                queue_bytes = _queue_bytes(q)
+                queue_bytes_max = QUEUE_MAX_BYTES
+                fill_ratio = queue_bytes / queue_bytes_max if queue_bytes_max > 0 else 0
+                
+                # Backlog in seconds (predictable regardless of frame size)
+                bytes_per_second = SAMPLE_RATE * BYTES_PER_SAMPLE
+                backlog_seconds = queue_bytes / bytes_per_second if bytes_per_second > 0 else 0
+                max_backlog_seconds = QUEUE_MAX_SECONDS
+                
+                # Legacy: also report frame count for compatibility
                 queue_depth = q.qsize()
-                queue_max = QUEUE_MAX
-                fill_ratio = queue_depth / queue_max if queue_max > 0 else 0
                 
                 # Calculate dropped in last 10s
                 dropped_recent = state.dropped_frames - state.asr_last_dropped
                 state.asr_last_dropped = state.dropped_frames
                 
-                # Calculate realtime factor
-                # Use last 10 processing times if available
-                recent_times = state.asr_processing_times[-10:] if state.asr_processing_times else []
-                avg_infer_time = sum(recent_times) / len(recent_times) if recent_times else 0.0
+                # PR6: Compute realtime factor from actual audio duration processed (not configured chunk size).
+                recent_samples = state.asr_samples_by_source.get(source_key, [])
+                recent_window = recent_samples[-10:] if recent_samples else []
+                recent_processing_times = [p for (p, _) in recent_window]
+                avg_infer_time = (
+                    (sum(recent_processing_times) / len(recent_processing_times)) if recent_processing_times else 0.0
+                )
+                realtime_factor = _compute_recent_rtf(recent_window)
                 
-                # Realtime factor = processing_time / audio_time
-                # Assuming 2s chunks, if avg_infer_time is 0.5s, factor is 0.25 (good)
-                # If avg_infer_time is 3s, factor is 1.5 (bad - falling behind)
-                chunk_seconds = float(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2"))
-                realtime_factor = avg_infer_time / chunk_seconds if chunk_seconds > 0 else 0.0
-                
-                # Calculate backlog seconds
-                backlog_seconds = fill_ratio * chunk_seconds * queue_max if queue_max > 0 else 0.0
-                
-                # Backpressure warnings
+                # Backpressure warnings based on time-based fill ratio
                 if fill_ratio > 0.95 and not state.backpressure_warned:
                     state.backpressure_warned = True
                     await ws_send(state, websocket, {
                         "type": "status",
                         "state": "overloaded",
-                        "message": f"Audio backlog critical for {source}",
-                        "source": source
+                        "message": f"Audio backlog critical: {backlog_seconds:.1f}s buffered for {source}",
+                        "source": source,
+                        "backlog_seconds": round(backlog_seconds, 2),
                     })
                 elif fill_ratio > 0.85 and not state.backpressure_warned:
                     await ws_send(state, websocket, {
                         "type": "status",
                         "state": "buffering",
-                        "message": f"Processing backlog for {source}",
-                        "source": source
+                        "message": f"Processing backlog: {backlog_seconds:.1f}s buffered for {source}",
+                        "source": source,
+                        "backlog_seconds": round(backlog_seconds, 2),
                     })
                 elif fill_ratio < 0.70:
                     state.backpressure_warned = False
@@ -657,32 +1123,43 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
                         logger.debug(f"Failed to get degrade ladder status: {e}")
                 
                 # V1: Emit enhanced metrics with correlation IDs and provider info
+                # TCK-20260213-074: Updated with byte-based queue metrics
                 metrics_payload = {
                     "type": "metrics",
                     "session_id": state.session_id,
                     "attempt_id": state.attempt_id,
                     "connection_id": state.connection_id,
                     "source": source,
-                    "queue_depth": queue_depth,
-                    "queue_max": queue_max,
+                    # Byte-based queue metrics (TCK-20260213-074)
+                    "queue_bytes": queue_bytes,
+                    "queue_bytes_max": queue_bytes_max,
                     "queue_fill_ratio": round(fill_ratio, 2),
+                    "backlog_seconds": round(backlog_seconds, 2),
+                    "max_backlog_seconds": round(max_backlog_seconds, 2),
+                    # Legacy frame-based metrics (for compatibility)
+                    "queue_depth": queue_depth,
+                    "queue_max_frames": QUEUE_MAX,
+                    # Performance metrics
                     "dropped_total": state.dropped_frames,
                     "dropped_recent": dropped_recent,
-                    "dropped_chunks_last_10s": dropped_recent,  # V1: Explicit field name
+                    "dropped_chunks_last_10s": dropped_recent,
                     "avg_infer_ms": round(avg_infer_time * 1000, 1),
-                    "avg_processing_ms": round(avg_infer_time * 1000, 1),  # V1: Alias for consistency
+                    "avg_processing_ms": round(avg_infer_time * 1000, 1),
                     "realtime_factor": round(realtime_factor, 2),
-                    "backlog_seconds": round(backlog_seconds, 2),  # V1: New metric
-                    "provider": state.provider_name,  # V1: Provider name
-                    "model_id": state.model_id,  # V1: Model identifier
-                    "vad_enabled": state.vad_enabled,  # V1: VAD status
+                    # Provider info
+                    "provider": state.provider_name,
+                    "model_id": state.model_id,
+                    "vad_enabled": state.vad_enabled,
+                    "provider_health": provider_health_payload,
+                    # Client features
                     "client_clock_drift_compensation_enabled": state.client_clock_drift_compensation_enabled,
                     "client_vad_enabled": state.client_vad_enabled,
                     "client_clock_drift_telemetry_enabled": state.client_clock_drift_telemetry_enabled,
                     "client_vad_telemetry_enabled": state.client_vad_telemetry_enabled,
+                    # Source/sync metrics
                     "source_clock_spread_ms": round(state.source_clock_spread_ms, 1),
                     "max_source_clock_spread_ms": round(state.max_source_clock_spread_ms, 1),
-                    "sources_active": list(state.active_sources),  # V1: Active sources list
+                    "sources_active": list(state.active_sources),
                     "timestamp": time.time()
                 }
                 
@@ -738,7 +1215,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
             try:
                 message = await websocket.receive()
                 if DEBUG:
-                    logger.debug(f"ws_live_listener: received message: {message}")
+                    logger.debug("ws_live_listener: received %s", _debug_ws_message_summary(message))
             except RuntimeError:
                 if DEBUG:
                     logger.debug("ws_live_listener: RuntimeError in receive")
@@ -798,6 +1275,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             state.provider_name = provider.name
                             state.model_id = config.model_name
                             state.vad_enabled = config.vad_enabled
+                            state.asr_config = config
                         
                         # TCK-20260211-010: Initialize degrade ladder for adaptive performance
                         if provider:
@@ -847,7 +1325,12 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             logger.debug(f"ws_live_listener: received audio, source={payload.get('source', 'system')}, data len={len(payload.get('data', ''))}")
                         if state.started:
                             b64_data = payload.get("data", "")
-                            source = payload.get("source", "system")
+                            source = _normalize_source(payload.get("source", "system"))
+
+                            if MAX_ACTIVE_SOURCES_PER_SESSION > 0 and source not in state.started_sources:
+                                if len(state.started_sources) >= MAX_ACTIVE_SOURCES_PER_SESSION:
+                                    await _reject_new_source(websocket, state, source)
+                                    continue
                             chunk = base64.b64decode(b64_data)
                             
                             q = get_queue(state, source)
@@ -855,6 +1338,8 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 state.started_sources.add(source)
                                 # P2-13: Initialize audio dump for new source
                                 _init_audio_dump(state, source)
+                                # TCK-20260213-074: Initialize recording lane (lossless)
+                                _init_recording_lane(state, source, state.sample_rate)
                                 if DEBUG:
                                     logger.debug(f"ws_live_listener: starting ASR task for source={source}")
                                 state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
@@ -922,6 +1407,11 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         cards = await asyncio.to_thread(extract_cards, transcript_snapshot)
                         entities = await asyncio.to_thread(extract_entities, transcript_snapshot)
                         
+                        # TCK-20260213-074: Finalize recording lanes (lossless audio files)
+                        recording_paths = _close_all_recording_lanes(state, state.sample_rate)
+                        if recording_paths:
+                            logger.info(f"Session recordings finalized: {recording_paths}")
+                        
                         await ws_send(
                             state,
                             websocket,
@@ -946,6 +1436,10 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                         "last": round(state.source_clock_spread_ms, 1),
                                         "max": round(state.max_source_clock_spread_ms, 1),
                                     },
+                                    # TCK-20260213-074: Recording lane paths
+                                    "recordings": {
+                                        source: str(path) for source, path in recording_paths.items() if path
+                                    } if recording_paths else {},
                                 },
                             }
                         )
@@ -959,15 +1453,36 @@ async def ws_live_listener(websocket: WebSocket) -> None:
             # Handle Binary Messages (Legacy/Fallback)
             if "bytes" in message and message["bytes"] is not None and state.started:
                 chunk = message["bytes"]
-                source = "system" # Default for binary
+
+                # Binary audio framing (v1):
+                # Header: b"EP" + version(1 byte) + source(1 byte) + raw PCM16 payload.
+                # - source: 0=system, 1=mic
+                # Backwards compatible: if header absent, treat as legacy system PCM.
+                source = "system"
+                if len(chunk) >= 4 and chunk[0:2] == b"EP" and chunk[2] == 1 and chunk[3] in (0, 1):
+                    source = "system" if chunk[3] == 0 else "mic"
+                    chunk = chunk[4:]
+
+                source = _normalize_source(source)
+
+                if MAX_ACTIVE_SOURCES_PER_SESSION > 0 and source not in state.started_sources:
+                    if len(state.started_sources) >= MAX_ACTIVE_SOURCES_PER_SESSION:
+                        await _reject_new_source(websocket, state, source)
+                        continue
                 
                 q = get_queue(state, source)
                 if source not in state.started_sources:
                     state.started_sources.add(source)
+                    # P2-13: Initialize audio dump for new source (match JSON path)
+                    _init_audio_dump(state, source)
+                    # TCK-20260213-074: Initialize recording lane (lossless)
+                    _init_recording_lane(state, source, state.sample_rate)
                     if DEBUG:
                         logger.debug(f"ws_live_listener: starting ASR task for source={source}")
                     state.asr_tasks.append(asyncio.create_task(_asr_loop(websocket, state, q, source)))
                 
+                # P2-13: Write audio to dump file
+                _write_audio_dump(state, source, chunk)
                 await put_audio(q, chunk, state=state, source=source, websocket=websocket)
                 _append_diarization_audio(state, source, chunk)
                 
@@ -991,6 +1506,12 @@ async def ws_live_listener(websocket: WebSocket) -> None:
         
         # P2-13: Close audio dump files
         _close_audio_dumps(state)
+        
+        # TCK-20260213-074: Finalize recording lanes on disconnect/abnormal close
+        if state.recording_files:
+            recording_paths = _close_all_recording_lanes(state, state.sample_rate)
+            if recording_paths:
+                logger.info(f"Disconnect recordings finalized: {recording_paths}")
         
         # V1: Track disconnect in metrics
         from server.services.metrics_registry import get_registry

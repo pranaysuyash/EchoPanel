@@ -4,7 +4,7 @@
 **Focus Areas**: Capture reliability, failure modes, operator UX, compliance, and multi-language requirements.
 **Date**: 2026-02-10
 **Last reviewed**: 2026-02-11 (Audit Queue Runner)
-**Status**: OPEN
+**Status**: OPEN (partially remediated)
 **Current Readiness Score**: 42/100 (NOT BROADCAST-READY)
 
 **Evidence Sources**:
@@ -494,16 +494,16 @@ Current architecture requires constant backend connection. Broadcast requires:
 ## 13. Implementation Status (Updated 2026-02-11)
 
 ### Patch B1: Dual-Path Audio Redundancy
-**Status:** NOT STARTED ❌
+**Status:** IMPLEMENTED ✅ (verified 2026-02-13)
 **Priority:** P0
-**Evidence:** No RedundantAudioCaptureManager or dual-path implementation found
+**Evidence:** `RedundantAudioCaptureManager.swift` exists and is wired via `BroadcastFeatureManager.swift`
 
 ---
 
 ### Patch B2: Real-Time SRT/VTT Streaming Output
-**Status:** NOT STARTED ❌
+**Status:** PARTIAL ✅ (export implemented; streaming not implemented) (verified 2026-02-13)
 **Priority:** P0
-**Evidence:** No SRT/VTT output format or caption streaming service found
+**Evidence:** Export actions exist in `AppState.swift` (SRT/WebVTT) and are exposed in SidePanel footer; real-time streaming still missing
 
 ---
 
@@ -571,6 +571,10 @@ rg 'CEA-608\|CEA-708\|EBU-TT\|SMPTE' /Users/pranay/Projects/EchoPanel/ --type md
 - 0 of 3 additional broadcast features are implemented
 - EchoPanel remains at 42/100 broadcast readiness
 - Major architecture work required for broadcast industry compliance
+
+**Update (2026-02-13):**
+- Patch B1 (Dual-path redundancy) is now implemented (see `macapp/MeetingListenerApp/Sources/RedundantAudioCaptureManager.swift`; ticket `TCK-20260213-021`).
+- Patch B2 is partially implemented via export (SRT/WebVTT export actions and tests; ticket `TCK-20260213-023`). Real-time caption streaming remains not implemented.
 
 ---
 

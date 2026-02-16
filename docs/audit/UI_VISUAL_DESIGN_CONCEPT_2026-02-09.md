@@ -7,6 +7,15 @@
 
 ---
 
+## Update (2026-02-13)
+
+This document is explicitly a "future direction" concept (not an audit of current state). Since 2026-02-09, the codebase has already moved toward a more consistent visual system in a few concrete, low-risk ways:
+
+- A centralized token set exists for corner radii, spacing, typography, strokes, and semantic backgrounds. Evidence: `macapp/MeetingListenerApp/Sources/DesignTokens.swift`.
+- Focus and selection visuals now respect system affordances more closely (system focus ring + system accent tint) rather than hardcoded colors. Evidence: `macapp/MeetingListenerApp/Sources/DesignTokens.swift`.
+
+The larger stylistic shifts proposed here (warm "paper & ink" palette, editorial serif typography, removing material/glass, adaptive density replacing explicit Roll/Compact/Full) are *not* implemented as of 2026-02-13; they remain roadmap-level design exploration and would require careful UX validation and iteration to avoid regressions.
+
 ## 1. Design Philosophy: "Companion, Not Tool"
 
 ### Current State

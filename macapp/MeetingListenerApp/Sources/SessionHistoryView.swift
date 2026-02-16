@@ -127,6 +127,16 @@ struct SessionHistoryView: View {
                     }
                     .buttonStyle(.bordered)
 
+                    Button {
+                        guard let selectedSessionId,
+                              let url = sessionStore.sessionDirectoryURL(sessionId: selectedSessionId) else { return }
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Show this session’s local files in Finder")
+
                     Button(role: .destructive) {
                         showDeleteConfirmation = true
                     } label: {

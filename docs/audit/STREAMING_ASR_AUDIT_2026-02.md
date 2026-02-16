@@ -4,6 +4,17 @@
 **Scope**: Client-side capture → WebSocket transport → ASR → NLP → diarization  
 **Status**: P0 issues fixed, P1/P2 issues documented
 
+## Update (2026-02-13)
+
+This document is a point-in-time audit written in early February 2026. Since then, several of the implementation details described below have changed; key corrections:
+
+- Audio transport is no longer strictly "base64-in-JSON": the macOS client supports binary WebSocket audio frames (EP v1 header) with JSON/base64 fallback, and defaults to binary for localhost. Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 208-252), `macapp/MeetingListenerApp/Sources/BackendConfig.swift` (lines 40-52, 89-97), `server/api/ws_live_listener.py` (lines 1079-1112, 160-166).
+- WebSocket auth headers exist: the client attaches `Authorization: Bearer <token>` and `x-echopanel-token`, and the server extracts token in priority order (query param legacy, then header, then Authorization Bearer). Evidence: `macapp/MeetingListenerApp/Sources/BackendConfig.swift` (lines 44-52), `server/api/ws_live_listener.py` (lines 305-318).
+- Effective ASR chunking default is 2 seconds (not 4) via `_get_default_config()` env default; older diagrams/notes mentioning 4s are stale. Evidence: `server/services/asr_stream.py` (lines 24-33), `server/services/asr_providers.py` (lines 49-58).
+- WS metrics now include provider health and a corrected `realtime_factor` computed from actual (processing_time / audio_duration) samples, not configured chunk size. Evidence: `server/api/ws_live_listener.py` (lines 269-286, 711-793).
+- Session-end diarization is implemented per source and gated by env flags and HF token availability (not "disabled" globally). Evidence: `server/api/ws_live_listener.py` (lines 196-208, 1024-1059), `server/services/diarization.py` (lines 44-50, 59-77, 80-110).
+- Client send buffering and overload controls exist (message buffer capacity + TTL, plus `WebSocketStreamer` real-time pacing). Evidence: `macapp/MeetingListenerApp/Sources/ResilientWebSocket.swift` (lines 128-166, 221-323), `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` (lines 208-225).
+
 ---
 
 ## Executive Summary

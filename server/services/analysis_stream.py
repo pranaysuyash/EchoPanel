@@ -289,6 +289,21 @@ def extract_entities(transcript: List[dict], window_seconds: float = ANALYSIS_WI
 
 def _extract_entities_from_segments(segments: List[dict]) -> dict:
     """Extract entities from a list of transcript segments."""
+
+    def canonicalize_token(token: str) -> str:
+        # Strip common punctuation around tokens but preserve internal dots for versions (v2.0).
+        cleaned = token.strip().strip(".,:;!?()[]{}\"“”'`")
+        # Normalize possessive suffix
+        if cleaned.endswith("'s"):
+            cleaned = cleaned[:-2]
+        if cleaned.endswith("’s"):
+            cleaned = cleaned[:-2]
+        return cleaned
+
+    def canonicalize_known_org(token: str, known_orgs: set[str]) -> str:
+        # Case-insensitive match against known org list to return canonical casing.
+        lower_to_canonical = {org.lower(): org for org in known_orgs}
+        return lower_to_canonical.get(token.lower(), token)
     
     # Track entities by (name, type)
     entity_map: Dict[Tuple[str, str], Entity] = {}
@@ -324,6 +339,7 @@ def _extract_entities_from_segments(segments: List[dict]) -> dict:
     # Known organizations
     known_orgs = {"EchoPanel", "Zoom", "Google", "Microsoft", "Apple", "Amazon", "Slack", 
                   "Teams", "Meet", "Discord", "Notion", "Figma", "Linear", "Jira", "GitHub"}
+    known_orgs_lower = {o.lower() for o in known_orgs}
     
     # Common first names for person detection (Gap 4 fix)
     common_first_names = {
@@ -410,6 +426,9 @@ def _extract_entities_from_segments(segments: List[dict]) -> dict:
         tokens = re.findall(r"\b[A-Z][a-zA-Z0-9\.]+\b", text)
         
         for token in tokens:
+            token = canonicalize_token(token)
+            if not token:
+                continue
             # Filter noisy "topic" candidates (pronouns, fillers, etc.)
             if token.lower() in common_words_lower:
                 continue
@@ -421,8 +440,9 @@ def _extract_entities_from_segments(segments: List[dict]) -> dict:
                 entity_type = "date"
             elif token.lower().startswith("v") and "." in token:
                 entity_type = "project"  # Version numbers like v2.0
-            elif token in known_orgs:
+            elif token.lower() in known_orgs_lower:
                 entity_type = "org"
+                token = canonicalize_known_org(token, known_orgs)
             else:
                 entity_type = "topic"
             
@@ -555,6 +575,18 @@ def _entity_map_to_dict(entity_map: Dict[Tuple[str, str], Entity]) -> dict:
 
 def _extract_entities_from_segments_incremental(segments: List[dict], entity_map: Dict[Tuple[str, str], Entity]) -> None:
     """Incrementally extract entities from segments into existing entity_map."""
+
+    def canonicalize_token(token: str) -> str:
+        cleaned = token.strip().strip(".,:;!?()[]{}\"“”'`")
+        if cleaned.endswith("'s"):
+            cleaned = cleaned[:-2]
+        if cleaned.endswith("’s"):
+            cleaned = cleaned[:-2]
+        return cleaned
+
+    def canonicalize_known_org(token: str, known_orgs: set[str]) -> str:
+        lower_to_canonical = {org.lower(): org for org in known_orgs}
+        return lower_to_canonical.get(token.lower(), token)
     
     # Common words, day names, orgs, first names - same as before
     common_words = {
@@ -582,6 +614,7 @@ def _extract_entities_from_segments_incremental(segments: List[dict], entity_map
     
     known_orgs = {"EchoPanel", "Zoom", "Google", "Microsoft", "Apple", "Amazon", "Slack", 
                   "Teams", "Meet", "Discord", "Notion", "Figma", "Linear", "Jira", "GitHub"}
+    known_orgs_lower = {o.lower() for o in known_orgs}
     
     common_first_names = {
         "John", "James", "Michael", "David", "Robert", "William", "Richard", "Joseph", "Thomas", "Charles",
@@ -663,6 +696,9 @@ def _extract_entities_from_segments_incremental(segments: List[dict], entity_map
         tokens = re.findall(r"\b[A-Z][a-zA-Z0-9\.]+\b", text)
         
         for token in tokens:
+            token = canonicalize_token(token)
+            if not token:
+                continue
             if token.lower() in common_words_lower:
                 continue
             if len(token) < 3:
@@ -672,8 +708,9 @@ def _extract_entities_from_segments_incremental(segments: List[dict], entity_map
                 entity_type = "date"
             elif token.lower().startswith("v") and "." in token:
                 entity_type = "project"
-            elif token in known_orgs:
+            elif token.lower() in known_orgs_lower:
                 entity_type = "org"
+                token = canonicalize_known_org(token, known_orgs)
             else:
                 entity_type = "topic"
             

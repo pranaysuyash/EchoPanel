@@ -8,6 +8,18 @@
 
 ---
 
+## Update (2026-02-13)
+
+This audit is a point-in-time review from 2026-02-09. Several findings below are now stale due to subsequent refactors and hardening work:
+
+- `SidePanelView.swift` is no longer a 2,700+ line monolith; transcript chrome/surfaces were split into `macapp/MeetingListenerApp/Sources/SidePanel/*` and shared subviews/state types. Evidence: `macapp/MeetingListenerApp/Sources/SidePanelView.swift` (current file size is small), `macapp/MeetingListenerApp/Sources/SidePanel/Shared/`.
+- HuggingFace token storage is no longer `UserDefaults`; it is stored via Keychain helper with legacy migration cleanup. Evidence: `macapp/MeetingListenerApp/Sources/KeychainHelper.swift` (HF token storage + migration), `macapp/MeetingListenerApp/Sources/SettingsView.swift` (token save path).
+- Visual snapshot tests exist (opt-in) for side panel layouts and streaming states. Evidence: `macapp/MeetingListenerApp/Tests/SidePanelVisualSnapshotTests.swift`, `macapp/MeetingListenerApp/Tests/StreamingVisualTests.swift`.
+- Entity highlights are exposed to accessibility via an explicit SwiftUI accessibility representation and the underlying `NSTextView` has labels reflecting highlighted entities. Evidence: `macapp/MeetingListenerApp/Sources/EntityHighlighter.swift`, `macapp/MeetingListenerApp/Sources/SidePanel/Shared/SidePanelSupportViews.swift`.
+- Focus indicator contrast now uses system focus ring color (`NSColor.keyboardFocusIndicatorColor`) and selection tint uses `Color.accentColor` (instead of hardcoded blue) for better contrast and user-configured accent support. Evidence: `macapp/MeetingListenerApp/Sources/DesignTokens.swift`.
+
+Remaining (still potentially relevant) suggestions from this audit include persisting pinned segments across app relaunches and deeper keyboard/focus interaction testing (not addressed in this update).
+
 ## Executive Summary
 
 The EchoPanel macOS app is a menu-bar-based meeting transcription companion with an ambitious three-mode UI (Roll/Compact/Full) that demonstrates solid SwiftUI engineering. The codebase shows evidence of iterative refinement with attention to accessibility, responsive layout, and Apple platform conventions. However, there are several areas requiring attention before launch — ranging from minor HIG violations to architectural concerns about view complexity.

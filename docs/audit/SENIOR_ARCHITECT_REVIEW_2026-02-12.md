@@ -5,6 +5,18 @@
 
 ---
 
+## Update (2026-02-13)
+
+This review was authored on **2026-02-12**. Several items called out as gaps here have been addressed since then. Key changes observed as of **2026-02-13**:
+
+- ✅ `whisper_cpp` inference is serialized under a lock (multi-source safety): `server/services/provider_whisper_cpp.py` uses `_infer_lock`.
+- ✅ Client WS send is off the capture thread via a bounded send queue: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift` uses `sendQueue` and logs send timeouts.
+- ✅ NLP `asyncio.to_thread(...)` calls in analysis loop are bounded by timeouts: `server/api/ws_live_listener.py` wraps incremental entity/card extraction in `asyncio.wait_for(...)`.
+- ✅ Provider health is now emitted in WS `metrics` payloads: `server/api/ws_live_listener.py` includes `provider_health`.
+- ✅ Correlation IDs are propagated server→client and validated client-side: `attempt_id` / `connection_id` in WS events, and the client drops mismatched-attempt messages.
+
+Remaining items from this review are still relevant (notably provider instance eviction / lifecycle cleanup policy, and long-term removal of auth tokens from URL query parameters).
+
 ## 1) Repository Map
 
 ```
@@ -98,7 +110,7 @@
 │       │                                                                    │
 │       ├── WhisperCppProvider:                                              │
 │       │   - Similar chunked-batch pattern                                  │
-│       │   - NO inference lock (⚠️ potential race)                          │
+│       │   - Inference serialized under lock (`_infer_lock`, as of 2026-02-13) │
 │       │                                                                    │
 │       └── VoxtralRealtimeProvider:                                         │
 │           - Streaming subprocess (--stdin mode)                            │
@@ -234,9 +246,9 @@
 
 | Severity | Area | Finding | Evidence | Why It Matters | Fix Strategy | Effort |
 |----------|------|---------|----------|----------------|--------------|--------|
-| **P0** | ASR | `whisper_cpp` provider has NO inference lock | `provider_whisper_cpp.py:382-388`: No lock around `ctx.transcribe()`; compare to `provider_faster_whisper.py:166` which has `with self._infer_lock` | With 2 audio sources (mic+system), concurrent calls to whisper.cpp will cause crashes or corruption | Add `threading.Lock()` matching faster_whisper pattern | S |
-| **P0** | Security | WebSocket auth token extracted from query params without constant-time compare | `ws_live_listener.py:150-156`: `_extract_ws_auth_token()` uses `.strip()` then `hmac.compare_digest()`; but token from URL query param is logged | Timing attack possible on WS auth; URL tokens may leak in logs | Move auth to header-only; sanitize logging | M |
-| **P0** | Reliability | WebSocket send is synchronous on capture thread | `WebSocketStreamer.swift:207-209`: `task?.send(.string(text))` called directly from `sendPCMFrame()` which is on capture callback thread | Network stall blocks audio capture; dropped audio | Add bounded async queue for sends | M |
+| **P0** | ASR | `whisper_cpp` provider inference must be serialized for multi-source safety | **Status (2026-02-13):** Implemented via `_infer_lock` in `server/services/provider_whisper_cpp.py` | With 2 audio sources (mic+system), concurrent calls to whisper.cpp can crash/corrupt | Keep lock; document thread-safety assumptions per provider | S |
+| **P0** | Security | Auth token support via URL query param is risky | Server still accepts `?token=` for backward compatibility (`server/api/ws_live_listener.py`), but the client uses headers (`macapp/MeetingListenerApp/Sources/BackendConfig.swift`) | URL tokens are easier to leak via logs/copy/paste | Deprecate/remove query-token support; keep header-only | M |
+| **P0** | Reliability | Audio capture must not be blocked by WebSocket sends | **Status (2026-02-13):** Client uses bounded async send queue (`macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`) | Network stall blocks audio capture; dropped audio | Keep bounded queue + explicit drop policy + metrics | M |
 | **P0** | Concurrency | Provider registry instances never evicted | `asr_providers.py:299,334`: `_instances: dict[str, ASRProvider]` grows unbounded; no eviction policy | Long-running server with varied configs = memory leak | Add LRU eviction (max 2-3 providers) | M |
 | **P0** | Performance | `faster_whisper` single lock serializes ALL inference | `provider_faster_whisper.py:166`: `with self._infer_lock` around `model.transcribe()` | 2 sources cannot parallelize; 2x latency with dual-source | Consider per-source provider instances or lock-free design | L |
 
@@ -245,9 +257,9 @@
 | Severity | Area | Finding | Evidence | Why It Matters | Fix Strategy | Effort |
 |----------|------|---------|----------|----------------|--------------|--------|
 | **P1** | Architecture | VAD runs INSIDE ASR, not pre-filter | `provider_faster_whisper.py:167`: `vad_filter=self.config.vad_enabled` passed to `transcribe()` | Silent audio still triggers model inference; wasted compute | Pre-filter with `vad_filter.py` before enqueueing | M |
-| **P1** | Reliability | No timeout on `asyncio.to_thread()` calls | `ws_live_listener.py:309,314`: `extract_entities`, `extract_cards` called without timeout | NLP hang blocks analysis loop indefinitely | Add `asyncio.wait_for(timeout=10)` | S |
+| **P1** | Reliability | NLP work must be bounded by timeouts | **Status (2026-02-13):** Implemented via `asyncio.wait_for(...)` around incremental entity/card extraction in `server/api/ws_live_listener.py` | NLP hang blocks analysis loop indefinitely | Keep timeouts + status emissions when delayed | S |
 | **P1** | Security | Backend token stored in Keychain but also migrated from UserDefaults | `KeychainHelper.swift`: Migration logic suggests previous insecure storage | Token may exist in plaintext in UserDefaults backup | Audit migration; clear UserDefaults after migration | S |
-| **P1** | Observability | Provider health not exposed in WebSocket metrics | `ws_live_listener.py:374-386`: Metrics loop only tracks queue depth, not ASR health | Cannot detect ASR stall vs queue backlog | Call `provider.health()` in metrics loop | S |
+| **P1** | Observability | Provider health should be visible in WS metrics | **Status (2026-02-13):** Implemented: `provider_health` emitted in WS `metrics` payload (`server/api/ws_live_listener.py`) | Cannot detect ASR stall vs queue backlog | Keep provider health emission and document field shape | S |
 | **P1** | Performance | Diarization runs synchronously at session end | `ws_live_listener.py:526-537`: `await _run_diarization_per_source()` blocks WS close | 30s+ audio = multi-second delay for final summary | Run diarization in background; stream interim results | M |
 | **P1** | Reliability | `stopAndAwaitFinalSummary` timeout not configurable | `WebSocketStreamer.swift:121`: Hardcoded 10s timeout in `stopAndAwaitFinalSummary()` | Long sessions may need more time for flush | Make timeout configurable via parameter | XS |
 | **P1** | Testing | No integration tests for 2-source scenario | `tests/test_streaming_correctness.py`: Tests single source only | Dual-source is common use case; untested | Add 2-source soak test | M |
@@ -262,7 +274,7 @@
 | **P2** | Performance | PCM frames sent as base64 JSON | `WebSocketStreamer.swift:152-156`: Each frame base64 encoded | 33% overhead vs binary; unnecessary CPU | Support binary WebSocket frames | M |
 | **P2** | Observability | `totalSamples` counter overflows | `AudioCaptureManager.swift:179`: `Int` counter, no wrap handling | Long sessions may overflow (though unlikely) | Use `UInt64` or wrap intentionally | XS |
 | **P2** | Testing | Benchmark harness doesn't test VAD effectiveness | `scripts/benchmark_voxtral_vs_whisper.py`: No silence-heavy scenario | Cannot measure VAD performance gains | Add scenario C (95% silence) | S |
-| **P2** | Architecture | `degrade_ladder.py` exists but not integrated | `server/services/degrade_ladder.py`: Full implementation but no imports in WS handler | Adaptive performance code is dead code | Wire into `_asr_loop` | M |
+| **P2** | Architecture | Adaptive performance must be integrated (degrade ladder) | **Status (2026-02-13):** Integrated: `server/api/ws_live_listener.py` initializes `DegradeLadder` per session and checks it during `_asr_loop` | Without integration, backpressure handling is passive only | Keep integration + add tests for level transitions | M |
 | **P2** | Security | No rate limiting on WebSocket connections | `ws_live_listener.py`: No connection rate limiting | Potential DoS via connection spam | Add connection rate limit (max 10/min) | S |
 
 ---
@@ -272,11 +284,11 @@
 1. **Audio Capture Thread Must Never Block**
    - Capture callbacks must return in <10ms
    - All network I/O must be offloaded to background queues
-   - *Current violation*: `WebSocketStreamer.sendPCMFrame()` is synchronous
+   - *Status (2026-02-13)*: Client uses bounded send queue (`macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`)
 
 2. **Provider Inference Must Be Serialized Per Model Instance**
    - `faster_whisper`: ✅ Uses `threading.Lock()`
-   - `whisper_cpp`: ❌ Missing lock (P0)
+   - `whisper_cpp`: ✅ Uses `_infer_lock` (as of 2026-02-13)
    - *Enforcement*: All providers must document thread-safety guarantees
 
 3. **WebSocket Messages Must Include Correlation IDs**
@@ -303,7 +315,7 @@
    - RTF > 1.0 → increase chunk size
    - RTF > 1.2 → drop to single source
    - Provider crash → failover to alternative
-   - *Current state*: `degrade_ladder.py` exists but not wired
+   - *Status (2026-02-13)*: Degrade ladder is wired into WS session handling (`server/api/ws_live_listener.py`)
 
 8. **Session End Must Complete Within Bounded Time**
    - ASR flush: <5 seconds
@@ -321,7 +333,7 @@
     - ASR inference: <10s
     - NLP extraction: <10s
     - Health check: <2s
-    - *Current violations*: NLP calls untimed (P1)
+    - *Status (2026-02-13)*: NLP calls are guarded with `asyncio.wait_for(...)` timeouts in analysis loop
 
 ---
 
@@ -621,13 +633,13 @@ echo "=== Complete ==="
 
 | Rank | Issue | Severity | Effort | Files |
 |------|-------|----------|--------|-------|
-| 1 | Whisper.cpp missing inference lock | P0 | S | `provider_whisper_cpp.py` |
-| 2 | WebSocket send blocks capture thread | P0 | M | `WebSocketStreamer.swift` |
+| 1 | Whisper.cpp inference lock (implemented as of 2026-02-13) | P0 | S | `provider_whisper_cpp.py` |
+| 2 | WebSocket send off capture thread (implemented as of 2026-02-13) | P0 | M | `WebSocketStreamer.swift` |
 | 3 | Provider registry memory leak | P0 | M | `asr_providers.py` |
 | 4 | VAD runs inside ASR (wasted compute) | P1 | M | `asr_stream.py` |
-| 5 | NLP calls untimed | P1 | S | `ws_live_listener.py` |
+| 5 | NLP timeouts required (implemented as of 2026-02-13) | P1 | S | `ws_live_listener.py` |
 | 6 | Debug audio in /tmp | P2 | S | `ws_live_listener.py` |
-| 7 | Degrade ladder not wired | P2 | M | `degrade_ladder.py` |
+| 7 | Degrade ladder integration (implemented as of 2026-02-13) | P2 | M | `server/api/ws_live_listener.py` |
 
 ### Architecture Strengths
 1. Clean separation between Swift UI and Python backend

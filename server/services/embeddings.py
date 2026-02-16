@@ -6,13 +6,21 @@ Enables semantic search and improved document retrieval.
 """
 
 import json
+import logging
 import math
 import os
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# QW-002: Embedding cache configuration
+EMBEDDING_CACHE_MAX_SIZE_ENV = "ECHOPANEL_EMBEDDING_CACHE_MAX_SIZE"
+DEFAULT_CACHE_MAX_SIZE = 10000  # Max number of embeddings in memory
 
 EMBEDDING_MODEL_ENV = "ECHOPANEL_EMBEDDING_MODEL"
 EMBEDDING_DIM_ENV = "ECHOPANEL_EMBEDDING_DIMENSION"
@@ -28,13 +36,16 @@ class EmbeddingService:
     
     Uses sentence-transformers/all-MiniLM-L6-v2 by default.
     Stores embeddings in a local JSON cache for persistence.
+    
+    QW-002: Implements LRU cache eviction to prevent unbounded growth.
     """
     
     def __init__(
         self,
         model_name: Optional[str] = None,
         cache_path: Optional[Path] = None,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        max_cache_size: Optional[int] = None
     ):
         self.model_name = model_name or os.getenv(EMBEDDING_MODEL_ENV, DEFAULT_MODEL)
         self.embedding_dim = int(os.getenv(EMBEDDING_DIM_ENV, DEFAULT_DIMENSION))
@@ -43,7 +54,12 @@ class EmbeddingService:
         self._model = None
         self._model_lock = threading.Lock()
         self._device = device or self._get_default_device()
-        self._cache: Dict[str, List[float]] = {}
+        # QW-002: Use OrderedDict for LRU tracking
+        self._max_cache_size = max_cache_size or int(os.getenv(EMBEDDING_CACHE_MAX_SIZE_ENV, str(DEFAULT_CACHE_MAX_SIZE)))
+        self._cache: OrderedDict[str, List[float]] = OrderedDict()
+        # QW-002: Cache statistics
+        self._cache_hits = 0
+        self._cache_misses = 0
         self._load_cache()
     
     def _default_cache_path(self) -> Path:
@@ -84,21 +100,50 @@ class EmbeddingService:
         if self.cache_path.exists():
             try:
                 with open(self.cache_path, 'r', encoding='utf-8') as f:
-                    self._cache = json.load(f)
+                    loaded = json.load(f)
+                    # QW-002: Convert to OrderedDict for LRU tracking
+                    if isinstance(loaded, dict):
+                        self._cache = OrderedDict(loaded)
+                    else:
+                        self._cache = OrderedDict()
             except Exception:
-                self._cache = {}
+                self._cache = OrderedDict()
     
     def _save_cache(self) -> None:
         """Save embeddings cache to disk."""
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = self.cache_path.with_suffix(".tmp")
         try:
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(self._cache, f, indent=2)
+            with self._lock:
+                # Convert OrderedDict to regular dict for JSON serialization
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    json.dump(dict(self._cache), f, indent=2)
             temp_path.replace(self.cache_path)
         except Exception:
             if temp_path.exists():
                 temp_path.unlink()
+    
+    def _evict_if_needed(self) -> None:
+        """QW-002: Evict oldest entries if cache exceeds max size."""
+        with self._lock:
+            while len(self._cache) > self._max_cache_size:
+                # OrderedDict maintains insertion order; oldest is first
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+                logger.debug(f"LRU evicted embedding: {oldest_key}")
+    
+    def get_cache_stats(self) -> dict:
+        """QW-002: Get cache statistics."""
+        with self._lock:
+            total = self._cache_hits + self._cache_misses
+            hit_ratio = self._cache_hits / total if total > 0 else 0.0
+            return {
+                "size": len(self._cache),
+                "max_size": self._max_cache_size,
+                "hits": self._cache_hits,
+                "misses": self._cache_misses,
+                "hit_ratio": round(hit_ratio, 4),
+            }
     
     def warmup(self) -> None:
         """Warm up the model for faster first inference."""
@@ -162,7 +207,10 @@ class EmbeddingService:
         
         with self._lock:
             cache_key = f"{document_id}_{chunk_index}"
+            # QW-002: Add to cache and evict if needed
             self._cache[cache_key] = embedding
+            self._cache.move_to_end(cache_key)  # Mark as most recent
+            self._evict_if_needed()
             self._save_cache()
         
         return {
@@ -192,6 +240,7 @@ class EmbeddingService:
                 
                 with self._lock:
                     self._cache[cache_key] = embedding
+                    self._cache.move_to_end(cache_key)  # QW-002: Mark as most recent
                 
                 results.append({
                     "chunk_index": chunk_index,
@@ -201,6 +250,8 @@ class EmbeddingService:
                 })
         
         with self._lock:
+            # QW-002: Evict if needed after batch insert
+            self._evict_if_needed()
             self._save_cache()
         
         return results
@@ -209,7 +260,14 @@ class EmbeddingService:
         """Get cached embedding for a document chunk."""
         with self._lock:
             cache_key = f"{document_id}_{chunk_index}"
-            return self._cache.get(cache_key)
+            embedding = self._cache.get(cache_key)
+            # QW-002: Track stats and mark as recently used
+            if embedding is not None:
+                self._cache_hits += 1
+                self._cache.move_to_end(cache_key)
+            else:
+                self._cache_misses += 1
+            return embedding
     
     def get_document_embeddings(self, document_id: str) -> Dict[int, List[float]]:
         """Get all cached embeddings for a document."""
@@ -284,7 +342,9 @@ class EmbeddingService:
         """Clear all cached embeddings. Returns count cleared."""
         with self._lock:
             count = len(self._cache)
-            self._cache = {}
+            self._cache = OrderedDict()
+            self._cache_hits = 0
+            self._cache_misses = 0
             self._save_cache()
         return count
     

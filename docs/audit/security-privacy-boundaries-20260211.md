@@ -7,6 +7,15 @@
 
 ---
 
+## Update (2026-02-13)
+
+This audit was authored on **2026-02-11**. Since then, backend auth/token handling has been hardened and some protocol details have changed. Key deltas observed as of **2026-02-13**:
+
+- ✅ **Secure-by-default localhost backend auth**: when the app manages a localhost backend, it auto-generates a backend token (Keychain) and starts the backend with `ECHOPANEL_WS_AUTH_TOKEN`. Evidence: `macapp/MeetingListenerApp/Sources/BackendManager.swift`, `macapp/MeetingListenerApp/Sources/KeychainHelper.swift`.
+- ✅ **Client sends auth via headers (not URL query params)**: WebSocket and HTTP requests include `Authorization: Bearer <token>` and `x-echopanel-token: <token>`. Evidence: `macapp/MeetingListenerApp/Sources/BackendConfig.swift`, `macapp/MeetingListenerApp/Sources/BackendManager.swift`.
+- ⚠️ **Server still accepts `?token=` for backward compatibility** (priority order includes query param), so URL-token risk remains server-side until query-token support is removed. Evidence: `server/api/ws_live_listener.py`, `server/main.py`, and `docs/WS_CONTRACT.md`.
+- ✅ **HTTP endpoints require auth when token is set**: `/health`, `/model-status`, etc. enforce `_require_http_auth(...)` when `ECHOPANEL_WS_AUTH_TOKEN` is configured. Evidence: `server/main.py`.
+
 ## 1. Executive Summary
 
 This document provides a comprehensive analysis of EchoPanel's trust boundaries, data movement patterns, permission gating, redaction paths, and storage mechanisms. The analysis covers the macOS menu bar application (`macapp/`), local FastAPI backend (`server/`), and their interactions.
@@ -221,7 +230,7 @@ This document provides a comprehensive analysis of EchoPanel's trust boundaries,
 - Session metadata: session_id, attempt_id, connection_id
 - Start/Stop control messages
 - ASR responses: transcripts, entities, cards, metrics
-- Authentication token in query parameter
+- Authentication token via headers (client) and optionally query parameter (server backward compatibility)
 
 **Trust Boundaries Involved:**
 1. Application process boundary
@@ -262,7 +271,7 @@ This document provides a comprehensive analysis of EchoPanel's trust boundaries,
 3. **WebSocket Protocol Error**: Invalid JSON, server closes connection
 4. **Send Timeout**: 5-second semaphore wait (WebSocketStreamer.swift:246)
 5. **Queue Overflow**: >100 queued sends drops frames (WebSocketStreamer.swift:219-228)
-6. **Token Encoding Error**: Invalid UTF-8 in query param
+6. **Token Encoding Error**: Invalid UTF-8 in token (query/header)
 
 **Observability:**
 - `StructuredLogger` with correlation IDs
@@ -321,7 +330,7 @@ This document provides a comprehensive analysis of EchoPanel's trust boundaries,
 1. **TLS Handshake Failure**: Invalid certificate, server mismatch
 2. **Network Timeout**: Slow/unavailable server
 3. **Certificate Pinning Bypass**: Not implemented (uses system defaults)
-4. **Token Leakage**: Token in URL query param (visible in some proxy logs)
+4. **Token Leakage**: Server supports URL query token for backward compatibility; client prefers headers. Query-token may be visible in proxy logs if used.
 5. **Protocol Downgrade**: Not applicable (WebSocketStreamer uses URLSession defaults)
 
 **Observability:**
@@ -743,7 +752,7 @@ This document provides a comprehensive analysis of EchoPanel's trust boundaries,
 | No transcript size monitoring | Low | Add transcript length metrics |
 | No debug dump detection | Medium | Alert if debug files exist |
 | No client-side queue metrics exposed | Low | Expose `sendQueue.operationCount` |
-| No server-side session count limit | Medium | Add concurrency controller (exists: PR5) |
+| No server-side session count limit | Medium | Implement concurrency controller (Status 2026-02-13: implemented in `server/services/concurrency_controller.py` + session acquire in WS start) |
 
 ---
 
@@ -751,14 +760,14 @@ This document provides a comprehensive analysis of EchoPanel's trust boundaries,
 
 ### High Priority
 
-1. **Implement token authorization header**: Move token from URL query param to Authorization header (SP-004/SP-005) to prevent proxy logging
+1. **Deprecate/remove query-token support**: Client already uses `Authorization` + `x-echopanel-token` headers; server should stop accepting `?token=` to reduce accidental leakage via logs/proxies (SP-004/SP-005).
 2. **Add explicit user consent dialog**: Beyond macOS permissions, show explanation of data flow
 3. **Implement PII redaction in transcripts**: Server-side redaction of detected PII in ASR output
 
 ### Medium Priority
 
 4. **Add permission change observer**: Monitor for Screen Recording/Microphone permission revocation
-5. **Implement debug dump cleanup**: Auto-cleanup debug audio files after N days
+5. **Harden debug audio dump**: Retention cleanup exists; consider moving dumps out of `/tmp`, tightening permissions, and keeping it disabled by default (SP-010).
 6. **Add user data export**: Allow users to export/delete session transcripts
 7. **Document retention policy**: Formalize data retention for local server
 

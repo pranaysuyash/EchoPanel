@@ -1,5 +1,12 @@
 # Permissions, Auth, and Licensing Execution Plan (2026-02-09)
 
+**Update (2026-02-13):**
+- WebSocket and HTTP requests now support header-based auth tokens from Keychain (no app-side query-token usage): `macapp/MeetingListenerApp/Sources/BackendConfig.swift`
+- Backend endpoints can be token-gated consistently when `ECHOPANEL_WS_AUTH_TOKEN` is set: see `docs/WORKLOG_TICKETS.md` (`TCK-20260213-031`)
+- Signing/notarization helper script exists (dry-run by default): see `docs/WORKLOG_TICKETS.md` (`TCK-20260213-032`)
+- Local backend now auto-generates a random auth token if missing (secure-by-default local mode): see `docs/WORKLOG_TICKETS.md` (`TCK-20260213-037`)
+- App now refuses to start a session against a non-local backend without a token configured: see `docs/WORKLOG_TICKETS.md` (`TCK-20260213-039`)
+
 ## Scope
 Define a launch-grade implementation path for:
 - macOS permissions and permission recovery UX

@@ -8,6 +8,11 @@
 
 ---
 
+## Update (2026-02-13)
+
+- ✅ Client-side send queue now exists: `WebSocketStreamer` uses a bounded `OperationQueue` (`sendQueue`) and logs 5s send timeouts; the earlier “no client send queue”/“send blocks capture thread” notes below are now outdated. Evidence: `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`.
+- ✅ PR6 (metrics realtime_factor) implemented: server metrics now compute `realtime_factor` from actual `(processing_time / audio_duration)` samples per source, rather than `avg_infer_time / ECHOPANEL_ASR_CHUNK_SECONDS`. Evidence: `server/api/ws_live_listener.py`; tests: `tests/test_streaming_correctness.py` (`TestMetricsRTF`).
+
 ## A) Files Inspected
 
 ### Client (Swift)
@@ -66,9 +71,8 @@
 │                      ▼                                                       │
 │  ┌─────────────────────────────────────────────────┐                        │
 │  │  WebSocketStreamer.sendPCMFrame()               │                        │
-│  │  - No client send queue                         │                        │
-│  │  - URLSessionWebSocketTask.send() blocks        │                        │
-│  │  - Synchronous call from capture thread         │                        │
+│  │  - Bounded send queue (prevents capture-thread stalls)                   │
+│  │  - Logs send timeouts (5s)                                               │
 │  └───────────────────┬─────────────────────────────┘                        │
 │                      │                                                       │
 │                      ▼                                                       │
@@ -185,7 +189,7 @@
 │  - queue_depth / queue_max = fill_ratio                                     │
 │  - dropped_recent (delta from last 1s)                                      │
 │  - avg_infer_ms (from asr_processing_times, last 10 samples)                │
-│  - realtime_factor = avg_infer_time / chunk_seconds                         │
+│  - realtime_factor = sum(processing_time) / sum(audio_duration)             │
 │                                                                             │
 │  Thresholds:                                                                │
 │  - fill_ratio > 0.95 → "overloaded"                                         │
@@ -199,7 +203,7 @@
 
 **Evidence:**
 - `ws_live_listener.py:326-392`: `_metrics_loop()` implementation
-- `ws_live_listener.py:352-353`: `realtime_factor = avg_infer_time / chunk_seconds`
+- `ws_live_listener.py`: `realtime_factor` computed from actual audio duration samples (`processing_time / audio_duration`) per source
 - `ws_live_listener.py:356-372`: Threshold logic for status messages
 
 ---
@@ -218,7 +222,7 @@
 
 ### Critical Observations
 
-1. **No client-side send queue**: `WebSocketStreamer.sendPCMFrame()` blocks on `URLSessionWebSocketTask.send()`. If WebSocket is slow, capture callbacks block.
+1. **Client-side send queue exists**: `WebSocketStreamer` uses a bounded send queue and logs send timeouts to avoid capture-thread stalls.
 
 2. **Small server-side queues**: 48 chunks × 320 samples × 2 bytes = ~30KB per source. At 2s ASR chunks, this is only ~1.5s of buffering.
 
@@ -486,7 +490,7 @@
 
 **Evidence:**
 - ✅ Accurate RTF tracking exists for degrade ladder (ws_live_listener.py:374-376): `rtf = processing_time / audio_duration`
-- ❌ Metrics loop still uses old formula (ws_live_listener.py:508): `realtime_factor = avg_infer_time / chunk_seconds`
+- ✅ Metrics loop uses actual audio duration samples per source for RTF (PR6).
 - The comment says "Assuming 2s chunks" but actual chunks may vary
 - Client receives potentially misleading realtime_factor in metrics
 
@@ -534,8 +538,7 @@ rg 'wait_for.*extract\|extract.*timeout' /Users/pranay/Projects/EchoPanel/server
 
 # Checked PR6: Realtime factor
 rg 'realtime_factor' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 5 -A 5
-# Result: Metrics loop uses old formula (avg_infer_time / chunk_seconds)
-# Note: Accurate RTF tracked for degrade ladder but not exposed in metrics
+# Result: Metrics loop computes RTF from actual audio duration samples per source (processing_time / audio_duration)
 
 # Checked PR7: ASR stall detection
 rg 'asr_stalled\|stall.*detection\|last.*asr.*output' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 3 -A 5
@@ -550,7 +553,7 @@ ls -la /Users/pranay/Projects/EchoPanel/scripts/soak_test.py
 
 **Interpretation:**
 - 2 of 8 PRs are complete (PR5, PR8)
-- 1 PR is partial (PR6 - accurate RTF tracked but not exposed)
+- PR6 is complete (accurate RTF exposed in metrics)
 - 5 PRs are not started (PR1-4, PR7)
 - Most critical gaps remain: client send blocking, no capture pause/resume, unbounded ASR buffer
 
@@ -669,7 +672,7 @@ ls -la /Users/pranay/Projects/EchoPanel/scripts/soak_test.py
 1. **Queues are small and drop oldest** — prevents unbounded growth but loses audio
 2. **No client-side backpressure** — capture continues even when server is drowning
 3. **ASR buffer is unbounded** — risk of OOM on long sessions with slow ASR
-4. **Metrics exist but thresholds may be misleading** — `realtime_factor` uses configured not actual chunk size
+4. **Metrics RTF uses actual audio duration** — `realtime_factor` computed from processing_time/audio_duration samples per source
 5. **Single inference lock** — dual-source sessions contend for ASR
 6. **Reconnection has exponential backoff** — good, but no ultimate give-up
 

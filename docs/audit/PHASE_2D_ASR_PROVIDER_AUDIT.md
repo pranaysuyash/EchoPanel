@@ -8,6 +8,12 @@
 
 ---
 
+## Update (2026-02-13)
+
+- ✅ PR1 (Whisper.cpp inference lock) is already implemented: `server/services/provider_whisper_cpp.py` has `_infer_lock = threading.Lock()` and serializes `model.transcribe(...)` under the lock.
+- ✅ PR3 (provider health metrics) implemented: `server/api/ws_live_listener.py` now calls `provider.health()` and includes `provider_health` in each `metrics` message payload.
+- ✅ Hardened `whisper_cpp` provider contract/registration: `server/services/provider_whisper_cpp.py` now conforms to `ASRProvider` v0.3 and registers via `ASRProviderRegistry.register("whisper_cpp", WhisperCppProvider)`; added a unit test that stubs pywhispercpp.
+
 ## A) Files Inspected
 
 ### Core Provider Interface
@@ -629,7 +635,7 @@ async def test_residency():
 ```bash
 # Checked PR1: Inference lock in Whisper.cpp
 rg '_infer_lock\|threading.Lock' /Users/pranay/Projects/EchoPanel/server/services/provider_whisper_cpp.py -B 3 -A 5
-# Result: No matches
+# Result: Found `_infer_lock` and lock-guarded `model.transcribe(...)`
 
 # Checked PR2: Provider residency validation
 ls -la /Users/pranay/Projects/EchoPanel/scripts/benchmark_asr_provider.py
@@ -637,7 +643,7 @@ ls -la /Users/pranay/Projects/EchoPanel/scripts/benchmark_asr_provider.py
 
 # Checked PR3: Provider health metrics
 rg 'provider.health\|provider_health' /Users/pranay/Projects/EchoPanel/server/api/ws_live_listener.py -B 3 -A 5
-# Result: No matches (health() not called in metrics loop)
+# Result: `provider.health()` queried and included as `provider_health` in `metrics` payload
 
 # Checked PR4: Provider eviction
 rg 'lru\|evict\|max.*provider' /Users/pranay/Projects/EchoPanel/server/services/asr_providers.py -B 3 -A 5
@@ -669,10 +675,9 @@ rg 'async def health' /Users/pranay/Projects/EchoPanel/server/services/asr_provi
 ```
 
 **Interpretation:**
-- 0 of 7 original PRs are complete
-- 1 PR is partial (PR3 - health method exists but not exposed)
+- 2 of 7 original PRs are complete (PR1, PR3)
 - 3 major features NOT in audit are implemented (capability detection, degrade ladder, health method)
-- Critical gaps remain: Whisper.cpp thread safety, no provider eviction, no cleanup on shutdown
+- Critical gaps remain: no provider eviction, no cleanup on shutdown
 
 ---
 
@@ -739,8 +744,8 @@ rg 'async def health' /Users/pranay/Projects/EchoPanel/server/services/asr_provi
 ## K) Next Steps (Prioritized by Impact)
 
 ### Immediate (P0 - Critical Safety):
-1. **Implement PR1 (inference lock):** Add threading.Lock to Whisper.cpp provider to prevent crashes with 2 sources
-2. **Implement PR3 fix (expose health metrics):** Call provider.health() in WebSocket metrics loop
+1. **PR1 (inference lock):** ✅ Implemented (Whisper.cpp serializes inference under `_infer_lock`)
+2. **PR3 (expose health metrics):** ✅ Implemented (WS `metrics` includes `provider_health`)
 
 ### High Priority (P1):
 3. **Implement PR6 (provider cleanup):** Call provider.close() in main.py lifespan shutdown
@@ -764,7 +769,7 @@ rg 'async def health' /Users/pranay/Projects/EchoPanel/server/services/asr_provi
 
 | Finding | Severity | Status |
 |---------|----------|--------|
-| Whisper.cpp lacks inference lock (potential crash with 2 sources) | HIGH | Fix in PR1 |
+| Whisper.cpp inference lock implemented (multi-source safety) | HIGH | ✅ Implemented |
 | Faster-Whisper single lock serializes all inference (throughput limit) | MEDIUM | Documented; per-source providers in future |
 | Voxtral v0.2 fixed subprocess-per-chunk bug | — | Already fixed |
 | No provider eviction → memory growth | MEDIUM | Fix in PR4 |

@@ -70,8 +70,17 @@ final class SidePanelController: NSObject, NSWindowDelegate {
             onEndSession: onEndSession,
             onModeChange: { [weak self] mode in
                 self?.applyWindowLayout(for: mode, animated: true)
+            },
+            onAlwaysOnTopChange: { [weak self] isOn in
+                self?.applyAlwaysOnTop(isOn)
             }
         )
+    }
+
+    private func applyAlwaysOnTop(_ enabled: Bool) {
+        guard let panel else { return }
+        panel.isFloatingPanel = enabled
+        panel.level = enabled ? .floating : .normal
     }
 
     private func applyWindowLayout(for mode: SidePanelView.ViewMode, animated: Bool, forceTarget: Bool = false) {

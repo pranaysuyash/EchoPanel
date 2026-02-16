@@ -73,7 +73,7 @@ extension SidePanelView {
                 .accessibilityLabel("Audio source")
 
                 HStack(spacing: Spacing.md) {
-                    Toggle("Follow Live", isOn: $followLive)
+                    Toggle("Follow Live", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .accessibilityLabel("Follow live transcript")
@@ -104,7 +104,7 @@ extension SidePanelView {
                     .accessibilityLabel("Audio source")
                     .layoutPriority(1)
 
-                    Toggle("Follow Live", isOn: $followLive)
+                    Toggle("Follow Live", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .accessibilityLabel("Follow live transcript")
@@ -183,7 +183,7 @@ extension SidePanelView {
                         .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
-                    if !followLive {
+                    if !transcriptUI.followLive {
                         // HIG Fix: Standardized button label
                         Button("Jump Live") {
                             jumpToLive()
@@ -362,7 +362,7 @@ extension SidePanelView {
                 HStack(spacing: 6) {
                     ForEach(speakerChips) { speaker in
                         Button {
-                            fullSearchQuery = speaker.searchToken
+                            transcriptUI.fullSearchQuery = speaker.searchToken
                         } label: {
                             HStack(spacing: 5) {
                                 Circle()
@@ -527,6 +527,7 @@ extension SidePanelView {
                                         .lineLimit(3)
                                 }
                             }
+                            .id(doc.id)
                             .padding(Spacing.sm + 2)
                             .background(BackgroundStyle.control.color(for: colorScheme))
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md + 1, style: .continuous))
@@ -547,9 +548,25 @@ extension SidePanelView {
                                 title: "\(result.title) · chunk \(result.chunkIndex + 1)",
                                 subtitle: result.snippet
                             )
+                            .id(result.id)
                         }
                     }
                 }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        // Non-transcript rotor channels for navigating context surfaces quickly.
+        .accessibilityRotor("Indexed Documents") {
+            ForEach(appState.contextDocuments) { doc in
+                AccessibilityRotorEntry("Document. \(doc.title)", id: doc.id)
+            }
+        }
+        .accessibilityRotor("Context Matches") {
+            ForEach(appState.contextQueryResults) { result in
+                AccessibilityRotorEntry(
+                    "Match. \(result.title). Score \(String(format: "%.2f", result.score)).",
+                    id: result.id
+                )
             }
         }
         .onAppear {
@@ -647,20 +664,30 @@ extension SidePanelView {
     @ViewBuilder
     private var searchTextField: some View {
         if #available(macOS 14.0, *) {
-            TextField("Search sessions, speakers, keywords", text: $fullSearchQuery)
+            TextField("Search sessions, speakers, keywords", text: $transcriptUI.fullSearchQuery)
                 .textFieldStyle(.plain)
                 .focused($fullSearchFocused)
                 .accessibilityLabel("Search sessions, speakers, and keywords")
                 .onKeyPress(.escape) {
-                    fullSearchQuery = ""
+                    transcriptUI.fullSearchQuery = ""
                     fullSearchFocused = false
                     return .handled
                 }
+                // macOS-standard Escape behavior for search fields.
+                .onExitCommand {
+                    transcriptUI.fullSearchQuery = ""
+                    fullSearchFocused = false
+                }
         } else {
-            TextField("Search sessions, speakers, keywords", text: $fullSearchQuery)
+            TextField("Search sessions, speakers, keywords", text: $transcriptUI.fullSearchQuery)
                 .textFieldStyle(.plain)
                 .focused($fullSearchFocused)
                 .accessibilityLabel("Search sessions, speakers, and keywords")
+                // macOS 13: still provide Escape-to-clear behavior via exit command.
+                .onExitCommand {
+                    transcriptUI.fullSearchQuery = ""
+                    fullSearchFocused = false
+                }
         }
     }
 }

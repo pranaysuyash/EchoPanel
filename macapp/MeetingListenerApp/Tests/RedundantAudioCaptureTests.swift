@@ -174,4 +174,32 @@ final class RedundantAudioCaptureTests: XCTestCase {
         XCTAssertTrue(summary.contains("500"))
         XCTAssertTrue(summary.contains("2"))
     }
+
+    // MARK: - Config Overrides
+
+    func testFailoverThresholdDefaultsMatchExpected() {
+        UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailoverSilenceSeconds)
+        UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailoverCooldownSeconds)
+        UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailbackStabilizationSeconds)
+
+        XCTAssertEqual(manager.effectiveFailoverSilenceThreshold, 2.0, accuracy: 0.0001)
+        XCTAssertEqual(manager.effectiveFailoverCooldown, 5.0, accuracy: 0.0001)
+        XCTAssertEqual(manager.effectiveFailbackStabilizationPeriod, 10.0, accuracy: 0.0001)
+    }
+
+    func testFailoverThresholdUserDefaultsOverridesApply() {
+        defer {
+            UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailoverSilenceSeconds)
+            UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailoverCooldownSeconds)
+            UserDefaults.standard.removeObject(forKey: RedundantAudioCaptureManager.defaultsKeyFailbackStabilizationSeconds)
+        }
+
+        UserDefaults.standard.set(3.5, forKey: RedundantAudioCaptureManager.defaultsKeyFailoverSilenceSeconds)
+        UserDefaults.standard.set(7.0, forKey: RedundantAudioCaptureManager.defaultsKeyFailoverCooldownSeconds)
+        UserDefaults.standard.set(12.0, forKey: RedundantAudioCaptureManager.defaultsKeyFailbackStabilizationSeconds)
+
+        XCTAssertEqual(manager.effectiveFailoverSilenceThreshold, 3.5, accuracy: 0.0001)
+        XCTAssertEqual(manager.effectiveFailoverCooldown, 7.0, accuracy: 0.0001)
+        XCTAssertEqual(manager.effectiveFailbackStabilizationPeriod, 12.0, accuracy: 0.0001)
+    }
 }

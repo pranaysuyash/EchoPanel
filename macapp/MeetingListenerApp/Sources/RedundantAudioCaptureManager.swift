@@ -85,19 +85,55 @@ final class RedundantAudioCaptureManager: ObservableObject {
     
     private var lastHealth: RedundancyHealth = .unknown
     
-    // Failover configuration
-    private let failoverSilenceThreshold: TimeInterval = 2.0
-    private let failoverClipThreshold: Float = 0.1
+    // Failover configuration (defaults; can be overridden via UserDefaults)
+    static let defaultsKeyFailoverSilenceSeconds = "broadcast_failoverSilenceSeconds"
+    static let defaultsKeyFailoverCooldownSeconds = "broadcast_failoverCooldownSeconds"
+    static let defaultsKeyFailbackStabilizationSeconds = "broadcast_failbackStabilizationSeconds"
+
+    private let defaultFailoverSilenceThreshold: TimeInterval = 2.0
+    private let defaultFailoverClipThreshold: Float = 0.1
     private let qualityCheckInterval: TimeInterval = 0.1
     private var autoFailoverEnabled = true
     
     // Hysteresis and failback configuration
-    private let failoverCooldown: TimeInterval = 5.0  // Prevent rapid switching
-    private let failbackStabilizationPeriod: TimeInterval = 10.0  // Time primary must be good before failback
+    private let defaultFailoverCooldown: TimeInterval = 5.0  // Prevent rapid switching
+    private let defaultFailbackStabilizationPeriod: TimeInterval = 10.0  // Time primary must be good before failback
     private let maxFailoverEvents = 100  // Ring buffer size
     private var lastFailoverTime: Date?
     private var primaryQualityGoodSince: Date?
     private var autoFailbackEnabled = true
+
+    // MARK: - Effective Config (UserDefaults Overrides)
+
+    /// Silence duration (seconds) before failing over primary → backup.
+    var effectiveFailoverSilenceThreshold: TimeInterval {
+        readTimeIntervalFromDefaults(
+            key: Self.defaultsKeyFailoverSilenceSeconds,
+            defaultValue: defaultFailoverSilenceThreshold,
+            lowerBound: 0.2,
+            upperBound: 30.0
+        )
+    }
+
+    /// Cooldown (seconds) between failovers to prevent rapid switching.
+    var effectiveFailoverCooldown: TimeInterval {
+        readTimeIntervalFromDefaults(
+            key: Self.defaultsKeyFailoverCooldownSeconds,
+            defaultValue: defaultFailoverCooldown,
+            lowerBound: 0.0,
+            upperBound: 120.0
+        )
+    }
+
+    /// Stabilization time (seconds) that primary must remain good before failing back.
+    var effectiveFailbackStabilizationPeriod: TimeInterval {
+        readTimeIntervalFromDefaults(
+            key: Self.defaultsKeyFailbackStabilizationSeconds,
+            defaultValue: defaultFailbackStabilizationPeriod,
+            lowerBound: 1.0,
+            upperBound: 300.0
+        )
+    }
     
     // Track which source is providing frames
     private var primaryFrameCount = 0
@@ -312,7 +348,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
         
         // Check hysteresis cooldown
         if let lastFailover = lastFailoverTime,
-           now.timeIntervalSince(lastFailover) < failoverCooldown {
+           now.timeIntervalSince(lastFailover) < effectiveFailoverCooldown {
             // Still in cooldown period, skip quality checks
             return
         }
@@ -326,11 +362,11 @@ final class RedundantAudioCaptureManager: ObservableObject {
             // Reset primary quality tracking
             primaryQualityGoodSince = nil
             
-            let shouldFailover = timeSincePrimary > failoverSilenceThreshold ||
+            let shouldFailover = timeSincePrimary > effectiveFailoverSilenceThreshold ||
                                 primaryQuality == .poor
             
             if shouldFailover && timeSinceBackup < 1.0 {
-                let reason: FailoverEvent.FailoverReason = timeSincePrimary > failoverSilenceThreshold
+                let reason: FailoverEvent.FailoverReason = timeSincePrimary > effectiveFailoverSilenceThreshold
                     ? .silence
                     : .clipping
                 performFailover(from: .primary, to: .backup, reason: reason)
@@ -363,10 +399,36 @@ final class RedundantAudioCaptureManager: ObservableObject {
         
         // Check if primary has been good for the stabilization period
         if let goodSince = primaryQualityGoodSince,
-           now.timeIntervalSince(goodSince) >= failbackStabilizationPeriod {
+           now.timeIntervalSince(goodSince) >= effectiveFailbackStabilizationPeriod {
             performFailover(from: .backup, to: .primary, reason: .qualityRestored)
             primaryQualityGoodSince = nil
         }
+    }
+
+    private func readTimeIntervalFromDefaults(
+        key: String,
+        defaultValue: TimeInterval,
+        lowerBound: TimeInterval,
+        upperBound: TimeInterval
+    ) -> TimeInterval {
+        let raw = UserDefaults.standard.object(forKey: key)
+        guard let raw else { return defaultValue }
+
+        let value: Double?
+        if let double = raw as? Double {
+            value = double
+        } else if let number = raw as? NSNumber {
+            value = number.doubleValue
+        } else if let string = raw as? String {
+            value = Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            value = nil
+        }
+
+        guard let value else { return defaultValue }
+        if value.isNaN || value.isInfinite { return defaultValue }
+
+        return Swift.max(lowerBound, Swift.min(upperBound, value))
     }
     
     private func performFailover(from: RedundantAudioSource, to: RedundantAudioSource, reason: FailoverEvent.FailoverReason) {

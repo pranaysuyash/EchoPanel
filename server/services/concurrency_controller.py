@@ -86,7 +86,7 @@ class ConcurrencyController:
         self._infer_sem = asyncio.Semaphore(max_inference)
         
         # Per-source bounded queues
-        default_queue_sizes = {"mic": 100, "system": 50}
+        default_queue_sizes = {"mic": 200, "system": 100}
         self._queue_sizes = {**default_queue_sizes, **(queue_sizes or {})}
         
         # Priority queues: mic (priority=1) > system (priority=2)

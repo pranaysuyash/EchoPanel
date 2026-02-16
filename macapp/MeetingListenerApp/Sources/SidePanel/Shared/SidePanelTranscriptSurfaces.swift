@@ -16,15 +16,15 @@ extension SidePanelView {
                 AccessibilityRotorEntry(transcriptRotorLabel(for: segment), id: segment.id)
             }
         }
-        .popover(item: $selectedEntity) { entity in
+        .popover(item: $transcriptUI.selectedEntity) { entity in
             EntityDetailPopover(
                 entity: entity,
-                isFiltering: entityFilter?.name.caseInsensitiveCompare(entity.name) == .orderedSame,
+                isFiltering: transcriptUI.entityFilter?.name.caseInsensitiveCompare(entity.name) == .orderedSame,
                 onToggleFilter: {
-                    if entityFilter?.name.caseInsensitiveCompare(entity.name) == .orderedSame {
-                        entityFilter = nil
+                    if transcriptUI.entityFilter?.name.caseInsensitiveCompare(entity.name) == .orderedSame {
+                        transcriptUI.entityFilter = nil
                     } else {
-                        entityFilter = entity
+                        transcriptUI.entityFilter = entity
                     }
                 },
                 onNext: { scrollToNextMention(for: entity) },
@@ -40,14 +40,14 @@ extension SidePanelView {
             ScrollView {
                 transcriptRows(style: style)
             }
-            .onChange(of: pendingScrollTarget) { target in
+            .onChange(of: transcriptUI.pendingScrollTarget) { target in
                 guard let target else { return }
                 performAnimatedUpdate {
                     proxy.scrollTo(target, anchor: .center)
                 }
-                pendingScrollTarget = nil
+                transcriptUI.pendingScrollTarget = nil
             }
-            .onChange(of: scrollToBottomToken) { _ in
+            .onChange(of: transcriptUI.scrollToBottomToken) { _ in
                 guard let last = visibleTranscriptSegments.last?.id else { return }
                 performAnimatedUpdate {
                     proxy.scrollTo(last, anchor: .bottom)
@@ -59,7 +59,9 @@ extension SidePanelView {
     private func transcriptRows(style: TranscriptStyle) -> some View {
         let spacing = ViewModeSpacing(from: style)
 
-        return VStack(alignment: .leading, spacing: spacing.rowSpacing) {
+        // Perf: LazyVStack prevents eagerly instantiating every row in the ScrollView,
+        // which matters most in `.full` mode where we can render up to ~500 segments.
+        return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
             if visibleTranscriptSegments.isEmpty {
                 emptyTranscriptState
             } else {
@@ -69,7 +71,7 @@ extension SidePanelView {
                         .id(segment.id)
                         .transaction { transaction in
                             // Only animate for user interactions, not streaming updates
-                            if appState.sessionState == .listening && !followLive {
+                            if appState.sessionState == .listening && !transcriptUI.followLive {
                                 transaction.animation = nil
                             }
                         }
@@ -82,8 +84,8 @@ extension SidePanelView {
         .fixedSize(horizontal: false, vertical: true)
         .gesture(
             DragGesture(minimumDistance: 3).onChanged { _ in
-                if followLive {
-                    followLive = false
+                if transcriptUI.followLive {
+                    transcriptUI.followLive = false
                 }
             }
         )
@@ -95,40 +97,40 @@ extension SidePanelView {
                 segment: segment,
                 entities: appState.entities,
                 highlightMode: highlightMode,
-                isFocused: focusedSegmentID == segment.id,
-                isPinned: pinnedSegmentIDs.contains(segment.id),
+                isFocused: transcriptUI.focusedSegmentID == segment.id,
+                isPinned: transcriptUI.pinnedSegmentIDs.contains(segment.id),
                 onPin: {
-                    focusedSegmentID = segment.id
+                    transcriptUI.focusedSegmentID = segment.id
                     togglePin(segment.id)
                 },
                 onLens: {
-                    focusedSegmentID = segment.id
+                    transcriptUI.focusedSegmentID = segment.id
                     toggleLens(segment.id)
                 },
                 onJump: {
-                    focusedSegmentID = segment.id
+                    transcriptUI.focusedSegmentID = segment.id
                     jumpToLive()
                 },
                 onEntityClick: { clicked in
-                    selectedEntity = resolveEntity(clicked)
+                    transcriptUI.selectedEntity = resolveEntity(clicked)
                 }
             )
             .contentShape(RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous))
             .onTapGesture {
-                focusedSegmentID = segment.id
-                if followLive {
-                    followLive = false
+                transcriptUI.focusedSegmentID = segment.id
+                if transcriptUI.followLive {
+                    transcriptUI.followLive = false
                 }
             }
             .onTapGesture(count: 2) {
-                focusedSegmentID = segment.id
-                if followLive {
-                    followLive = false
+                transcriptUI.focusedSegmentID = segment.id
+                if transcriptUI.followLive {
+                    transcriptUI.followLive = false
                 }
                 toggleLens(segment.id)
             }
 
-            if lensSegmentID == segment.id {
+            if transcriptUI.lensSegmentID == segment.id {
                 focusLens(segment: segment)
             }
         }
@@ -166,6 +168,20 @@ extension SidePanelView {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(exportDisabled)
 
+                Menu {
+                    Button("Export SRT") { appState.exportSRT() }
+                        .keyboardShortcut("s", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
+                    Button("Export WebVTT") { appState.exportWebVTT() }
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
+                } label: {
+                    Image(systemName: "captions.bubble")
+                }
+                .menuStyle(.borderlessButton)
+                .help("Caption exports (SRT/WebVTT)")
+                .disabled(exportDisabled)
+
                 Spacer()
 
                 Button(role: .destructive) {
@@ -196,6 +212,13 @@ extension SidePanelView {
                     Button("Export Markdown") { appState.exportMarkdown() }
                         .keyboardShortcut("m", modifiers: [.command, .shift])
                         .disabled(exportDisabled)
+                    Divider()
+                    Button("Export SRT") { appState.exportSRT() }
+                        .keyboardShortcut("s", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
+                    Button("Export WebVTT") { appState.exportWebVTT() }
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.down")
                 }
@@ -203,6 +226,20 @@ extension SidePanelView {
                 .disabled(exportDisabled)
 
                 Spacer()
+
+                Menu {
+                    Button("Export SRT") { appState.exportSRT() }
+                        .keyboardShortcut("s", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
+                    Button("Export WebVTT") { appState.exportWebVTT() }
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                        .disabled(exportDisabled)
+                } label: {
+                    Image(systemName: "captions.bubble")
+                }
+                .menuStyle(.borderlessButton)
+                .help("Caption exports (SRT/WebVTT)")
+                .disabled(exportDisabled)
 
                 Button(role: .destructive) {
                     onEndSession()
@@ -280,12 +317,12 @@ extension SidePanelView {
 
     func toolbarTrailingControls(showSurfaceButtons: Bool) -> some View {
         HStack(spacing: Spacing.md) {
-            if let filter = entityFilter {
+            if let filter = transcriptUI.entityFilter {
                 HStack(spacing: 5) {
                     Text(filter.name)
                         .font(Typography.captionSmall)
                     Button {
-                        entityFilter = nil
+                        transcriptUI.entityFilter = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                     }
@@ -301,12 +338,12 @@ extension SidePanelView {
 
             Spacer(minLength: 0)
 
-            if !followLive {
+            if !transcriptUI.followLive {
                 Button {
                     jumpToLive()
                 } label: {
-                    if pendingNewSegments > 0 {
-                        Text("Jump Live (\(pendingNewSegments))")
+                    if transcriptUI.pendingNewSegments > 0 {
+                        Text("Jump Live (\(transcriptUI.pendingNewSegments))")
                     } else {
                         Text("Jump Live")
                     }
@@ -374,7 +411,71 @@ extension SidePanelView {
     }
 
     // MARK: - Surface Content
+    @ViewBuilder
     func surfaceContent(surface: Surface) -> some View {
+        if surface == .raw {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+        } else if surface == .summary {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+                // Non-transcript rotor channels for fast navigation within insight surfaces.
+                .accessibilityRotor("Summary Items") {
+                    ForEach(surfaceSummaryItems) { item in
+                        AccessibilityRotorEntry(
+                            "\(item.tag). \(rotorPreview(item.title))",
+                            id: item.id
+                        )
+                    }
+                }
+        } else if surface == .actions {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+                .accessibilityRotor("Actions") {
+                    ForEach(appState.actions) { action in
+                        AccessibilityRotorEntry("Action. \(rotorPreview(action.text))", id: action.id)
+                    }
+                }
+                .accessibilityRotor("Risks") {
+                    ForEach(appState.risks) { risk in
+                        AccessibilityRotorEntry("Risk. \(rotorPreview(risk.text))", id: risk.id)
+                    }
+                }
+        } else if surface == .pins {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+                .accessibilityRotor("Pins") {
+                    ForEach(pinnedSegments) { segment in
+                        AccessibilityRotorEntry(
+                            "Pin. \(formatTime(segment.t0)) \(speakerLabel(for: segment)). \(rotorPreview(segment.text))",
+                            id: segment.id
+                        )
+                    }
+                }
+        } else if surface == .entities {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+                .accessibilityRotor("Entities") {
+                    ForEach(appState.entities) { entity in
+                        AccessibilityRotorEntry(
+                            "Entity. \(entity.type.uppercased()) \(entity.name). Count \(entity.count).",
+                            id: entity.id
+                        )
+                    }
+                }
+        } else {
+            surfaceContentBody(surface: surface)
+                .accessibilityLabel("\(surface.rawValue) surface")
+                .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func surfaceContentBody(surface: Surface) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm + 2) {
                 switch surface {
@@ -384,6 +485,7 @@ extension SidePanelView {
                     } else {
                         ForEach(surfaceSummaryItems) { item in
                             surfaceItemCard(tag: item.tag, title: item.title, subtitle: item.subtitle)
+                                .id(item.id)
                         }
                     }
 
@@ -397,6 +499,7 @@ extension SidePanelView {
                                 title: action.text,
                                 subtitle: itemMeta(owner: action.owner, due: action.due, confidence: action.confidence)
                             )
+                            .id(action.id)
                         }
                         ForEach(appState.risks) { risk in
                             surfaceItemCard(
@@ -404,6 +507,7 @@ extension SidePanelView {
                                 title: risk.text,
                                 subtitle: confidenceMeta(risk.confidence)
                             )
+                            .id(risk.id)
                         }
                     }
 
@@ -413,11 +517,11 @@ extension SidePanelView {
                     } else {
                         ForEach(pinnedSegments) { segment in
                             Button {
-                                focusedSegmentID = segment.id
-                                lensSegmentID = segment.id
-                                followLive = false
+                                transcriptUI.focusedSegmentID = segment.id
+                                transcriptUI.lensSegmentID = segment.id
+                                transcriptUI.followLive = false
                                 showSurfaceOverlay = false
-                                pendingScrollTarget = segment.id
+                                transcriptUI.pendingScrollTarget = segment.id
                             } label: {
                                 surfaceItemCard(
                                     tag: "Pin",
@@ -425,6 +529,7 @@ extension SidePanelView {
                                     subtitle: "\(formatTime(segment.t0)) · \(speakerLabel(for: segment))"
                                 )
                             }
+                            .id(segment.id)
                             .buttonStyle(.plain)
                             .accessibilityLabel("Open pinned transcript line")
                             .accessibilityHint("Moves focus to this pinned line in the transcript.")
@@ -437,8 +542,8 @@ extension SidePanelView {
                     } else {
                         ForEach(appState.entities) { entity in
                             Button {
-                                entityFilter = entity
-                                followLive = false
+                                transcriptUI.entityFilter = entity
+                                transcriptUI.followLive = false
                             } label: {
                                 surfaceItemCard(
                                     tag: entity.type.uppercased(),
@@ -446,6 +551,7 @@ extension SidePanelView {
                                     subtitle: "Count \(entity.count) · Last \(formatTime(entity.lastSeen)) · \(formatConfidence(entity.confidence))"
                                 )
                             }
+                            .id(entity.id)
                             .buttonStyle(.plain)
                             .accessibilityLabel("Filter by entity \(entity.name)")
                             .accessibilityHint("Shows transcript lines that mention this entity.")
@@ -473,6 +579,12 @@ extension SidePanelView {
                 }
             }
         }
+    }
+
+    private func rotorPreview(_ text: String, limit: Int = 72) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= limit { return trimmed }
+        return String(trimmed.prefix(limit)) + "..."
     }
 
     private func transcriptRotorLabel(for segment: TranscriptSegment) -> String {

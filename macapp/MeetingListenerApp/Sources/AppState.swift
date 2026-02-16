@@ -332,6 +332,11 @@ final class AppState: ObservableObject {
                 }
                 
                 if status == .error {
+                    // If we fail while starting, abort into a stable error state (don't auto-reset to idle).
+                    if self?.sessionState == .starting {
+                        self?.abortStartingSession(reason: message.isEmpty ? "Streaming error" : message)
+                        return
+                    }
                     self?.runtimeErrorState = .streaming(detail: message)
                     self?.startTimeoutTask?.cancel()
                     self?.startTimeoutTask = nil
@@ -542,6 +547,23 @@ final class AppState: ObservableObject {
 
     func startSession() {
         guard sessionState != .listening && sessionState != .starting else { return }
+
+        // Auth hardening: Remote backends must be authenticated. Require a token before we
+        // prompt for permissions or start capture to avoid a misleading "start then fail".
+        if !BackendConfig.isLocalHost {
+            let token = KeychainHelper.loadBackendToken()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !token.isEmpty else {
+                reportBackendNotReady(detail: "Backend token required for remote backend. Set it in Settings → Backend Token.")
+                return
+            }
+        }
+
+        // If the backend isn't ready, starting capture is misleading and often results
+        // in "start then auto-stop" when we fail to get a streaming ACK.
+        guard BackendManager.shared.isServerReady else {
+            reportBackendNotReady(detail: BackendManager.shared.healthDetail.isEmpty ? "Backend not ready" : BackendManager.shared.healthDetail)
+            return
+        }
         
         // Beta gating: Check if user can start a session
         guard BetaGatingManager.shared.canStartSession() else {
@@ -624,9 +646,18 @@ final class AppState: ObservableObject {
 
             // Start audio capture (with redundancy if enabled)
             if BroadcastFeatureManager.shared.useRedundantAudio {
-                // Use redundant dual-path capture
+                // Broadcast mode: use redundant manager, but still respect the user's selected AudioSource.
+                // Previously we always started redundant dual-path capture, which could result in *no* audio
+                // being forwarded when the active source didn't match the user's selection.
                 do {
-                    try await BroadcastFeatureManager.shared.redundantAudioManager.startRedundantCapture()
+                    switch audioSource {
+                    case .system:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: false)
+                    case .microphone:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: true)
+                    case .both:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startRedundantCapture()
+                    }
                 } catch {
                     setSessionError(.systemCaptureFailed(detail: "Redundant audio failed: \(error.localizedDescription)"))
                     return
@@ -684,10 +715,9 @@ final class AppState: ObservableObject {
                 
                 // Check if we got the streaming ACK
                 if self.sessionState == .starting {
-                    // Timeout! Backend didn't acknowledge streaming
-                    self.stopSession()
-                    self.sessionState = .error
-                    self.runtimeErrorState = .streaming(detail: "Backend did not start streaming within 5 seconds. It may be overloaded or still loading the ASR model.")
+                    await MainActor.run {
+                        self.abortStartingSession(reason: "Backend did not start streaming within 5 seconds. It may be overloaded or still loading the ASR model.")
+                    }
                 }
             }
             
@@ -701,6 +731,45 @@ final class AppState: ObservableObject {
             noAudioDetected = false
             silenceMessage = ""
             startSilenceCheck()
+        }
+    }
+
+    /// Abort an in-progress start attempt in a way that leaves a stable error state.
+    /// This avoids racing with `stopSession()` which will reset the UI back to idle.
+    @MainActor
+    private func abortStartingSession(reason: String) {
+        guard sessionState == .starting else { return }
+
+        startTimeoutTask?.cancel()
+        startTimeoutTask = nil
+
+        sessionState = .error
+        runtimeErrorState = .streaming(detail: reason)
+        statusMessage = runtimeErrorState?.message ?? reason
+
+        StructuredLogger.shared.error("Session start aborted", metadata: [
+            "session_id": sessionID ?? "unknown",
+            "reason": reason
+        ])
+
+        if let id = sessionID {
+            SessionBundleManager.shared.bundle(for: id)?.recordError(NSError(domain: "EchoPanel", code: -1, userInfo: [NSLocalizedDescriptionKey: reason]), context: "start_timeout")
+            SessionBundleManager.shared.bundle(for: id)?.recordWebSocketStatus(state: "error", message: reason)
+        }
+
+        // Stop capture + disconnect on a background task.
+        Task {
+            if BroadcastFeatureManager.shared.useRedundantAudio {
+                await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
+            } else {
+                if audioSource == .system || audioSource == .both {
+                    await audioCapture.stopCapture()
+                }
+                if audioSource == .microphone || audioSource == .both {
+                    micCapture.stopCapture()
+                }
+            }
+            streamer.disconnect()
         }
     }
 
@@ -913,6 +982,62 @@ final class AppState: ObservableObject {
         }
     }
 
+    func exportSRT() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "echopanel-captions.srt"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                Task { @MainActor in
+                    self.recordExportCancelled(format: "SRT")
+                }
+                return
+            }
+
+            let content = self.renderSRTForExport()
+            do {
+                try content.write(to: url, atomically: true, encoding: .utf8)
+                Task { @MainActor in
+                    self.recordExportSuccess(format: "SRT")
+                }
+            } catch {
+                Task { @MainActor in
+                    self.recordExportFailure(format: "SRT", error: error)
+                }
+                NSLog("Export SRT failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func exportWebVTT() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "echopanel-captions.vtt"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                Task { @MainActor in
+                    self.recordExportCancelled(format: "WebVTT")
+                }
+                return
+            }
+
+            let content = self.renderWebVTTForExport()
+            do {
+                try content.write(to: url, atomically: true, encoding: .utf8)
+                Task { @MainActor in
+                    self.recordExportSuccess(format: "WebVTT")
+                }
+            } catch {
+                Task { @MainActor in
+                    self.recordExportFailure(format: "WebVTT", error: error)
+                }
+                NSLog("Export WebVTT failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     func exportDebugBundle() {
         Task {
             do {
@@ -1121,6 +1246,7 @@ final class AppState: ObservableObject {
     private func exportPayload() -> [String: Any] {
         let transcript = transcriptSegments.map { segment in
             [
+                "segment_id": TranscriptIDs.segmentID(source: segment.source, t0: segment.t0, t1: segment.t1, text: segment.text),
                 "t0": segment.t0,
                 "t1": segment.t1,
                 "text": segment.text,
@@ -1175,6 +1301,51 @@ final class AppState: ObservableObject {
                 "json": finalSummaryJSON
             ]
         ]
+    }
+
+    // MARK: - Caption Rendering
+
+    func renderSRTForExport() -> String {
+        var output = ""
+        for (idx, segment) in transcriptSegments.enumerated() {
+            let start = formatSRTTime(segment.t0)
+            let end = formatSRTTime(max(segment.t1, segment.t0))
+            output += "\(idx + 1)\n"
+            output += "\(start) --> \(end)\n"
+            output += "\(segment.text)\n\n"
+        }
+        return output
+    }
+
+    func renderWebVTTForExport() -> String {
+        var output = "WEBVTT\n\n"
+        for segment in transcriptSegments {
+            let start = formatVTTTime(segment.t0)
+            let end = formatVTTTime(max(segment.t1, segment.t0))
+            output += "\(start) --> \(end)\n"
+            output += "\(segment.text)\n\n"
+        }
+        return output
+    }
+
+    private func formatSRTTime(_ seconds: TimeInterval) -> String {
+        let clamped = max(0, seconds)
+        let totalMs = Int((clamped * 1000.0).rounded())
+        let hours = totalMs / 3_600_000
+        let minutes = (totalMs / 60_000) % 60
+        let secs = (totalMs / 1000) % 60
+        let ms = totalMs % 1000
+        return String(format: "%02d:%02d:%02d,%03d", hours, minutes, secs, ms)
+    }
+
+    private func formatVTTTime(_ seconds: TimeInterval) -> String {
+        let clamped = max(0, seconds)
+        let totalMs = Int((clamped * 1000.0).rounded())
+        let hours = totalMs / 3_600_000
+        let minutes = (totalMs / 60_000) % 60
+        let secs = (totalMs / 1000) % 60
+        let ms = totalMs % 1000
+        return String(format: "%02d:%02d:%02d.%03d", hours, minutes, secs, ms)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -1327,6 +1498,7 @@ final class AppState: ObservableObject {
             
             // H6 Fix: Append to persistent transcript log
             let payload: [String: Any] = [
+                "segment_id": TranscriptIDs.segmentID(source: source, t0: t0, t1: t1, text: trimmedText),
                 "text": trimmedText,
                 "t0": t0,
                 "t1": t1,

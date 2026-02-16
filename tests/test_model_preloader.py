@@ -145,6 +145,9 @@ class TestModelManager:
         assert isinstance(health, ModelHealth)
         assert health.state == ModelState.UNINITIALIZED
         assert not health.ready
+        payload = health.to_dict()
+        assert "process_rss_mb" in payload
+        assert payload["process_rss_mb"] is None or payload["process_rss_mb"] >= 0
     
     def test_get_stats(self):
         """Test getting statistics."""

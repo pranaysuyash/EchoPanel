@@ -100,8 +100,9 @@ enum BackgroundStyle {
                 .opacity(scheme == .dark ? 0.15 : 0.08)
             
         case .rowSelected:
-            return Color.blue
-                .opacity(scheme == .dark ? 0.20 : 0.10)
+            // Use accent color for focus/selection tint; keeps contrast consistent with system settings.
+            return Color.accentColor
+                .opacity(scheme == .dark ? 0.22 : 0.12)
             
         case .rowPinned:
             return Color.indigo
@@ -131,7 +132,8 @@ enum StrokeStyle {
             return Color(nsColor: .separatorColor)
                 .opacity(scheme == .dark ? 0.30 : 0.15)
         case .focus:
-            return Color.blue.opacity(0.80)
+            // Prefer system keyboard focus indicator color (tracks accessibility + accent settings).
+            return Color(nsColor: .keyboardFocusIndicatorColor)
         case .pinned:
             return Color.indigo.opacity(scheme == .dark ? 0.45 : 0.35)
         }

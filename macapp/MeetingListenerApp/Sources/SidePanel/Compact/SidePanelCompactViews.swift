@@ -29,9 +29,9 @@ extension SidePanelView {
 
             // HIG Fix: Added Surfaces button for feature parity (C1)
             HStack(spacing: Spacing.sm) {
-                smallStateBadge(title: followLive ? "Follow ON" : "Follow OFF", tint: followLive ? .green : .orange)
+                smallStateBadge(title: transcriptUI.followLive ? "Follow ON" : "Follow OFF", tint: transcriptUI.followLive ? .green : .orange)
                 smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
-                smallStateBadge(title: "Pins \(pinnedSegmentIDs.count)", tint: .indigo)
+                smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
 
                 Spacer()
 
@@ -50,7 +50,7 @@ extension SidePanelView {
                 .accessibilityHint("Shows summary, actions, pins, and entities")
 
                 // HIG Fix: Standardized button label to "Jump Live"
-                if !followLive {
+                if !transcriptUI.followLive {
                     Button("Jump Live") {
                         jumpToLive()
                     }
