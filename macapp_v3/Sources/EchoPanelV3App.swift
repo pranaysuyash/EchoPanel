@@ -5,14 +5,13 @@ struct EchoPanelV3App: App {
     @StateObject private var appState = AppState()
     
     var body: some Scene {
-        // MARK: - Tier 3: Dashboard Window
-        WindowGroup("EchoPanel", id: "dashboard") {
-            DashboardView()
+        // MARK: - Tier 1: Menu Bar Extra
+        MenuBarExtra {
+            MenuBarView()
                 .environmentObject(appState)
-                .frame(minWidth: 900, minHeight: 600)
+        } label: {
+            MenuBarIconView(state: appState.recordingState)
         }
-        .windowStyle(.titleBar)
-        .defaultPosition(.center)
         
         // MARK: - Tier 2: Live Panel Window
         WindowGroup("Live Panel", id: "live-panel") {
@@ -23,6 +22,15 @@ struct EchoPanelV3App: App {
         }
         .defaultPosition(.trailing)
         .windowResizability(.contentSize)
+        
+        // MARK: - Tier 3: Dashboard Window
+        WindowGroup("EchoPanel", id: "dashboard") {
+            DashboardView()
+                .environmentObject(appState)
+                .frame(minWidth: 900, minHeight: 600)
+        }
+        .windowStyle(.titleBar)
+        .defaultPosition(.center)
         
         // MARK: - Settings
         Settings {

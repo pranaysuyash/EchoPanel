@@ -4,6 +4,9 @@
 **Status:** Comprehensive Analysis  
 **Scope:** Full UI coverage of backend features, design philosophy, and UX rationale
 
+> **Update (2026-02-16):** This file is a design exploration input, not the execution backlog source of truth.
+> Use `docs/WORKLOG_TICKETS.md` for implementation status and `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md` for exploration-to-ticket mapping.
+
 ---
 
 ## Executive Summary
@@ -933,4 +936,3 @@ Alex: "I'll handle the API integration"  [2:35 PM]
 ---
 
 *End of Analysis - Updated with Architecture Validation*
-

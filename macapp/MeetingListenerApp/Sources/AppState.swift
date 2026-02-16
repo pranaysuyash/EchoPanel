@@ -262,6 +262,7 @@ final class AppState: ObservableObject {
     private var autoSaveCancellable: AnyCancellable?
     private var lastContextRefreshAt: Date?
     private var userNoticeClearTask: Task<Void, Never>?
+    private var userNoticeClearTimer: Timer?
 
     init() {
         streamer = WebSocketStreamer()
@@ -1320,26 +1321,33 @@ final class AppState: ObservableObject {
     }
 
     func clearUserNotice() {
+        userNoticeClearTimer?.invalidate()
+        userNoticeClearTimer = nil
         userNoticeClearTask?.cancel()
         userNoticeClearTask = nil
         userNotice = nil
     }
 
     func setUserNotice(_ message: String, level: UserNoticeLevel, autoClearAfter: TimeInterval = 6.0) {
+        // Cancel existing timers/tasks
+        userNoticeClearTimer?.invalidate()
+        userNoticeClearTimer = nil
         userNoticeClearTask?.cancel()
         userNoticeClearTask = nil
+        
         userNotice = UserNotice(message: message, level: level)
 
         guard autoClearAfter > 0 else { return }
-        userNoticeClearTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(autoClearAfter * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard self?.userNotice?.message == message else { return }
+        
+        let messageToMatch = message
+        let timer = Timer(timeInterval: autoClearAfter, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard self?.userNotice?.message == messageToMatch else { return }
                 self?.userNotice = nil
-                self?.userNoticeClearTask = nil
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        userNoticeClearTimer = timer
     }
 
     private func renderLiveMarkdown() -> String {

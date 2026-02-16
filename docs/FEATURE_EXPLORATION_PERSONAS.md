@@ -4,6 +4,12 @@
 **Author:** Agent Analysis  
 **Purpose:** Identify high-impact features for EchoPanel v0.4+ roadmap
 
+> **Update (2026-02-16):** Exploration items were ticketized in `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md`.
+> Immediate v0.4 candidates mapped to:
+> `TCK-20260216-001` (MOM Generator),
+> `TCK-20260216-002` (Share to Slack/Teams/Email),
+> `TCK-20260216-003` (Meeting Templates).
+
 ---
 
 ## Executive Summary

@@ -740,4 +740,55 @@ extension SidePanelView {
         let secs = Int(seconds) % 60
         return String(format: "%02d:%02d", minutes, secs)
     }
+    
+    // VNI: Timeline items combining transcript segments and voice notes
+    enum TimelineItem: Identifiable, Equatable {
+        case transcript(TranscriptSegment)
+        case voiceNote(VoiceNote)
+        
+        var id: String {
+            switch self {
+            case .transcript(let segment):
+                return segment.id
+            case .voiceNote(let note):
+                return note.id.uuidString
+            }
+        }
+        
+        var timestamp: TimeInterval {
+            switch self {
+            case .transcript(let segment):
+                return segment.t0
+            case .voiceNote(let note):
+                return note.startTime
+            }
+        }
+        
+        static func == (lhs: TimelineItem, rhs: TimelineItem) -> Bool {
+            lhs.id == rhs.id
+        }
+    }
+    
+    var visibleTimelineItems: [TimelineItem] {
+        var items: [TimelineItem] = []
+        
+        // Add transcript segments
+        for segment in visibleTranscriptSegments {
+            items.append(.transcript(segment))
+        }
+        
+        // Add voice notes that fall within visible range
+        if let firstTime = visibleTranscriptSegments.first?.t0,
+           let lastTime = visibleTranscriptSegments.last?.t1 {
+            let notesInRange = appState.voiceNotes.filter { note in
+                note.startTime >= firstTime && note.startTime <= lastTime
+            }
+            for note in notesInRange {
+                items.append(.voiceNote(note))
+            }
+        }
+        
+        // Sort by timestamp
+        return items.sorted { $0.timestamp < $1.timestamp }
+    }
 }

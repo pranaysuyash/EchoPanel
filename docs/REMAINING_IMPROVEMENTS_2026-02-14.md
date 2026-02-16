@@ -4,6 +4,9 @@
 **Status**: Post-free-tier removal, paid-only model  
 **Goal**: Document, plan, and implement remaining P0/P1 improvements
 
+> **Update (2026-02-16):** Most P0/P1 items in this document were implemented under the `TCK-20260214-08x` series.
+> Canonical disposition and ticket mapping now lives in `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md`.
+
 ---
 
 ## Executive Summary
@@ -297,17 +300,17 @@ Export Everything (Bundle)
 ## Acceptance Criteria Summary
 
 ### P0 Complete When:
-- [ ] VoiceOver announces confidence for each transcript segment
-- [ ] Onboarding blocks progression without Screen Recording permission
-- [ ] Menu bar shows clear server status at a glance
-- [ ] Side panel shows helpful empty state before first transcript
+- [x] VoiceOver announces confidence for each transcript segment (`TCK-20260213-017` follow-up, validated in transcript row accessibility labels)
+- [x] Onboarding blocks progression without Screen Recording permission (`TCK-20260214-080` / P0-2 section)
+- [x] Menu bar shows clear server status at a glance (`TCK-20260214-081`)
+- [x] Side panel shows helpful empty state before first transcript (`TCK-20260214-082`)
 
 ### P1 Complete When:
-- [ ] Escape key closes search in Full mode
-- [ ] Export menu shows descriptive labels
-- [ ] First-time users see guidance in menu bar
-- [ ] Crash reports are captured locally
-- [ ] Mode switcher has explanatory tooltips
+- [x] Escape key closes search in Full mode (`TCK-20260214-083`)
+- [x] Export menu shows descriptive labels (`TCK-20260214-086`)
+- [x] First-time users see guidance in menu bar (`TCK-20260214-087`)
+- [x] Crash reports are captured locally (`TCK-20260214-084`)
+- [x] Mode switcher has explanatory tooltips (`TCK-20260214-088`)
 
 ---
 
@@ -318,7 +321,7 @@ Export Everything (Bundle)
 - [ ] Test empty state with new user
 - [ ] Verify all keyboard shortcuts work
 - [ ] Test crash reporter (simulate crash)
-- [ ] Verify no regressions in Swift tests
+- [x] Verify no regressions in Swift tests
 
 ---
 

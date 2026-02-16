@@ -42,15 +42,15 @@ Comprehensive technical audits organized by date and scope.
 | 2026-02-10 | [UI_STABILITY_TEST_REPORT_2026-02-10.md](../UI_STABILITY_TEST_REPORT_2026-02-10.md) | Visual regression test results | 293 |
 | 2026-02-10 | [UI_UX_AUDIT_2026-02-10.md](../UI_UX_AUDIT_2026-02-10.md) | UI/UX comprehensive audit | 424 |
 | 2026-02-09 | [UI_UX_AUDIT_2026-02-09.md](./UI_UX_AUDIT_2026-02-09.md) | UI/UX audit (earlier version) | 463 |
-| 2026-02-09 | [ACCESSIBILITY_DEEP_PASS_2026-02-09.md](./ACCESSIBILITY_DEEP_PASS_2026-02-09.md) | Accessibility compliance | 55 |
+| 2026-02-09 | [ACCESSIBILITY_DEEP_PASS_2026-02-09.md](./archive/ACCESSIBILITY_DEEP_PASS_2026-02-09.md) | Accessibility compliance | 55 |
 | 2026-02-09 | [BACKEND_HARDENING_AUDIT_2026-02-09.md](./BACKEND_HARDENING_AUDIT_2026-02-09.md) | Backend reliability | 239 |
-| 2026-02-09 | [BACKEND_HARDENING_VERIFICATION_2026-02-09.md](./BACKEND_HARDENING_VERIFICATION_2026-02-09.md) | Backend hardening verification | 287 |
+| 2026-02-09 | [BACKEND_HARDENING_VERIFICATION_2026-02-09.md](./archive/BACKEND_HARDENING_VERIFICATION_2026-02-09.md) | Backend hardening verification | 287 |
 | 2026-02-09 | [full-stack-readiness-20260209.md](./full-stack-readiness-20260209.md) | Full stack release readiness | 120 |
 | 2026-02-09 | [PERMISSIONS_AUTH_LICENSING_EXECUTION_PLAN_2026-02-09.md](./PERMISSIONS_AUTH_LICENSING_EXECUTION_PLAN_2026-02-09.md) | Permissions & licensing | 146 |
 | 2026-02-09 | [UI_VISUAL_DESIGN_CONCEPT_2026-02-09.md](./UI_VISUAL_DESIGN_CONCEPT_2026-02-09.md) | Visual design concepts | 353 |
 | 2026-02-09 | [REFACTOR_VALIDATION_REPORT_2026-02-09.md](./REFACTOR_VALIDATION_REPORT_2026-02-09.md) | Refactor validation | 366 |
 | 2026-02-09 | [REFACTOR_VALIDATION_CHECKLIST.md](./REFACTOR_VALIDATION_CHECKLIST.md) | Validation checklist | 257 |
-| 2026-02-09 | [NEXT_PRIORITIES_SUMMARY.md](./NEXT_PRIORITIES_SUMMARY.md) | Next priorities | 204 |
+| 2026-02-09 | [NEXT_PRIORITIES_SUMMARY.md](./archive/NEXT_PRIORITIES_SUMMARY.md) | Next priorities | 204 |
 
 ### Earlier Audits
 
@@ -93,7 +93,7 @@ Comprehensive technical audits organized by date and scope.
 
 ### 🟢 Medium Priority (P2)
 - [Offline Transcript Merge](./OFFLINE_CANONICAL_TRANSCRIPT_MERGE_AUDIT_2026-02-10.md) - Post-processing
-- [Accessibility](./ACCESSIBILITY_DEEP_PASS_2026-02-09.md) - A11y compliance
+- [Accessibility](./archive/ACCESSIBILITY_DEEP_PASS_2026-02-09.md) - A11y compliance
 - [Commercialization](./COMMERCIALIZATION_STRATEGY_AUDIT_2026-02.md) - Business strategy
 - [Gap Analysis](./GAPS_ANALYSIS_2026-02.md) - Improvement areas
 

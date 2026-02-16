@@ -12,6 +12,8 @@
 | Dynamic Label Adjustment | 🚧 **Planned** | v0.3 | Runtime context-aware labels |
 
 > **Current Implementation (v0.2):** The NER pipeline currently uses **regex-based pattern matching** for entity extraction (versions, money, dates, URLs, emails) and **keyword-based extraction** for actions, decisions, and risks. GLiNER integration is planned for v0.3.
+>
+> **Gap Tracking:** See `docs/gaps-report-v2-20260212.md` (DD-001 / DD-002) and ticket `TCK-20260214-076`.
 
 ## Overview
 EchoPanel's NER pipeline provides the structured "Evidence Anchors" that drive precision query routing. It transitions from basic string matching to a hybrid system that treats entities as first-class citizens in the RAG index.

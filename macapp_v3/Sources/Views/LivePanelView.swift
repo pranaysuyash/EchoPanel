@@ -212,8 +212,8 @@ struct AudioSourcePicker: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Audio Source")
                 .font(.headline)
-            
-            ForEach(AudioSource.allCases) { source in
+
+            ForEach(AudioSource.allCases, id: \.self) { source in
                 Button(action: {
                     selectedSource = source
                     dismiss()
@@ -221,7 +221,7 @@ struct AudioSourcePicker: View {
                     HStack {
                         Image(systemName: source.icon)
                             .frame(width: 24)
-                        
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(source.rawValue)
                                 .font(.subheadline.weight(.medium))
@@ -229,12 +229,12 @@ struct AudioSourcePicker: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         Spacer()
-                        
+
                         if selectedSource == source {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(.accentColor)
+                                .foregroundColor(.accentColor)
                         }
                     }
                     .padding(8)

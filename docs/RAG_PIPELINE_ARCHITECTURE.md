@@ -12,6 +12,8 @@
 | Visual Memory RAG | 🚧 **Planned** | v0.4 | Frame transcript retrieval |
 
 > **Current Implementation (v0.2):** The RAG pipeline currently uses **lexical BM25 search only** via SQLite FTS5. Semantic search and embeddings are planned for v0.3.
+>
+> **Gap Tracking:** See `docs/gaps-report-v2-20260212.md` (DD-001 / DD-002) and ticket `TCK-20260214-076`.
 
 ## Overview
 EchoPanel's RAG system focuses on **Evidence Retrieval** as the primary UX. It transitions from simple lexical search to a high-density "Semantic + Lexical" hybrid pipeline using legally safe, local-first models, with the Gemma ecosystem available for high-performance on-device needs.

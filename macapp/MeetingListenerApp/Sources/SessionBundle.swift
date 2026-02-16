@@ -277,6 +277,7 @@ final class SessionBundle {
         try await generateEvents(bundleURL: bundleURL)
         try await generateMetrics(bundleURL: bundleURL)
         try await generateTranscript(bundleURL: bundleURL)
+        try await generateVoiceNotes(bundleURL: bundleURL)
         try await generateDropsSummary(bundleURL: bundleURL)
         try await generateAudioManifest(bundleURL: bundleURL)
         try await generateLogs(bundleURL: bundleURL)
@@ -423,6 +424,16 @@ final class SessionBundle {
             let finalData = try JSONSerialization.data(withJSONObject: finalCopy, options: [.prettyPrinted, .sortedKeys])
             try finalData.write(to: finalURL)
         }
+    }
+    
+    private func generateVoiceNotes(bundleURL: URL) async throws {
+        let voiceNotesCopy = await voiceNotesLock.withLock { voiceNotes }
+        
+        guard !voiceNotesCopy.isEmpty else { return }
+        
+        let voiceNotesURL = bundleURL.appendingPathComponent("voice_notes.json")
+        let data = try JSONSerialization.data(withJSONObject: voiceNotesCopy, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: voiceNotesURL)
     }
     
     private func generateDropsSummary(bundleURL: URL) async throws {

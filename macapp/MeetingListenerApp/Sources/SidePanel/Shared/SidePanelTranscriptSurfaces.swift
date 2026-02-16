@@ -58,22 +58,126 @@ extension SidePanelView {
 
     private func transcriptRows(style: TranscriptStyle) -> some View {
         let spacing = ViewModeSpacing(from: style)
-
-        // Perf: LazyVStack prevents eagerly instantiating every row in the ScrollView,
-        // which matters most in `.full` mode where we can render up to ~500 segments.
-        return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
+        
+        // VNI: Use timeline items for Roll/Compact modes to show voice note markers
+        if style == .full {
+            // Full mode uses only transcript segments
+            return fullTranscriptRows(style: style, spacing: spacing)
+        } else {
+            // Roll/Compact modes use timeline items (transcript + voice notes)
+            return timelineRows(style: style, spacing: spacing)
+        }
+    }
+    
+    private func fullTranscriptRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> some View {
+        LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
             if visibleTranscriptSegments.isEmpty {
                 emptyTranscriptState
             } else {
-                // Use enumerated with stable IDs to reduce re-rendering
                 ForEach(Array(visibleTranscriptSegments.enumerated()), id: \.element.id) { index, segment in
                     transcriptRow(segment: segment)
                         .id(segment.id)
                         .transaction { transaction in
-                            // Only animate for user interactions, not streaming updates
                             if appState.sessionState == .listening && !transcriptUI.followLive {
                                 transaction.animation = nil
                             }
+                        }
+                }
+            }
+        }
+        .padding(.vertical, spacing.verticalPadding)
+        .padding(.horizontal, spacing.horizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .gesture(
+            DragGesture(minimumDistance: 3).onChanged { _ in
+                if transcriptUI.followLive {
+                    transcriptUI.followLive = false
+                }
+            }
+        )
+    }
+    
+    private func timelineRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> some View {
+        let items = visibleTimelineItems
+        
+        return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
+            if items.isEmpty {
+                emptyTranscriptState
+            } else {
+                ForEach(items) { item in
+                    timelineRow(item: item, style: style)
+                        .transaction { transaction in
+                            if appState.sessionState == .listening && !transcriptUI.followLive {
+                                transaction.animation = nil
+                            }
+                        }
+                }
+            }
+        }
+        .padding(.vertical, spacing.verticalPadding)
+        .padding(.horizontal, spacing.horizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .gesture(
+            DragGesture(minimumDistance: 3).onChanged { _ in
+                if transcriptUI.followLive {
+                    transcriptUI.followLive = false
+                }
+            }
+        )
+    }
+    
+    private func timelineRow(item: TimelineItem, style: TranscriptStyle) -> some View {
+        switch item {
+        case .transcript(let segment):
+            return transcriptRow(segment: segment)
+        case .voiceNote(let note):
+            return voiceNoteMarker(note: note, style: style)
+        }
+    }
+    
+    private func voiceNoteMarker(note: VoiceNote, style: TranscriptStyle) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            // Timestamp badge
+            Text(formatTime(note.startTime))
+                .font(Typography.captionSmall)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.15))
+                .clipShape(Capsule())
+            
+            // Voice note card
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                    Text("Voice Note")
+                        .font(Typography.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                }
+                
+                Text(note.text)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .lineLimit(style == .compact ? 1 : 3)
+            }
+            .padding(8)
+            .background(BackgroundStyle.card.color(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .onTapGesture {
+            appState.currentVoiceNote = note
+        }
+        .accessibilityLabel("Voice note: \(note.text)")
+    }
                         }
                 }
             }
