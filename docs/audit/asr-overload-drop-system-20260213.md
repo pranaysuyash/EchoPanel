@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** `server/api/ws_live_listener.py` (put_audio fix), `tests/test_put_audio_does_not_enqueue_controller.py` (regression test), `server/services/capability_detector.py` (auto provider selection), `server/services/degrade_ladder.py` (degrade ladder integration), `asr-streaming-model-matrix-20260213.md` (benchmark matrix follow-up)
+
 # ASR Overload Investigation: "Dropping system due to extreme overload"
 
 Date: 2026-02-13

@@ -1,3 +1,6 @@
+> **📁 ARCHIVED (2026-02-15):** Reference/planning document. Moved to archive.
+> Superseded by current implementation and `docs/STATUS_AND_ROADMAP.md`.
+
 # User Personas for EchoPanel
 
 ## 1. Sarah - The Busy Product Manager

@@ -1,5 +1,5 @@
 """
-Analysis Stream (v0.2)
+Analysis Stream (v0.3)
 
 Extracts cards (actions, decisions, risks) and entities from transcript segments.
 Implements:
@@ -7,20 +7,55 @@ Implements:
 - Entity counts, recency tracking, and deduplication
 - Card deduplication by fuzzy text matching
 - Rolling summary generation
+- LLM-powered intelligent extraction (when configured)
 """
 
 from __future__ import annotations
 
 import os
 import re
+import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"
 
 # Analysis window in seconds (10 minutes)
 ANALYSIS_WINDOW_SECONDS = 600.0
+
+# LLM integration
+try:
+    from .llm_providers import (
+        LLMProvider, LLMConfig, LLMProviderType,
+        LLMProviderRegistry, get_llm_config_from_env,
+        ExtractedInsight
+    )
+    _LLM_AVAILABLE = True
+except ImportError:
+    _LLM_AVAILABLE = False
+    LLMProvider = None
+    ExtractedInsight = None
+
+# Lazy-loaded LLM provider instance
+_llm_provider: Optional[LLMProvider] = None
+
+def _get_llm_provider() -> Optional[LLMProvider]:
+    """Get or initialize LLM provider."""
+    global _llm_provider
+    if not _LLM_AVAILABLE:
+        return None
+    if _llm_provider is None:
+        config = get_llm_config_from_env()
+        if config.provider != LLMProviderType.NONE:
+            _llm_provider = LLMProviderRegistry.create_provider(config)
+    return _llm_provider
+
+
+def _use_llm_extraction() -> bool:
+    """Check if LLM extraction is enabled."""
+    provider = _get_llm_provider()
+    return provider is not None and provider.is_available
 
 
 @dataclass
@@ -98,14 +133,39 @@ def _deduplicate_cards(cards: List[Card]) -> List[Card]:
     return result
 
 
-def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> dict:
+def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDOW_SECONDS, use_llm: bool = True) -> dict:
     """
     Extract action, decision, and risk cards from transcript.
     
     Uses 10-minute sliding window, deduplication, and recency sorting.
+    If LLM is configured, uses LLM for intelligent extraction.
     """
     windowed = _filter_window(transcript, window_seconds)
     
+    # Always do keyword extraction as baseline
+    keyword_cards = _extract_cards_keyword(windowed)
+    
+    # Try LLM extraction if enabled and available
+    if use_llm and _use_llm_extraction():
+        try:
+            # Run LLM extraction in async context
+            llm_cards = asyncio.run(_extract_cards_llm(windowed))
+            if llm_cards:
+                # Merge LLM with keyword results
+                return _merge_llm_with_keyword(llm_cards, keyword_cards)
+        except Exception as e:
+            if DEBUG:
+                import logging
+                logging.getLogger(__name__).debug(f"LLM extraction failed: {e}, using keyword fallback")
+    
+    return keyword_cards
+
+
+def _extract_cards_keyword(transcript: List[dict]) -> Dict[str, List[dict]]:
+    """
+    Extract cards using keyword matching.
+    This is the fallback method when LLM is not available.
+    """
     actions: List[Card] = []
     decisions: List[Card] = []
     risks: List[Card] = []
@@ -117,7 +177,7 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
     risk_keywords = ["risk", "issue", "blocker", "concern", "problem", "delay", 
                      "blocked", "at risk", "warning", "danger"]
 
-    for segment in windowed:
+    for segment in transcript:
         text = segment.get("text", "")
         lower = text.lower()
         t0 = segment.get("t0", 0.0)
@@ -162,12 +222,15 @@ def extract_cards(transcript: List[dict], window_seconds: float = ANALYSIS_WINDO
     }
 
 
-def extract_cards_incremental(transcript: List[dict], last_t1: float, prev_cards: Dict[str, Any], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> Tuple[dict, float]:
+def extract_cards_incremental(transcript: List[dict], last_t1: float, prev_cards: Dict[str, Any], window_seconds: float = ANALYSIS_WINDOW_SECONDS, use_llm: bool = True) -> Tuple[dict, float]:
     """
     Incrementally update card extraction from transcript.
     
     Only processes segments newer than last_t1, merges with previous results.
     Returns (updated_cards_dict, new_last_t1)
+    
+    Note: LLM extraction is only run periodically (every 30 seconds of new content)
+    to avoid excessive API calls. Keyword extraction runs on every update.
     """
     windowed = _filter_window(transcript, window_seconds)
     
@@ -183,8 +246,33 @@ def extract_cards_incremental(transcript: List[dict], last_t1: float, prev_cards
     decisions = _dict_to_cards(prev_cards.get("decisions", []), "decision")
     risks = _dict_to_cards(prev_cards.get("risks", []), "risk")
     
-    # Process only new segments
+    # Always do keyword extraction for responsiveness
     _extract_cards_from_segments_incremental(new_segments, actions, decisions, risks)
+    
+    # Run LLM extraction periodically (every ~30 seconds of new content)
+    new_content_duration = sum(seg.get("t1", 0.0) - seg.get("t0", 0.0) for seg in new_segments)
+    should_run_llm = use_llm and _use_llm_extraction() and new_content_duration >= 30
+    
+    if should_run_llm:
+        try:
+            llm_cards = asyncio.run(_extract_cards_llm(windowed))
+            if llm_cards:
+                # Merge LLM insights with keyword results
+                # LLM results take precedence, keyword fills gaps
+                for card_type in ["actions", "decisions", "risks"]:
+                    llm_list = llm_cards.get(card_type, [])
+                    if llm_list:
+                        # Replace with LLM results for this type
+                        if card_type == "actions":
+                            actions = _dict_to_cards(llm_list, "action")
+                        elif card_type == "decisions":
+                            decisions = _dict_to_cards(llm_list, "decision")
+                        elif card_type == "risks":
+                            risks = _dict_to_cards(llm_list, "risk")
+        except Exception as e:
+            if DEBUG:
+                import logging
+                logging.getLogger(__name__).debug(f"Incremental LLM extraction failed: {e}")
     
     # Deduplicate and limit
     actions = _deduplicate_cards(actions)[:7]
@@ -274,6 +362,89 @@ def _card_to_dict(card: Card) -> dict:
     if card.card_type == "action":
         result["owner"] = card.owner
         result["due"] = card.due
+    return result
+
+
+async def _extract_cards_llm(transcript: List[dict]) -> Dict[str, List[dict]]:
+    """
+    Extract cards using LLM provider.
+    
+    This provides more intelligent extraction than keyword matching,
+    understanding context, nuance, and implied actions.
+    """
+    provider = _get_llm_provider()
+    if not provider or not provider.is_available:
+        return {}
+    
+    try:
+        insights = await provider.extract_insights(
+            transcript,
+            insight_types=["action", "decision", "risk"]
+        )
+        
+        actions = []
+        decisions = []
+        risks = []
+        
+        for insight in insights:
+            # Create evidence structure
+            evidence = [{
+                "t0": 0.0,  # Will be filled by caller with segment timestamps
+                "t1": 0.0,
+                "quote": insight.evidence_quote or insight.text
+            }]
+            
+            card_dict = {
+                "text": insight.text,
+                "confidence": insight.confidence,
+                "evidence": evidence,
+            }
+            
+            if insight.insight_type == "action":
+                card_dict["owner"] = insight.owner
+                card_dict["due"] = insight.due_date
+                actions.append(card_dict)
+            elif insight.insight_type == "decision":
+                decisions.append(card_dict)
+            elif insight.insight_type == "risk":
+                risks.append(card_dict)
+        
+        return {
+            "actions": actions,
+            "decisions": decisions,
+            "risks": risks,
+        }
+        
+    except Exception as e:
+        if DEBUG:
+            import logging
+            logging.getLogger(__name__).warning(f"LLM extraction failed: {e}")
+        return {}
+
+
+def _merge_llm_with_keyword(
+    llm_cards: Dict[str, List[dict]],
+    keyword_cards: Dict[str, List[dict]]
+) -> Dict[str, List[dict]]:
+    """
+    Merge LLM and keyword extraction results.
+    
+    Strategy: Use LLM results preferentially, fall back to keyword
+    for any missing categories or low-confidence results.
+    """
+    result = {}
+    
+    for card_type in ["actions", "decisions", "risks"]:
+        llm_list = llm_cards.get(card_type, [])
+        keyword_list = keyword_cards.get(card_type, [])
+        
+        if llm_list:
+            # Use LLM results if available
+            result[card_type] = llm_list[:7]
+        else:
+            # Fall back to keyword extraction
+            result[card_type] = keyword_list[:7]
+    
     return result
 
 
@@ -732,19 +903,48 @@ def _extract_entities_from_segments_incremental(segments: List[dict], entity_map
                 entity.grounding_quotes.append(text[:100])
 
 
-def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANALYSIS_WINDOW_SECONDS) -> str:
+async def _generate_summary_llm(transcript: List[dict], max_length: int = 500) -> Optional[str]:
+    """
+    Generate meeting summary using LLM.
+    
+    Returns None if LLM is not available.
+    """
+    provider = _get_llm_provider()
+    if not provider or not provider.is_available:
+        return None
+    
+    try:
+        return await provider.generate_summary(transcript, max_length)
+    except Exception as e:
+        if DEBUG:
+            import logging
+            logging.getLogger(__name__).warning(f"LLM summary failed: {e}")
+        return None
+
+
+def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANALYSIS_WINDOW_SECONDS, use_llm: bool = True) -> str:
     """
     Generate a brief rolling summary of the conversation.
     
     This is a simple extractive summary based on key sentences.
+    If LLM is configured and use_llm is True, attempts LLM-powered summary.
     """
     windowed = _filter_window(transcript, window_seconds)
     
     if not windowed:
         return "No conversation yet."
     
+    # Try LLM summary first if enabled
+    if use_llm and _use_llm_extraction():
+        try:
+            llm_summary = asyncio.run(_generate_summary_llm(windowed, max_length=400))
+            if llm_summary:
+                return llm_summary
+        except Exception:
+            pass  # Fall back to keyword-based summary
+    
     # Extract cards for summary content
-    cards = extract_cards(windowed)
+    cards = extract_cards(windowed, use_llm=False)  # Avoid double LLM call
     entities = extract_entities(windowed)
     
     lines = []
@@ -752,13 +952,13 @@ def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANA
     # H10 Fix: Better structure with "Recent" context
     
     # 1. Overall Highlights (from whole session)
-    all_decisions = extract_cards(transcript).get("decisions", [])
+    all_decisions = extract_cards(transcript, use_llm=False).get("decisions", [])
     if all_decisions:
         lines.append(f"## 🏛 Decisions ({len(all_decisions)})")
         for d in all_decisions[-3:]: # Last 3
             lines.append(f"- {d['text']}")
     
-    all_actions = extract_cards(transcript).get("actions", [])
+    all_actions = extract_cards(transcript, use_llm=False).get("actions", [])
     if all_actions:
         lines.append(f"\n## ⚡ Action Items ({len(all_actions)})")
         for a in all_actions[-3:]:

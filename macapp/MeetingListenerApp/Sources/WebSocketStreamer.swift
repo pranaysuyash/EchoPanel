@@ -78,10 +78,15 @@ final class WebSocketStreamer: NSObject {
     var onEntitiesUpdate: (([EntityItem]) -> Void)?
     var onFinalSummary: ((String, [String: Any]) -> Void)?
     var onMetrics: ((SourceMetrics) -> Void)? // PR2: Metrics callback
+    var onVoiceNoteTranscript: ((String, TimeInterval) -> Void)? // VNI: Voice note transcript callback
 
     // V1: Correlation ID access for logging
     var correlationIDs: CorrelationIDs? { _correlationIDs }
     private var _correlationIDs: CorrelationIDs?
+    private var voiceNoteSessionID: String? // VNI: Track active voice note session
+
+    // Lightweight connectivity indicator for callers that need a guard.
+    var isConnected: Bool { task != nil }
 
     // Use main operation queue for URLSession delegate callbacks so delegate-based
 // handlers (WebSocket receive/send callbacks) always run on the main thread.
@@ -171,10 +176,10 @@ private let session: URLSession = {
     private var audioBuffersBySource: [String: RingBuffer<PendingAudioFrame>] = [:]
     private var audioDropsBySource: [String: Int] = [:]
     private var audioDrainTask: Task<Void, Never>?
-    // MainActor-owned because it’s driven by WS status events delivered to the main queue.
+    // MainActor-owned because it's driven by WS status events delivered to the main queue.
     @MainActor private var serverStreamingAcked: Bool = false
 
-    // 16kHz mono PCM16. Defaults are tuned for “Both” mode:
+    // 16kHz mono PCM16. Defaults are tuned for "Both" mode:
     // keep at most ~2.4s buffered per source (120 frames * 20ms).
     private let audioSampleRate: Double = 16000.0
     private let audioBytesPerSample: Int = 2
@@ -293,6 +298,60 @@ private let session: URLSession = {
         // Never pace on the capture thread. Buffer and let the drain loop handle pacing + backpressure.
         enqueueAudioFrame(data, source: source)
     }
+    
+    // VNI: Send voice note audio data to backend for transcription
+    func sendVoiceNoteAudio(data: Data) {
+        guard task != nil else {
+            DispatchQueue.main.async {
+                StructuredLogger.shared.warning("Dropping voice note audio (not connected)", metadata: [
+                    "data_size": data.count
+                ])
+            }
+            return
+        }
+        
+        if debugEnabled {
+            NSLog("🎤 WebSocketStreamer sending voice note audio: %d bytes", data.count)
+        }
+        
+        let payload: [String: Any] = [
+            "type": "voice_note_audio",
+            "data": data.base64EncodedString()
+        ]
+        sendJSON(payload)
+    }
+    
+    // VNI: Start a voice note session
+    func startVoiceNoteSession() {
+        voiceNoteSessionID = UUID().uuidString
+        let payload: [String: Any] = [
+            "type": "voice_note_start",
+            "session_id": voiceNoteSessionID ?? "",
+            "sample_rate": 16000,
+            "format": "pcm_s16le",
+            "channels": 1
+        ]
+        sendJSON(payload)
+        
+        if debugEnabled {
+            NSLog("🎤 WebSocketStreamer starting voice note session: %@", voiceNoteSessionID ?? "unknown")
+        }
+    }
+    
+    // VNI: Stop the current voice note session
+    func stopVoiceNoteSession() {
+        let payload: [String: Any] = [
+            "type": "voice_note_stop",
+            "session_id": voiceNoteSessionID ?? ""
+        ]
+        sendJSON(payload)
+        
+        if debugEnabled {
+            NSLog("🎤 WebSocketStreamer stopping voice note session: %@", voiceNoteSessionID ?? "unknown")
+        }
+        
+        voiceNoteSessionID = nil
+    }
 
     private func sendBinaryAudioFrame(_ data: Data, source: String) {
         // Binary audio framing (v1):
@@ -381,7 +440,7 @@ private let session: URLSession = {
             let sources = ["system", "mic"]
 
             while !Task.isCancelled {
-                // Don’t send audio until:
+                // Don't send audio until:
                 // - the socket exists, and
                 // - the server has ACKed streaming (ensures "start" processed).
                 let acked = await MainActor.run { self.serverStreamingAcked }
@@ -767,6 +826,17 @@ private let session: URLSession = {
             )
             DispatchQueue.main.async {
                 self.onMetrics?(metrics)
+            }
+
+        case "voice_note_transcript":
+            // VNI: Handle voice note transcript from backend
+            let text = (object["text"] as? String) ?? ""
+            let duration = (object["duration"] as? TimeInterval) ?? 0
+            if debugEnabled {
+                NSLog("🎤 WebSocketStreamer received voice note transcript: %d chars", text.count)
+            }
+            DispatchQueue.main.async {
+                self.onVoiceNoteTranscript?(text, duration)
             }
 
         default:

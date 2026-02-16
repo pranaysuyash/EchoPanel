@@ -82,3 +82,13 @@ struct ContextQueryResult: Identifiable, Equatable {
         "\(documentID)-\(chunkIndex)-\(score)"
     }
 }
+
+struct VoiceNote: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let startTime: TimeInterval
+    let endTime: TimeInterval
+    let createdAt: Date
+    let confidence: Double
+    var isPinned: Bool = false
+}

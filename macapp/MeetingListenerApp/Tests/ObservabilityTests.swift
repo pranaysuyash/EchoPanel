@@ -148,6 +148,29 @@ final class ObservabilityTests: XCTestCase {
         // Should record without crash
         XCTAssertTrue(true)
     }
+
+    func testSessionBundleExportCreatesZip() async throws {
+        let bundle = SessionBundle(sessionId: "test-session")
+        bundle.recordSessionStart(audioSource: "system")
+
+        let fileManager = FileManager.default
+        let destination = fileManager.temporaryDirectory
+            .appendingPathComponent("echopanel_session_test.zip")
+
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+
+        try await bundle.exportBundle(to: destination)
+
+        XCTAssertTrue(fileManager.fileExists(atPath: destination.path))
+
+        let attributes = try fileManager.attributesOfItem(atPath: destination.path)
+        let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+        XCTAssertGreaterThan(size, 0)
+
+        try? fileManager.removeItem(at: destination)
+    }
     
     // MARK: - Correlation IDs Tests
     

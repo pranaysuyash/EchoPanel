@@ -33,6 +33,7 @@ struct SidePanelView: View {
         case actions = "Actions"
         case pins = "Pins"
         case context = "Context"
+        case notes = "Notes"
         case entities = "Entities"
         case raw = "Raw"
 
@@ -51,6 +52,8 @@ struct SidePanelView: View {
             case .raw:
                 return .raw
             case .context:
+                return nil
+            case .notes:
                 return nil
             }
         }
@@ -272,7 +275,9 @@ struct SidePanelView: View {
             }
         }
         .onChange(of: fullInsightTab) { newTab in
-            if let surface = newTab.mapsToSurface {
+            if newTab == .notes {
+                // Notes tab doesn't map to a surface
+            } else if let surface = newTab.mapsToSurface {
                 activeSurface = surface
             }
         }

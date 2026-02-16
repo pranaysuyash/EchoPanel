@@ -56,6 +56,11 @@ class ASRConfig:
     chunk_seconds: int = 4
     vad_enabled: bool = False
     
+    # VAD configuration
+    vad_threshold: float = 0.5  # 0.0-1.0, higher = more strict
+    vad_min_speech_ms: int = 250  # Minimum speech to keep
+    vad_min_silence_ms: int = 100  # Minimum silence to split
+    
     # Additional config (v0.3)
     max_buffer_seconds: int = 30  # Max audio buffer before forced flush
     streaming_delay_ms: int = 500  # For streaming providers
@@ -327,7 +332,10 @@ class ASRProviderRegistry:
 
     @classmethod
     def get_provider(cls, name: Optional[str] = None, config: Optional[ASRConfig] = None) -> Optional[ASRProvider]:
-        """Get or create a provider instance (thread-safe)."""
+        """Get or create a provider instance (thread-safe).
+        
+        If VAD is enabled in config, wraps the provider with VAD pre-filtering.
+        """
         if name is None:
             name = os.getenv("ECHOPANEL_ASR_PROVIDER", "faster_whisper")
         
@@ -340,7 +348,25 @@ class ASRProviderRegistry:
         # Thread-safe instance creation (P0 fix: RC-1)
         with cls._get_lock():
             if key not in cls._instances:
-                cls._instances[key] = cls._providers[name](cfg)
+                base_provider = cls._providers[name](cfg)
+                
+                # Wrap with VAD if enabled
+                if cfg.vad_enabled:
+                    try:
+                        from .vad_asr_wrapper import VADASRWrapper
+                        cls._instances[key] = VADASRWrapper(
+                            base_provider,
+                            threshold=cfg.vad_threshold,
+                            min_speech_duration_ms=cfg.vad_min_speech_ms,
+                            min_silence_duration_ms=cfg.vad_min_silence_ms,
+                        )
+                        logger.info(f"Wrapped {name} with VAD (threshold={cfg.vad_threshold})")
+                    except Exception as e:
+                        logger.warning(f"Failed to wrap with VAD: {e}, using base provider")
+                        cls._instances[key] = base_provider
+                else:
+                    cls._instances[key] = base_provider
+                    
             return cls._instances[key]
 
     @classmethod

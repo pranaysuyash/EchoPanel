@@ -133,6 +133,23 @@ final class BackendManager: ObservableObject {
         if let backendToken = KeychainHelper.loadBackendToken(), !backendToken.isEmpty {
             env["ECHOPANEL_WS_AUTH_TOKEN"] = backendToken
         }
+        
+        // LLM and VAD configuration
+        if let openAIKey = KeychainHelper.loadOpenAIKey(), !openAIKey.isEmpty {
+            env["ECHOPANEL_OPENAI_API_KEY"] = openAIKey
+        }
+        let llmProvider = UserDefaults.standard.string(forKey: "llmProvider") ?? "none"
+        env["ECHOPANEL_LLM_PROVIDER"] = llmProvider
+        if llmProvider != "none" {
+            env["ECHOPANEL_LLM_MODEL"] = UserDefaults.standard.string(forKey: "llmModel") ?? "gpt-4o-mini"
+        }
+        
+        // VAD configuration (enabled by default)
+        let vadEnabled = UserDefaults.standard.object(forKey: "vadEnabled") as? Bool ?? true
+        env["ECHOPANEL_ASR_VAD"] = vadEnabled ? "1" : "0"
+        let vadThreshold = UserDefaults.standard.double(forKey: "vadThreshold")
+        env["ECHOPANEL_VAD_THRESHOLD"] = vadThreshold > 0 ? String(vadThreshold) : "0.5"
+        
         process.environment = env
         
         // Create log file

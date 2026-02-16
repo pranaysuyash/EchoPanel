@@ -7,6 +7,7 @@ enum KeychainHelper {
     private static let service = "com.echopanel.MeetingListenerApp"
     private static let hfTokenKey = "hfToken"
     private static let backendTokenKey = "backendToken"
+    private static let openAIKeyKey = "openAIKey"
     
     // MARK: - HuggingFace Token
     
@@ -171,5 +172,58 @@ enum KeychainHelper {
         }
 
         return success
+    }
+    
+    // MARK: - OpenAI API Key
+    
+    static func saveOpenAIKey(_ key: String) -> Bool {
+        guard !key.isEmpty else {
+            _ = deleteOpenAIKey()
+            return true
+        }
+        
+        guard let data = key.data(using: .utf8) else { return false }
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: openAIKeyKey,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+    
+    static func loadOpenAIKey() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: openAIKeyKey,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let key = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return key
+    }
+    
+    static func deleteOpenAIKey() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: openAIKeyKey
+        ]
+        
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }

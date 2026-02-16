@@ -123,6 +123,15 @@ extension SidePanelView {
                         .controlSize(.mini)
                         .labelsHidden()
                     qualityChip
+                    
+                    // Voice note recording indicator
+                    if appState.isRecordingVoiceNote {
+                        voiceNoteRecordingIndicator
+                    }
+                    
+                    // Record voice note button
+                    recordVoiceNoteButton
+                    
                     if captureNeedsAttention {
                         Text("Attention")
                             .font(Typography.captionSmall)
@@ -144,38 +153,43 @@ extension SidePanelView {
                     .foregroundColor(appState.sourceTroubleshootingHint == nil ? .secondary : .orange)
                     .lineLimit(2)
             } else if stacked {
-                Picker("Audio source", selection: $appState.audioSource) {
-                    ForEach(AppState.AudioSource.allCases, id: \.self) { source in
-                        Text(source.rawValue).tag(source)
+                VStack(spacing: Spacing.sm) {
+                    Picker("Audio source", selection: $appState.audioSource) {
+                        ForEach(AppState.AudioSource.allCases, id: \.self) { source in
+                            Text(source.rawValue).tag(source)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .disabled(appState.sessionState == .listening)
-                .accessibilityLabel("Audio source")
-                .frame(maxWidth: .infinity)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .disabled(appState.sessionState == .listening)
+                    .accessibilityLabel("Audio source")
+                    .frame(maxWidth: .infinity)
 
-                HStack(spacing: Spacing.md) {
-                    Toggle("Follow", isOn: $transcriptUI.followLive)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .accessibilityLabel("Follow live")
+                    HStack(spacing: Spacing.md) {
+                        Toggle("Follow", isOn: $transcriptUI.followLive)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .accessibilityLabel("Follow live")
 
-                    Spacer()
+                        Spacer()
+                        
+                        // Record voice note button in stacked expanded mode
+                        recordVoiceNoteButton
 
-                    Button("?") {
-                        showShortcutOverlay.toggle()
+                        Button("?") {
+                            showShortcutOverlay.toggle()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("Keyboard shortcuts")
+                        .accessibilityLabel("Keyboard shortcuts")
+
+                        Button("Hide") {
+                            showCaptureDetails = false
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .help("Keyboard shortcuts")
-                    .accessibilityLabel("Keyboard shortcuts")
-
-                    Button("Hide") {
-                        showCaptureDetails = false
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
                 }
             } else {
                 HStack(spacing: Spacing.md) {
@@ -194,6 +208,14 @@ extension SidePanelView {
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .accessibilityLabel("Follow live")
+                    
+                    // Voice note recording indicator in expanded mode
+                    if appState.isRecordingVoiceNote {
+                        voiceNoteRecordingIndicator
+                    }
+                    
+                    // Record voice note button in expanded mode
+                    recordVoiceNoteButton
 
                     Button("?") {
                         showShortcutOverlay.toggle()

@@ -77,18 +77,22 @@ Links:
    - LLM: cloud key vs Ollama vs llama.cpp vs MLX (Python) vs MLX (Swift) vs ONNX Runtime GenAI
    - Embeddings: sentence-transformers vs ONNX (FastEmbed-style) vs Gemma embeddings vs Qwen embeddings
 
-### P1 (Productize Breadth)
+### P1 (Productize Breadth) - COMPLETED 2026-02-15
 
-3. Introduce an `LLMProvider` abstraction in the server (mirroring the ASR provider abstraction):
+3. ✅ Introduced an `LLMProvider` abstraction in the server (mirroring the ASR provider abstraction):
    - `none` (keyword-only)
    - `openai` (user key)
    - `ollama` (local)
    - (future) `mlx` / `llama_cpp` / `onnxruntime_genai`
 
-4. Wire `ECHOPANEL_LLM_PROVIDER` through:
-   - settings UI (macapp)
+4. ✅ Wired `ECHOPANEL_LLM_PROVIDER` through:
+   - settings UI (macapp) — "AI Analysis" tab
    - backend process env injection (macapp)
    - `analysis_stream.py` routing
+
+**Implementation**: See `docs/LLM_ANALYSIS_ARCHITECTURE.md` and `server/services/llm_providers.py`
+
+**Next**: MLX native provider for 13-30% speed improvement on Apple Silicon
 
 ### P2 (Swift-Native Premium Path)
 

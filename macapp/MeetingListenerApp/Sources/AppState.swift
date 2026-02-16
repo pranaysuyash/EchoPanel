@@ -158,6 +158,13 @@ final class AppState: ObservableObject {
     @Published var systemAudioLevel: Float = 0
     @Published var microphoneAudioLevel: Float = 0
     
+    // Voice Notes (VNI)
+    @Published var isRecordingVoiceNote: Bool = false
+    @Published var voiceNoteAudioLevel: Float = 0
+    @Published var voiceNoteError: VoiceNoteCaptureManager.VoiceNoteCaptureError?
+    @Published var currentVoiceNote: VoiceNote?
+    @Published var voiceNotes: [VoiceNote] = []
+    
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
     var isDebugEnabled: Bool { debugEnabled }
@@ -243,6 +250,7 @@ final class AppState: ObservableObject {
 
     private let audioCapture = AudioCaptureManager()
     private let micCapture = MicrophoneCaptureManager()
+    private let voiceNoteCapture = VoiceNoteCaptureManager()
     private let streamer: WebSocketStreamer
     // Note: URL hardcoding is acceptable for v0.2 MVP as per M9 resolution plan (low risk local app)
     // But ideally should read from configuration. Keeping as is for now to avoid large refactor risk.
@@ -317,6 +325,26 @@ final class AppState: ObservableObject {
         }
         micCapture.onAudioLevelUpdate = { [weak self] level in
             Task { @MainActor in self?.microphoneAudioLevel = level }
+        }
+        
+        // Voice note capture callbacks (VNI)
+        voiceNoteCapture.onPCMFrame = { [weak self] data in
+            guard let self else { return }
+            // Send voice note audio to backend for transcription
+            self.streamer.sendVoiceNoteAudio(data: data)
+        }
+        voiceNoteCapture.onRecordingStarted = { [weak self] in
+            Task { @MainActor in
+                self?.isRecordingVoiceNote = true
+                self?.voiceNoteError = nil
+            }
+        }
+        voiceNoteCapture.onRecordingStopped = { [weak self] duration in
+            Task { @MainActor in
+                self?.isRecordingVoiceNote = false
+                self?.voiceNoteAudioLevel = 0
+                // Voice note object will be created when transcript arrives
+            }
         }
 
         streamer.onStatus = { [weak self] status, message in
@@ -436,6 +464,13 @@ final class AppState: ObservableObject {
                 }
 
                 NotificationCenter.default.post(name: .finalSummaryReady, object: nil)
+            }
+        }
+        
+        // VNI: Voice note transcript callback
+        streamer.onVoiceNoteTranscript = { [weak self] text, duration in
+            Task { @MainActor in
+                self?.handleVoiceNoteTranscript(text: text, duration: duration)
             }
         }
         
@@ -864,6 +899,95 @@ final class AppState: ObservableObject {
         sessionStore.saveSnapshot(data: exportPayload())
     }
     
+    // MARK: - Voice Notes (VNI)
+    
+    /// Toggle voice note recording on/off
+    @MainActor
+    func toggleVoiceNoteRecording() async {
+        if isRecordingVoiceNote {
+            // Stop recording
+            await voiceNoteCapture.stopRecording()
+        } else {
+            // Start recording
+            do {
+                try await voiceNoteCapture.startRecording()
+                // VoiceNoteCaptureManager will update isRecordingVoiceNote via callbacks
+            } catch {
+                voiceNoteError = error as? VoiceNoteCaptureManager.VoiceNoteCaptureError
+                setUserNotice("Voice note recording failed: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+            }
+        }
+    }
+    
+    /// Handle voice note transcript from backend
+    private func handleVoiceNoteTranscript(text: String, duration: TimeInterval) {
+        // Create a new voice note with the transcript
+        let voiceNote = VoiceNote(
+            text: text,
+            startTime: Date().timeIntervalSince1970,
+            endTime: Date().timeIntervalSince1970 + duration,
+            createdAt: Date(),
+            confidence: 0.95
+        )
+        
+        // Add to voice notes array
+        voiceNotes.append(voiceNote)
+        currentVoiceNote = voiceNote
+        
+        // Record in session bundle
+        if let sessionId = sessionID {
+            SessionBundleManager.shared.bundle(for: sessionId)?.recordVoiceNote(voiceNote)
+        }
+        
+        // Notify user
+        setUserNotice("Voice note transcribed", level: .success, autoClearAfter: 3.0)
+        
+        StructuredLogger.shared.info("Voice note transcribed", metadata: [
+            "voice_note_id": voiceNote.id.uuidString,
+            "text_length": text.count,
+            "duration": duration
+        ])
+    }
+    
+    /// Toggle pin status of a voice note
+    func toggleVoiceNotePin(id: UUID) {
+        guard let index = voiceNotes.firstIndex(where: { $0.id == id }) else { return }
+        
+        var note = voiceNotes[index]
+        note.isPinned.toggle()
+        voiceNotes[index] = note
+        
+        StructuredLogger.shared.info("Voice note pin toggled", metadata: [
+            "voice_note_id": id.uuidString,
+            "is_pinned": note.isPinned
+        ])
+    }
+    
+    /// Delete a voice note
+    func deleteVoiceNote(id: UUID) {
+        guard let index = voiceNotes.firstIndex(where: { $0.id == id }) else { return }
+        
+        let note = voiceNotes.remove(at: index)
+        
+        if currentVoiceNote?.id == id {
+            currentVoiceNote = nil
+        }
+        
+        setUserNotice("Voice note deleted", level: .info, autoClearAfter: 2.0)
+        
+        StructuredLogger.shared.info("Voice note deleted", metadata: [
+            "voice_note_id": id.uuidString
+        ])
+    }
+    
+    /// Clear all voice notes
+    func clearAllVoiceNotes() {
+        voiceNotes.removeAll()
+        currentVoiceNote = nil
+        
+        StructuredLogger.shared.info("All voice notes cleared")
+    }
+    
     // MARK: - Gap 2: Silence Detection
     
     private func startSilenceCheck() {
@@ -967,7 +1091,14 @@ final class AppState: ObservableObject {
                 }
                 return
             }
-            let markdown = self.finalSummaryMarkdown.isEmpty ? self.renderLiveMarkdown() : self.finalSummaryMarkdown
+            var markdown = self.finalSummaryMarkdown.isEmpty ? self.renderLiveMarkdown() : self.finalSummaryMarkdown
+            
+            // VNI: Append voice notes to markdown if any exist
+            if !self.voiceNotes.isEmpty {
+                markdown += "\n\n"
+                markdown += self.renderVoiceNotesMarkdown()
+            }
+            
             do {
                 try markdown.write(to: url, atomically: true, encoding: .utf8)
                 Task { @MainActor in
@@ -980,6 +1111,29 @@ final class AppState: ObservableObject {
                 NSLog("Export Markdown failed: %@", error.localizedDescription)
             }
         }
+    }
+    
+    // VNI: Render voice notes as Markdown
+    private func renderVoiceNotesMarkdown() -> String {
+        var lines: [String] = []
+        lines.append("## Voice Notes")
+        lines.append("")
+        
+        // Sort by pinned first, then by creation time
+        let sortedNotes = voiceNotes.sorted { note1, note2 in
+            if note1.isPinned != note2.isPinned {
+                return note1.isPinned
+            }
+            return note1.createdAt < note2.createdAt
+        }
+        
+        for note in sortedNotes {
+            let pinned = note.isPinned ? "📌 " : ""
+            let time = formatTime(note.startTime)
+            lines.append("- [\(time)] \(pinned)\(note.text)")
+        }
+        
+        return lines.joined(separator: "\n")
     }
 
     func exportSRT() {
@@ -1284,6 +1438,19 @@ final class AppState: ObservableObject {
                 "confidence": item.confidence
             ]
         }
+        
+        // VNI: Voice notes payload for export
+        let voiceNotesPayload = voiceNotes.map { note in
+            [
+                "id": note.id.uuidString,
+                "text": note.text,
+                "start_time": note.startTime,
+                "end_time": note.endTime,
+                "created_at": note.createdAt.iso8601,
+                "confidence": note.confidence,
+                "is_pinned": note.isPinned
+            ]
+        }
 
         return [
             "session": [
@@ -1296,6 +1463,7 @@ final class AppState: ObservableObject {
             "decisions": decisionsPayload,
             "risks": risksPayload,
             "entities": entitiesPayload,
+            "voice_notes": voiceNotesPayload,
             "final_summary": [
                 "markdown": finalSummaryMarkdown,
                 "json": finalSummaryJSON
@@ -1831,6 +1999,11 @@ final class AppState: ObservableObject {
             // Toggle redundancy for next session
             broadcast.useRedundantAudio.toggle()
             NSLog("Broadcast: Redundancy toggled to \(broadcast.useRedundantAudio)")
+            
+        case .toggleVoiceNote:
+            Task {
+                await toggleVoiceNoteRecording()
+            }
         }
     }
     

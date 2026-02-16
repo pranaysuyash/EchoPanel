@@ -26,6 +26,7 @@ final class HotKeyManager: ObservableObject {
         case togglePause = "toggle_pause"
         case emergencyFailover = "emergency_failover"
         case toggleRedundancy = "toggle_redundancy"
+        case toggleVoiceNote = "toggle_voice_note"
         
         var id: String { rawValue }
         
@@ -39,6 +40,7 @@ final class HotKeyManager: ObservableObject {
             case .togglePause: return "Toggle Pause"
             case .emergencyFailover: return "Emergency Failover"
             case .toggleRedundancy: return "Toggle Redundancy"
+            case .toggleVoiceNote: return "Toggle Voice Note"
             }
         }
         
@@ -52,6 +54,7 @@ final class HotKeyManager: ObservableObject {
             case .togglePause: return KeyCombo(key: .f6, modifiers: [])
             case .emergencyFailover: return KeyCombo(key: .f12, modifiers: [.command])
             case .toggleRedundancy: return KeyCombo(key: .f7, modifiers: [])
+            case .toggleVoiceNote: return KeyCombo(key: .f8, modifiers: [.command])
             }
         }
         
@@ -65,6 +68,7 @@ final class HotKeyManager: ObservableObject {
             case .togglePause: return "Pause/resume capture"
             case .emergencyFailover: return "Force audio failover to backup"
             case .toggleRedundancy: return "Enable/disable dual-path redundancy"
+            case .toggleVoiceNote: return "Toggle voice note recording on/off"
             }
         }
     }

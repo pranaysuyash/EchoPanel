@@ -1,3 +1,6 @@
+> **📁 ARCHIVED (2026-02-15):** Reference/planning document. Moved to archive.
+> Superseded by current implementation and `docs/STATUS_AND_ROADMAP.md`.
+
 # Product Vision: EchoPanel Companion
 
 > **Summary**: A strategic pivot from "Passive Recorder" to "Active Meeting Intelligence Companion". This document outlines the UX and Technical requirements for Sidebar Mode, Live Q&A, and Context Injection.

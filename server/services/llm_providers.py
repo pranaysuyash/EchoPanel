@@ -272,7 +272,13 @@ Example output:
 
 
 class OllamaProvider(LLMProvider):
-    """Ollama local LLM provider."""
+    """Ollama local LLM provider.
+    
+    Runs inference locally using Ollama. Recommended models for meeting analysis:
+    - llama3.2:3b - Fast, good for basic extraction (~2GB RAM)
+    - qwen2.5:7b - Better accuracy, multilingual (~5GB RAM)
+    - mistral:7b - Good balance of speed/quality (~5GB RAM)
+    """
     
     def __init__(self, config: LLMConfig):
         super().__init__(config)
@@ -284,17 +290,70 @@ class OllamaProvider(LLMProvider):
     
     @property
     def is_available(self) -> bool:
-        """Check if Ollama is running."""
+        """Check if Ollama is running and model is available."""
         try:
             import urllib.request
+            import json
             req = urllib.request.Request(
                 f"{self._base_url}/api/tags",
                 method="GET",
             )
             with urllib.request.urlopen(req, timeout=2) as resp:
-                return resp.status == 200
-        except:
+                if resp.status != 200:
+                    return False
+                data = json.loads(resp.read())
+                models = [m.get("name", "") for m in data.get("models", [])]
+                # Check if requested model (or base name) is available
+                model_base = self.config.model.split(":")[0]
+                return any(self.config.model in m or model_base in m for m in models)
+        except Exception as e:
+            logger.debug(f"Ollama availability check failed: {e}")
             return False
+    
+    def _build_extraction_prompt(
+        self,
+        transcript: List[dict],
+        insight_types: List[str],
+    ) -> str:
+        """Build prompt for insight extraction."""
+        transcript_text = "\n".join([
+            f"[{seg.get('speaker', 'Unknown')}]: {seg.get('text', '')}"
+            for seg in transcript
+        ])
+        
+        types_str = ", ".join(insight_types)
+        
+        prompt = f"""Analyze this meeting transcript and extract structured insights.
+
+Transcript:
+{transcript_text}
+
+Extract the following insight types: {types_str}
+
+For each insight, provide:
+- text: The exact text of the insight
+- type: One of {types_str}
+- confidence: 0.0-1.0 score
+- speakers: List of speakers involved
+- evidence_quote: The exact quote supporting this insight
+- owner: Who is responsible (for actions)
+- due_date: When it's due (for actions), ISO format
+
+Return ONLY a JSON array of insights. No markdown, no explanations.
+
+Example output:
+[
+  {{
+    "text": "Schedule follow-up meeting with engineering team",
+    "type": "action",
+    "confidence": 0.95,
+    "speakers": ["Alice", "Bob"],
+    "evidence_quote": "Alice: We should schedule a follow-up meeting with the engineering team next week.",
+    "owner": "Alice",
+    "due_date": "2024-02-21"
+  }}
+]"""
+        return prompt
     
     async def extract_insights(
         self,
@@ -302,10 +361,89 @@ class OllamaProvider(LLMProvider):
         insight_types: List[str] = None,
     ) -> List[ExtractedInsight]:
         """Extract insights using Ollama."""
-        # Similar to OpenAI but using Ollama API
-        # Implementation omitted for brevity - would use aiohttp
-        logger.info("Ollama extraction not yet implemented")
-        return []
+        if not self.is_available:
+            logger.warning("Ollama not available")
+            return []
+        
+        insight_types = insight_types or ["action", "decision", "risk"]
+        
+        try:
+            import aiohttp
+            
+            prompt = self._build_extraction_prompt(transcript, insight_types)
+            
+            payload = {
+                "model": self.config.model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {
+                    "temperature": self.config.temperature,
+                    "num_predict": self.config.max_tokens,
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._base_url}/api/generate",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Ollama returned {resp.status}")
+                        return []
+                    
+                    data = await resp.json()
+                    content = data.get("response", "")
+                    
+                    if not content:
+                        return []
+                    
+                    # Parse JSON response
+                    try:
+                        insights_data = json.loads(content)
+                        if isinstance(insights_data, dict):
+                            insights_data = insights_data.get("insights", [])
+                    except json.JSONDecodeError:
+                        # Try to extract JSON from markdown code block
+                        import re
+                        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+                        if json_match:
+                            try:
+                                insights_data = json.loads(json_match.group(1))
+                            except:
+                                logger.warning(f"Failed to parse Ollama JSON response")
+                                return []
+                        else:
+                            return []
+                    
+                    insights = []
+                    for item in insights_data:
+                        try:
+                            insight = ExtractedInsight(
+                                text=item.get("text", ""),
+                                insight_type=item.get("type", "unknown"),
+                                confidence=float(item.get("confidence", 0.5)),
+                                speakers=item.get("speakers", []),
+                                timestamp_range=(0.0, 0.0),
+                                evidence_quote=item.get("evidence_quote", ""),
+                                owner=item.get("owner"),
+                                due_date=item.get("due_date"),
+                            )
+                            insights.append(insight)
+                        except Exception as e:
+                            logger.warning(f"Failed to parse Ollama insight: {e}")
+                            continue
+                    
+                    logger.info(f"Ollama extracted {len(insights)} insights")
+                    return insights
+                    
+        except ImportError:
+            logger.error("aiohttp not installed, cannot use Ollama provider")
+            return []
+        except Exception as e:
+            logger.error(f"Ollama extraction failed: {e}")
+            return []
     
     async def generate_summary(
         self,
@@ -313,8 +451,42 @@ class OllamaProvider(LLMProvider):
         max_length: int = 500,
     ) -> str:
         """Generate summary using Ollama."""
-        logger.info("Ollama summary not yet implemented")
-        return ""
+        if not self.is_available:
+            return ""
+        
+        transcript_text = "\n".join([
+            f"[{seg.get('speaker', 'Unknown')}]: {seg.get('text', '')}"
+            for seg in transcript[-50:]
+        ])
+        
+        try:
+            import aiohttp
+            
+            payload = {
+                "model": self.config.model,
+                "prompt": f"Summarize this meeting in {max_length} characters or less. Focus on key decisions and actions.\n\n{transcript_text}",
+                "stream": False,
+                "options": {
+                    "temperature": 0.3,
+                    "num_predict": 300,
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._base_url}/api/generate",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
+                ) as resp:
+                    if resp.status != 200:
+                        return ""
+                    
+                    data = await resp.json()
+                    return data.get("response", "")
+                    
+        except Exception as e:
+            logger.error(f"Ollama summary failed: {e}")
+            return ""
 
 
 class LLMProviderRegistry:

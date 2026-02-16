@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** F-001 (History readable viewer — `SessionHistoryView.swift` Summary/Transcript/JSON tabs), F-002 (Delete controls — `SessionHistoryView.swift` delete alert, `SessionStore.swift` `deleteSession`), F-003 (Search/filter — `SessionHistoryView.swift` `searchText`/`filteredSessions`). Additional: "Reveal in Finder" affordance added.
+
 # UI/UX Design Audit (EchoPanel) — Comprehensive Pass — 2026-02-04
 
 Prompt used: `prompts/ui/ui-ux-design-audit-v1.1.0.md`

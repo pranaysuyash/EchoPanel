@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** Issue 1 (server detection): `BackendManager.swift` health check. Issue 2 (connected status): TCK-20260213-036, `WebSocketStreamer.swift`. Issue 3 (audio source selection): `AppState.swift` AudioSource fix. Issue 4 (overload/no transcripts): `server/api/ws_live_listener.py` put_audio ConcurrencyController fix, `asr-overload-drop-system-20260213.md`. Issue 5 (browser audio): ScreenCaptureKit confirmed working.
+
 # Audio Pipeline Rate Limiting Issue
 
 **Date:** 2026-02-13  

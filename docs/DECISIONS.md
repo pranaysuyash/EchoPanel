@@ -16,20 +16,20 @@ This is a lightweight decision log. Prefer short entries that explain why.
 
 ## v0.3 (planned)
 
-### LLM-Powered Analysis Strategy (decided 2026-02-06)
+### LLM-Powered Analysis Strategy (decided 2026-02-06, updated 2026-02-15)
 
-**Decision**: Hybrid approach — keyword extraction as default, LLM as opt-in upgrade via user's own API key (Option D+B).
+**Decision**: Hybrid approach — keyword extraction as default, LLM as opt-in upgrade via user's own API key (cloud) OR local Ollama (Option D+B+A).
 
-**Why**: Preserves "works offline out of the box" while enabling production-quality analysis for users who want it.
+**Why**: Preserves "works offline out of the box" while enabling production-quality analysis for users who want it. Added Ollama support due to availability of lightweight 3B models (2025-2026).
 
 **Options evaluated**:
 
-| Option | Description | Rejected because |
-|--------|-------------|-----------------|
-| A: Ollama (local LLM) | Bundle or require Ollama + 2-4GB model | Requires 6-8GB RAM total (Whisper + LLM); 8GB M1 Air can't handle both; adds install friction |
-| B: User's own cloud API key | User enters OpenAI/Anthropic key in Settings | **Selected** — no infrastructure on our side, ~$0.01-0.05/meeting, audio never leaves Mac |
-| C: Our hosted API | We run the LLM, user connects to our backend | Requires servers, user accounts, auth, billing, Stripe, GDPR, on-call — too heavy for solo dev |
-| D: Hybrid default | Keyword extraction default + optional LLM | **Selected** — combined with B as the LLM path |
+| Option | Description | Status |
+|--------|-------------|--------|
+| A: Ollama (local LLM) | User installs Ollama + pulls 2-4GB model | **IMPLEMENTED** — 3B models (llama3.2, qwen2.5, gemma2) now viable on 8GB Macs |
+| B: User's own cloud API key | User enters OpenAI/Anthropic key in Settings | **IMPLEMENTED** — OpenAI GPT-4o/4o-mini supported |
+| C: Our hosted API | We run the LLM, user connects to our backend | **Rejected** — Requires servers, auth, billing, GDPR, on-call — too heavy for solo dev |
+| D: Hybrid default | Keyword extraction default + optional LLM | **IMPLEMENTED** — Always-available fallback |
 
 **Key architectural constraints**:
 - The LLM never touches audio. It only processes transcript text that ASR already produced locally.
@@ -38,16 +38,40 @@ This is a lightweight decision log. Prefer short entries that explain why.
 - No user accounts, no auth, no billing infrastructure needed. User pays their LLM provider directly.
 - Keyword extraction remains the always-available fallback (offline, zero cost, zero setup).
 
-**Implementation scope**:
-- Add `ECHOPANEL_LLM_PROVIDER` env var / Settings UI (values: `none`, `openai`, `ollama`)
-- Add `ECHOPANEL_OPENAI_API_KEY` setting (stored in macOS Keychain, not env var)
-- `analysis_stream.py`: add LLM path alongside keyword path for `extract_cards()`, `extract_entities()`, `generate_rolling_summary()`
+**Implementation scope** (completed 2026-02-15):
+- ✅ `ECHOPANEL_LLM_PROVIDER` env var / Settings UI (values: `none`, `openai`, `ollama`)
+- ✅ `ECHOPANEL_OPENAI_API_KEY` setting (stored in macOS Keychain, not env var)
+- ✅ `analysis_stream.py`: LLM path alongside keyword path for `extract_cards()`, `generate_rolling_summary()`
+- ✅ `llm_providers.py`: Provider abstraction with OpenAI + Ollama implementations
+- ✅ Settings UI: "AI Analysis" tab with VAD + LLM configuration
 - No changes to ASR pipeline, WebSocket protocol, or audio capture
 
-**What would change this decision**:
-- If Ollama adds a lightweight 1B model with good extraction quality that runs in <1GB RAM → reconsider Option A
-- If user demand for "fully offline LLM" is strong in beta feedback → add Ollama as second LLM provider
-- If we raise funding or find a co-founder → reconsider Option C (hosted API)
+**Recommended models (2026-02-15)**:
+
+| Model | Params | RAM | Context | Best For |
+|-------|--------|-----|---------|----------|
+| **gemma3:1b** | 1B | ~0.8GB | 32k | 8GB Macs, basic extraction |
+| **llama3.2:1b** | 1B | ~0.7GB | 128k | 8GB Macs, long context |
+| **gemma3:4b** | 4B | ~2.5GB | 128k | 16GB Macs, best quality |
+| **llama3.2:3b** | 3B | ~2GB | 128k | 16GB Macs, balanced |
+| **qwen2.5:7b** | 7B | ~4.5GB | 128k | 16GB+ Macs, multilingual |
+| gpt-4o-mini | - | - | - | Cloud option (best quality) |
+
+**Model Notes**:
+- **Gemma 3** (March 2025): Google's latest. 4B beats Gemma 2 27B on benchmarks. 1B perfect for 8GB Macs.
+- **Llama 3.2**: Meta's edge models. 1B for low RAM, 3B for balanced quality.
+- **Qwen2.5**: Alibaba's multilingual models. Excellent for non-English meetings.
+- **Phi-4 Mini** (3.8B): Strong reasoning alternative.
+
+**What changed the original decision**:
+- ✅ **Ollama models now viable**: 2025-2026 brought lightweight 3B models (llama3.2, qwen2.5) that run in <3GB RAM, making Whisper + LLM feasible on 8GB Macs
+- ✅ **User demand**: Beta feedback requested fully offline option
+- ✅ **Implementation complete**: See `docs/LLM_ANALYSIS_ARCHITECTURE.md`
+
+**Future considerations**:
+- MLX native provider: Bypass Ollama overhead (~13-30% speed improvement on Apple Silicon) — see [LLM_ANALYSIS_ARCHITECTURE.md](LLM_ANALYSIS_ARCHITECTURE.md)
+- Per-user custom prompts for domain-specific extraction
+- Multi-model ensemble for higher accuracy
 
 ### Commercialization Strategy (decided 2026-02-06)
 

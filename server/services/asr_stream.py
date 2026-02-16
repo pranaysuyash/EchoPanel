@@ -23,13 +23,20 @@ logger = logging.getLogger(__name__)
 
 def _get_default_config() -> ASRConfig:
     """Build ASRConfig from environment variables."""
+    # VAD enabled by default to save compute (~40% reduction in silent meetings)
+    vad_default = os.getenv("ECHOPANEL_ASR_VAD", "1") == "1"
+    
     return ASRConfig(
         model_name=os.getenv("ECHOPANEL_WHISPER_MODEL", "base.en"),
         device=os.getenv("ECHOPANEL_WHISPER_DEVICE", "auto"),
         compute_type=os.getenv("ECHOPANEL_WHISPER_COMPUTE", "int8"),
         language=os.getenv("ECHOPANEL_WHISPER_LANGUAGE", "en"),  # Default to English
         chunk_seconds=int(os.getenv("ECHOPANEL_ASR_CHUNK_SECONDS", "2")),  # PR3: Reduced from 4s
-        vad_enabled=os.getenv("ECHOPANEL_ASR_VAD", "0") == "1",  # Default OFF for now
+        vad_enabled=vad_default,
+        # VAD tuning parameters
+        vad_threshold=float(os.getenv("ECHOPANEL_VAD_THRESHOLD", "0.5")),
+        vad_min_speech_ms=int(os.getenv("ECHOPANEL_VAD_MIN_SPEECH_MS", "250")),
+        vad_min_silence_ms=int(os.getenv("ECHOPANEL_VAD_MIN_SILENCE_MS", "100")),
     )
 
 

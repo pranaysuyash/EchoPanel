@@ -87,10 +87,12 @@ final class SessionBundle {
     private var transcriptRealtime: [[String: Any]] = []
     private var transcriptFinal: [[String: Any]] = []
     private var droppedFrames: [(timestamp: TimeInterval, source: String, total: Int)] = []
+    private var voiceNotes: [[String: Any]] = []
     
     private let eventsLock = NSLock()
     private let metricsLock = NSLock()
     private let transcriptLock = NSLock()
+    private let voiceNotesLock = NSLock()
     
     private var sessionStartDate: Date?
     private var sessionEndDate: Date?
@@ -217,6 +219,47 @@ final class SessionBundle {
         transcriptLock.unlock()
     }
     
+    // MARK: - Voice Notes Recording
+    
+    func recordVoiceNote(_ note: VoiceNote) {
+        let dict: [String: Any] = [
+            "id": note.id.uuidString,
+            "text": note.text,
+            "start_time": note.startTime,
+            "end_time": note.endTime,
+            "created_at": ISO8601DateFormatter().string(from: note.createdAt),
+            "confidence": note.confidence,
+            "is_pinned": note.isPinned,
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        
+        voiceNotesLock.lock()
+        voiceNotes.append(dict)
+        voiceNotesLock.unlock()
+        
+        // Also record as event
+        recordEvent(.asrFinal, metadata: [
+            "voice_note_id": note.id.uuidString,
+            "text_length": note.text.count
+        ])
+    }
+    
+    func setVoiceNotes(_ notes: [VoiceNote]) {
+        voiceNotesLock.lock()
+        voiceNotes = notes.map { note in
+            [
+                "id": note.id.uuidString,
+                "text": note.text,
+                "start_time": note.startTime,
+                "end_time": note.endTime,
+                "created_at": ISO8601DateFormatter().string(from: note.createdAt),
+                "confidence": note.confidence,
+                "is_pinned": note.isPinned
+            ]
+        }
+        voiceNotesLock.unlock()
+    }
+    
     // MARK: - Bundle Generation
     
     func generateBundle() async throws -> URL {
@@ -315,9 +358,7 @@ final class SessionBundle {
     }
     
     private func generateEvents(bundleURL: URL) async throws {
-        eventsLock.lock()
-        let eventsCopy = events
-        eventsLock.unlock()
+        let eventsCopy = await eventsLock.withLock { events }
         
         let eventsURL = bundleURL.appendingPathComponent("events.ndjson")
         var eventsData = Data()
@@ -336,9 +377,7 @@ final class SessionBundle {
     private func generateMetrics(bundleURL: URL) async throws {
         guard configuration.includeMetrics else { return }
         
-        metricsLock.lock()
-        let metricsCopy = metrics
-        metricsLock.unlock()
+        let metricsCopy = await metricsLock.withLock { metrics }
         
         let metricsURL = bundleURL.appendingPathComponent("metrics.ndjson")
         var metricsData = Data()
@@ -371,10 +410,7 @@ final class SessionBundle {
     private func generateTranscript(bundleURL: URL) async throws {
         guard configuration.includeTranscript else { return }
         
-        transcriptLock.lock()
-        let realtimeCopy = transcriptRealtime
-        let finalCopy = transcriptFinal
-        transcriptLock.unlock()
+        let (realtimeCopy, finalCopy) = await transcriptLock.withLock { (transcriptRealtime, transcriptFinal) }
         
         // Realtime transcript
         let realtimeURL = bundleURL.appendingPathComponent("transcript_realtime.json")

@@ -419,6 +419,8 @@ extension SidePanelView {
             Group {
                 if fullInsightTab == .context {
                     fullContextPanel
+                } else if fullInsightTab == .notes {
+                    fullVoiceNotesPanel
                 } else if let mapped = fullInsightTab.mapsToSurface {
                     surfaceContent(surface: mapped)
                 } else {
@@ -592,7 +594,112 @@ extension SidePanelView {
             appState.indexContextDocument(from: url)
         }
     }
-
+    
+    // MARK: - Voice Notes Panel (VNI)
+    var fullVoiceNotesPanel: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm + 2) {
+            // Header with record button
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Voice Notes")
+                        .font(.headline)
+                    Text("Personal notes recorded during the meeting")
+                        .font(Typography.captionSmall)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Record button
+                recordVoiceNoteButton
+            }
+            
+            if appState.voiceNotes.isEmpty {
+                VStack(spacing: Spacing.sm) {
+                    Image(systemName: "mic.circle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    Text("No voice notes yet")
+                        .font(Typography.caption)
+                        .foregroundColor(.secondary)
+                    Text("Press ⌘⇧V to record a voice note")
+                        .font(Typography.captionSmall)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 150)
+            } else {
+                ScrollView {
+                    VStack(spacing: Spacing.sm) {
+                        // Sort by pinned first, then by creation time (newest first)
+                        let sortedNotes = appState.voiceNotes.sorted { note1, note2 in
+                            if note1.isPinned != note2.isPinned {
+                                return note1.isPinned
+                            }
+                            return note1.createdAt > note2.createdAt
+                        }
+                        
+                        ForEach(sortedNotes) { note in
+                            voiceNoteCard(note)
+                        }
+                    }
+                }
+            }
+            
+            // Recording indicator
+            if appState.isRecordingVoiceNote {
+                voiceNoteRecordingIndicator
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+    
+    func voiceNoteCard(_ note: VoiceNote) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack {
+                // Time badge
+                Text(formatTime(note.startTime))
+                    .font(Typography.captionSmall)
+                    .foregroundColor(.secondary)
+                
+                if note.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+                
+                Spacer()
+                
+                // Pin button
+                Button {
+                    appState.toggleVoiceNotePin(id: note.id)
+                } label: {
+                    Image(systemName: note.isPinned ? "pin.slash" : "pin")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help(note.isPinned ? "Unpin note" : "Pin note")
+                
+                // Delete button
+                Button(role: .destructive) {
+                    appState.deleteVoiceNote(id: note.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Delete note")
+            }
+            
+            Text(note.text)
+                .font(.footnote)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.sm)
+        .background(BackgroundStyle.control.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
+    }
+    
     // MARK: - Timeline Strip (HIG Fix: Added accessibility)
     var fullTimelineStrip: some View {
         VStack(spacing: 6) {

@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** Server default config uses `base.en` as recommended. HF token propagation implemented in `server/main.py` (`_sync_huggingface_token_env()`). Server health: READY with model=base.en, provider=faster_whisper.
+
 # ASR Streaming Model Matrix (Local) — 2026-02-13
 
 Goal: pick a default end-user meeting configuration that does not drop system audio under realtime streaming on this machine.

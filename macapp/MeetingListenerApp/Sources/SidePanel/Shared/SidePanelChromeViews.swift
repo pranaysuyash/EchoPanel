@@ -386,4 +386,59 @@ extension SidePanelView {
             withAnimation(.easeOut(duration: AnimationDuration.standard), updates)
         }
     }
+    
+    // MARK: - Voice Note UI
+    /// Recording indicator shown when voice note is being recorded
+    var voiceNoteRecordingIndicator: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .modifier(PulsingDot())
+            Text("Recording")
+                .font(Typography.captionSmall)
+                .foregroundColor(.red)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.red.opacity(0.15))
+        .clipShape(Capsule())
+        .accessibilityLabel("Voice note recording in progress")
+    }
+    
+    /// Button to toggle voice note recording
+    var recordVoiceNoteButton: some View {
+        Button {
+            Task {
+                await appState.toggleVoiceNoteRecording()
+            }
+        } label: {
+            Image(systemName: appState.isRecordingVoiceNote ? "stop.circle.fill" : "mic.circle")
+                .font(.title3)
+                .foregroundColor(appState.isRecordingVoiceNote ? .red : .accentColor)
+        }
+        .buttonStyle(.plain)
+        .help(appState.isRecordingVoiceNote ? "Stop voice note (⌘⇧V)" : "Record voice note (⌘⇧V)")
+        .accessibilityLabel(appState.isRecordingVoiceNote ? "Stop voice note recording" : "Start voice note recording")
+        .disabled(appState.sessionState != .listening)
+    }
+    
+    // MARK: - Pulsing Dot Animation
+    struct PulsingDot: ViewModifier {
+        @State private var isPulsing = false
+        
+        func body(content: Content) -> some View {
+            content
+                .scaleEffect(isPulsing ? 1.2 : 1.0)
+                .opacity(isPulsing ? 0.7 : 1.0)
+                .animation(
+                    Animation.easeInOut(duration: 0.8)
+                        .repeatForever(autoreverses: true),
+                    value: isPulsing
+                )
+                .onAppear {
+                    isPulsing = true
+                }
+        }
+    }
 }

@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** TCK-20260209-004 (original pass), TCK-20260213-017 (follow-up rotor channels), TCK-20260213-061 (focus indicator), SidePanel/Shared/SidePanelTranscriptSurfaces.swift, SidePanel/Full/SidePanelFullViews.swift, SidePanel/Roll/SidePanelRollViews.swift, SidePanel/Compact/SidePanelCompactViews.swift, SidePanel/Shared/SidePanelStateLogic.swift
+
 # Accessibility Deep Pass Report
 
 Date: 2026-02-09

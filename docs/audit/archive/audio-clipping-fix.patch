@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** Patch applied to both AudioCaptureManager.swift and MicrophoneCaptureManager.swift.
+> See implementation refs: `macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift` (applyLimiter),
+> `macapp/MeetingListenerApp/Sources/MicrophoneCaptureManager.swift` (applyLimiter),
+> `macapp/MeetingListenerApp/Tests/AudioLimiterTests.swift`.
+
 From: Audio Engineering Review <review@echopanel.local>
 Date: Tue, 11 Feb 2026 00:00:00 +0000
 Subject: [PATCH] P0-2: Add limiter before float->int conversion to prevent hard clipping

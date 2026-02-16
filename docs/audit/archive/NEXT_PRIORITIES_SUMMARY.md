@@ -1,3 +1,6 @@
+> **📁 ARCHIVED (2026-02-15):** Reference/planning document. Moved to archive.
+> Superseded by `docs/WORKLOG_TICKETS.md` and `SENIOR_STAKEHOLDER_RED_TEAM_REVIEW_20260214.md`.
+
 # EchoPanel — Next Agent Review Priorities
 
 **Date:** 2026-02-09  

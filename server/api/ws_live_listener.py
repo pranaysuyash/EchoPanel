@@ -21,6 +21,7 @@ from server.services.concurrency_controller import (
     BackpressureLevel,
 )
 from server.services.degrade_ladder import DegradeLadder, DegradeLevel
+from server.services.screen_ocr import get_ocr_handler, OCRFrameHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -116,6 +117,10 @@ class SessionState:
     recording_files: Dict[str, Any] = field(default_factory=dict)  # source -> file handles
     recording_paths: Dict[str, Path] = field(default_factory=dict)  # source -> file paths
     recording_bytes_written: Dict[str, int] = field(default_factory=dict)  # source -> bytes
+    # VNI: Voice note support
+    voice_note_buffer: bytearray = field(default_factory=bytearray)  # Buffer for voice note audio
+    voice_note_started: bool = False  # Whether voice note session is active
+    voice_note_asr_task: Optional[asyncio.Task] = None  # ASR task for voice note
 
 
 def _normalize_source(source: Optional[str]) -> str:
@@ -1013,6 +1018,80 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
         return
 
 
+async def _transcribe_voice_note(websocket: WebSocket, state: SessionState, audio_data: bytes) -> None:
+    """VNI: Transcribe voice note audio and send transcript back to client."""
+    if not audio_data:
+        logger.warning("Voice note audio data is empty")
+        await ws_send(state, websocket, {
+            "type": "voice_note_transcript",
+            "text": "",
+            "duration": 0.0,
+            "error": "No audio data"
+        })
+        return
+    
+    try:
+        # Calculate duration
+        duration_seconds = len(audio_data) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+        
+        if DEBUG:
+            logger.debug(f"Transcribing voice note: {len(audio_data)} bytes ({duration_seconds:.2f}s)")
+        
+        # Import ASR streaming function
+        from server.services.asr_stream import _get_default_config, stream_asr
+        
+        # Get ASR config
+        config = _get_default_config()
+        
+        # Create a queue for the voice note audio
+        queue = asyncio.Queue()
+        
+        # Put all audio data into queue in one chunk
+        await queue.put(audio_data)
+        await queue.put(None)  # Signal EOF
+        
+        # Create a simple async iterator for the queue
+        async def audio_stream():
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        
+        # Stream ASR for voice note
+        transcript_parts = []
+        
+        async for result in stream_asr(audio_stream(), config, sample_rate=SAMPLE_RATE):
+            if result.text and not result.text.startswith("  "):
+                transcript_parts.append(result.text.strip())
+        
+        # Combine transcript parts
+        final_transcript = " ".join(transcript_parts)
+        
+        if DEBUG:
+            logger.debug(f"Voice note transcript: {final_transcript[:100]}...")
+        
+        # Send transcript back to client
+        await ws_send(state, websocket, {
+            "type": "voice_note_transcript",
+            "text": final_transcript,
+            "duration": duration_seconds
+        })
+        
+    except Exception as e:
+        logger.error(f"Voice note transcription failed: {e}")
+        await ws_send(state, websocket, {
+            "type": "voice_note_transcript",
+            "text": "",
+            "duration": 0.0,
+            "error": str(e)
+        })
+    finally:
+        state.voice_note_buffer.clear()
+        state.voice_note_asr_task = None
+
+
+
 async def _on_degrade_level_change(
     websocket: WebSocket, 
     state: SessionState, 
@@ -1349,6 +1428,98 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             
                             await put_audio(q, chunk, state=state, source=source, websocket=websocket)
                             _append_diarization_audio(state, source, chunk)
+
+                    elif msg_type == "screen_frame":
+                        # OCR Pipeline: Process screen capture frame
+                        if state.started:
+                            try:
+                                ocr_handler = get_ocr_handler()
+                                if ocr_handler.enabled:
+                                    image_data = payload.get("image_data", "")
+                                    timestamp = payload.get("timestamp", time.time())
+                                    
+                                    result = await ocr_handler.handle_frame(
+                                        image_base64=image_data,
+                                        session_id=state.session_id or "unknown",
+                                        timestamp=timestamp
+                                    )
+                                    
+                                    # Send result back to client
+                                    await ws_send(state, websocket, {
+                                        "type": "ocr_result",
+                                        "timestamp": timestamp,
+                                        "success": result.success,
+                                        "text_preview": result.text[:100] + "..." if len(result.text) > 100 else result.text,
+                                        "word_count": result.word_count,
+                                        "confidence": round(result.confidence, 1),
+                                        "indexed": result.should_index,
+                                        "is_duplicate": result.is_duplicate,
+                                        "processing_time_ms": round(result.processing_time_ms, 1),
+                                    })
+                                    
+                                    if DEBUG:
+                                        logger.debug(f"OCR processed: {result.word_count} words, {result.confidence:.1f}% confidence")
+                                else:
+                                    if DEBUG:
+                                        logger.debug("OCR disabled, ignoring screen frame")
+                            except Exception as e:
+                                logger.error(f"OCR processing error: {e}")
+                                await ws_send(state, websocket, {
+                                    "type": "ocr_result",
+                                    "timestamp": time.time(),
+                                    "success": False,
+                                    "error": str(e),
+                                })
+
+                    elif msg_type == "voice_note_start":
+                        # VNI: Start voice note session
+                        voice_note_id = payload.get("session_id", str(uuid.uuid4()))
+                        if DEBUG:
+                            logger.debug(f"ws_live_listener: voice note started: {voice_note_id}")
+                        
+                        state.voice_note_buffer.clear()
+                        state.voice_note_started = True
+                        
+                        await ws_send(state, websocket, {
+                            "type": "voice_note_started",
+                            "session_id": voice_note_id
+                        })
+
+                    elif msg_type == "voice_note_audio":
+                        # VNI: Receive voice note audio data
+                        if not state.voice_note_started:
+                            logger.warning("Received voice_note_audio without session start")
+                            return
+                        
+                        b64_data = payload.get("data", "")
+                        chunk = base64.b64decode(b64_data)
+                        state.voice_note_buffer.extend(chunk)
+                        
+                        if DEBUG:
+                            logger.debug(f"ws_live_listener: voice note audio received: {len(chunk)} bytes, total: {len(state.voice_note_buffer)} bytes")
+
+                    elif msg_type == "voice_note_stop":
+                        # VNI: Stop voice note and transcribe
+                        if not state.voice_note_started:
+                            logger.warning("Received voice_note_stop without session start")
+                            return
+                        
+                        if DEBUG:
+                            logger.debug(f"ws_live_listener: voice note stopped, transcribing {len(state.voice_note_buffer)} bytes")
+                        
+                        # Cancel any existing ASR task
+                        if state.voice_note_asr_task:
+                            state.voice_note_asr_task.cancel()
+                            try:
+                                await state.voice_note_asr_task
+                            except asyncio.CancelledError:
+                                pass
+                        
+                        # Run ASR on voice note buffer
+                        state.voice_note_started = False
+                        state.voice_note_asr_task = asyncio.create_task(
+                            _transcribe_voice_note(websocket, state, bytes(state.voice_note_buffer))
+                        )
 
                     elif msg_type == "stop":
                         # Signal EOF to all queues

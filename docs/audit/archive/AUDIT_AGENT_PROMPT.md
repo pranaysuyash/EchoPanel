@@ -1,3 +1,5 @@
+> **📁 ARCHIVED (2026-02-15):** Template/prompt document. Moved to archive.
+
 # EchoPanel Audit Verification & Remediation Agent Prompt
 
 ## Mission

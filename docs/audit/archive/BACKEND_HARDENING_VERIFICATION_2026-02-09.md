@@ -1,3 +1,8 @@
+> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
+> See implementation references below. Original audit preserved for historical context.
+>
+> **Implementation refs:** P0-1 KeychainHelper migration (✅), P0-2 terminateGracefully SIGTERM→SIGKILL (✅), P0-3 crash recovery with backoff (✅), P0-4 #if DEBUG wrapper (✅), P1-1 log redaction (✅), P1-2 asyncio.wait_for timeout (✅), P1-3 logger.debug migration (✅). Residual P2/P3 risks accepted and tracked separately. SessionStore path sanitization resolved TCK-20260213-025.
+
 # Backend Hardening Verification Report
 **Ticket:** TCK-20260209-003  
 **Type:** HARDENING / VERIFICATION  

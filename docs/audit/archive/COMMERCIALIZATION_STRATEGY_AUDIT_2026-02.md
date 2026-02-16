@@ -1,3 +1,6 @@
+> **📁 ARCHIVED (2026-02-15):** Reference/planning document. Moved to archive.
+> Superseded by current implementation and `docs/STATUS_AND_ROADMAP.md`.
+
 # EchoPanel — Commercialization vs Open Source vs Showcase Audit
 
 **Date**: 2026-02-06

@@ -6,6 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.115.6",
     "huggingface-hub>=0.34.0,<1.0",
+    "mlx-audio>=0.2.9",
+    "Pillow>=10.0.0",
+    "pytesseract>=0.3.10",
     "pywhispercpp>=1.4.1",
     "qwen-asr>=0.0.6",
     "uvicorn[standard]==0.34.0",
