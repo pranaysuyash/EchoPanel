@@ -224,6 +224,9 @@ Verify the app and local backend behave gracefully when the machine is offline.
   - Command: `./scripts/verify_offline_graceful.sh`
   - Result: Online access detected; requires network disable to proceed
   - Blocker: Offline mode not enabled in this environment
+- [2026-02-15] Retried offline verification | Evidence:
+  - Command: `./scripts/verify_offline_graceful.sh`
+  - Result: Online access detected; requires network disable to proceed
 
 ---
 
