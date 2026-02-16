@@ -265,14 +265,14 @@ Do everything +:
 
 ## Ticket Mapping
 
-| This Doc | Worklog Ticket | Status |
-|----------|---------------|--------|
-| Phase 1.1 | TCK-20260214-080 (Quick Wins) | OPEN |
-| Phase 1.2 | TCK-20260214-077 (Thread Safety) | IN_PROGRESS |
-| Phase 2 | TCK-20260214-081 (Hardening) | OPEN |
-| Phase 3A | TCK-20260214-082 (Real-time) | OPEN |
-| Phase 3B | TCK-20260214-083 (OCR Pipeline) | OPEN |
-| Phase 3C | TCK-20260214-084 (ML NER) | OPEN |
+| This Doc | Worklog Ticket | Status | Discussion |
+|----------|---------------|--------|------------|
+| Phase 1.1 | TCK-20260214-080 (Quick Wins) | DONE | N/A |
+| Phase 1.2 | TCK-20260214-077 (Thread Safety) | DONE | N/A |
+| Phase 2 | TCK-20260214-081 (Hardening) | OPEN | N/A |
+| Phase 3A | TCK-20260214-082 (Real-time) | OPEN | N/A |
+| Phase 3B | TCK-20260214-083 (OCR Pipeline) | OPEN | `docs/discussions/DISCUSSION_OCR_PIPELINE_2026-02-14.md` |
+| Phase 3C | TCK-20260214-084 (ML NER) | OPEN | N/A |
 
 ---
 

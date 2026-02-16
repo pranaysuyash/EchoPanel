@@ -9,6 +9,7 @@ dependencies = [
     "pywhispercpp>=1.4.1",
     "qwen-asr>=0.0.6",
     "uvicorn[standard]==0.34.0",
+    "vllm>=0.7.3",
     "websockets==14.1",
 ]
 

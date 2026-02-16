@@ -1,6 +1,6 @@
 # Docs-Derived Backlog
 
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-02-15
 
 Backlog items extracted from documentation and embedded workflow artifacts. Each item links to evidence in source docs.
 
@@ -9,7 +9,7 @@ Backlog items extracted from documentation and embedded workflow artifacts. Each
 | ID | Source | Type | Description | Evidence Snippet | Owner Area | Risk / Blast Radius | Effort | Dependencies | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | DOC-001 | `docs/STATUS_AND_ROADMAP.md` → “Known Limitations” | governance | Code signing and notarization remain blocked; distribution cannot proceed. | “Code signing… requires Apple Developer Program… Notarization… blocked by code signing.” | infra | High / distribution | S | Apple Developer Program | blocked |
-| DOC-002 | `docs/STATUS_AND_ROADMAP.md` → “Pre-Launch Checklist” | qa | Validate graceful behavior when offline. | “Test with no internet (graceful degradation)” | qa | Med / runtime behavior | S | None | new |
+| DOC-002 | `docs/STATUS_AND_ROADMAP.md` → “Pre-Launch Checklist” | qa | Validate graceful behavior when offline. | “Test with no internet (graceful degradation)” | qa | Med / runtime behavior | S | Offline network disable for verification | blocked |
 | DOC-003 | `docs/STATUS_AND_ROADMAP.md` → “Pre-Launch Checklist” | qa | Validate behavior when permissions are denied. | “Test with denied permissions” | qa | Med / permissions UX | S | None | new |
 | DOC-004 | `docs/STATUS_AND_ROADMAP.md` → “Pre-Launch Checklist” | design | App icon design not completed. | “App icon design” | ui | Low / brand | M | Design assets | new |
 | DOC-005 | `docs/STATUS_AND_ROADMAP.md` → “Pre-Launch Checklist” | product | App Store metadata not prepared. | “App Store metadata” | product | Med / launch | M | Marketing copy | new |
