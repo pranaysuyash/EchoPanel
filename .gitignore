@@ -37,3 +37,17 @@ output/playwright/
 # Local per-developer agent/session/context files
 .agent/
 .agent/*
+
+# Local model weights / large artifacts (do not commit)
+models/
+*.safetensors
+*.gguf
+*.bin
+
+# Local app bundle build outputs
+*.app/
+*.dmg
+
+# Local hook manager generated files
+.githooks/post-*
+.githooks/pre-push

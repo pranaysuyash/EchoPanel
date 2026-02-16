@@ -262,6 +262,16 @@ final class SessionBundle {
     
     // MARK: - Bundle Generation
     
+    private func generateVoiceNotes(bundleURL: URL) async throws {
+        let voiceNotesCopy = await voiceNotesLock.withLock { voiceNotes }
+        
+        guard !voiceNotesCopy.isEmpty else { return }
+        
+        let voiceNotesURL = bundleURL.appendingPathComponent("voice_notes.json")
+        let data = try JSONSerialization.data(withJSONObject: voiceNotesCopy, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: voiceNotesURL)
+    }
+    
     func generateBundle() async throws -> URL {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
@@ -424,16 +434,6 @@ final class SessionBundle {
             let finalData = try JSONSerialization.data(withJSONObject: finalCopy, options: [.prettyPrinted, .sortedKeys])
             try finalData.write(to: finalURL)
         }
-    }
-    
-    private func generateVoiceNotes(bundleURL: URL) async throws {
-        let voiceNotesCopy = await voiceNotesLock.withLock { voiceNotes }
-        
-        guard !voiceNotesCopy.isEmpty else { return }
-        
-        let voiceNotesURL = bundleURL.appendingPathComponent("voice_notes.json")
-        let data = try JSONSerialization.data(withJSONObject: voiceNotesCopy, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: voiceNotesURL)
     }
     
     private func generateDropsSummary(bundleURL: URL) async throws {

@@ -6,6 +6,12 @@
 
 > **Update (2026-02-16):** This file is a design exploration input, not the execution backlog source of truth.
 > Use `docs/WORKLOG_TICKETS.md` for implementation status and `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md` for exploration-to-ticket mapping.
+> Phase 1 backlog candidates from this document are now ticketized as:
+> `TCK-20260216-005` (companion panel form factor),
+> `TCK-20260216-006` (live panel source selector),
+> `TCK-20260216-007` (partial/final transcript differentiation),
+> `TCK-20260216-008` (live speaker labels),
+> `TCK-20260216-009` (Narrow/Medium/Wide presets).
 
 ---
 

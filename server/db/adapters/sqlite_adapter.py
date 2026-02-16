@@ -32,14 +32,18 @@ class SQLiteAdapter(StorageAdapter):
         super().__init__(config)
         self.db_path = Path(config.sqlite_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection: Optional[aiosqlite.Connection] = None
+    
+    async def _connect(self) -> aiosqlite.Connection:
+        """Create a new database connection."""
+        conn = await aiosqlite.connect(str(self.db_path))
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA foreign_keys = ON")
+        return conn
     
     async def initialize(self) -> None:
         """Initialize the database (create tables, indexes, FTS)."""
-        async with self._get_connection() as conn:
-            # Enable foreign keys
-            await conn.execute("PRAGMA foreign_keys = ON")
-            
+        conn = await self._connect()
+        try:
             # Create sessions table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -132,24 +136,19 @@ class SQLiteAdapter(StorageAdapter):
             """)
             
             await conn.commit()
+        finally:
+            await conn.close()
     
     async def close(self) -> None:
-        """Close database connection."""
-        if self._connection:
-            await self._connection.close()
-            self._connection = None
-    
-    def _get_connection(self) -> aiosqlite.Connection:
-        """Get or create database connection."""
-        if self._connection is None:
-            self._connection = aiosqlite.connect(str(self.db_path))
-        return self._connection
+        """Close database connection (no-op for per-operation connections)."""
+        pass
     
     # Session operations
     
     async def create_session(self, session: Session) -> Session:
         """Create a new recording session."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             await conn.execute(
                 """
                 INSERT INTO sessions 
@@ -173,10 +172,13 @@ class SQLiteAdapter(StorageAdapter):
             )
             await conn.commit()
             return session
+        finally:
+            await conn.close()
     
     async def get_session(self, session_id: UUID) -> Optional[Session]:
         """Get a session by ID."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             cursor = await conn.execute(
                 "SELECT * FROM sessions WHERE id = ?",
                 (str(session_id),)
@@ -185,12 +187,15 @@ class SQLiteAdapter(StorageAdapter):
             if row:
                 return self._row_to_session(row)
             return None
+        finally:
+            await conn.close()
     
     async def update_session(self, session: Session) -> Session:
         """Update an existing session."""
         session.last_modified = datetime.utcnow()
         
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             await conn.execute(
                 """
                 UPDATE sessions SET
@@ -220,6 +225,8 @@ class SQLiteAdapter(StorageAdapter):
             )
             await conn.commit()
             return session
+        finally:
+            await conn.close()
     
     async def end_session(self, session_id: UUID) -> Optional[Session]:
         """Mark a session as ended."""
@@ -236,7 +243,8 @@ class SQLiteAdapter(StorageAdapter):
         pinned_only: bool = False
     ) -> List[Session]:
         """List sessions, most recent first."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             if pinned_only:
                 cursor = await conn.execute(
                     """
@@ -259,22 +267,28 @@ class SQLiteAdapter(StorageAdapter):
             
             rows = await cursor.fetchall()
             return [self._row_to_session(row) for row in rows]
+        finally:
+            await conn.close()
     
     async def delete_session(self, session_id: UUID) -> bool:
         """Delete a session and all its segments."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             cursor = await conn.execute(
                 "DELETE FROM sessions WHERE id = ?",
                 (str(session_id),)
             )
             await conn.commit()
             return cursor.rowcount > 0
+        finally:
+            await conn.close()
     
     # Segment operations
     
     async def save_segment(self, segment: TranscriptSegment) -> TranscriptSegment:
         """Save a transcript segment."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             await conn.execute(
                 """
                 INSERT INTO transcript_segments 
@@ -297,10 +311,13 @@ class SQLiteAdapter(StorageAdapter):
             )
             await conn.commit()
             return segment
+        finally:
+            await conn.close()
     
     async def save_segments(self, segments: List[TranscriptSegment]) -> List[TranscriptSegment]:
         """Save multiple segments (batch insert)."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             data = [
                 (
                     str(s.id),
@@ -327,10 +344,13 @@ class SQLiteAdapter(StorageAdapter):
             )
             await conn.commit()
             return segments
+        finally:
+            await conn.close()
     
     async def get_segment(self, segment_id: UUID) -> Optional[TranscriptSegment]:
         """Get a segment by ID."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             cursor = await conn.execute(
                 "SELECT * FROM transcript_segments WHERE id = ?",
                 (str(segment_id),)
@@ -339,6 +359,8 @@ class SQLiteAdapter(StorageAdapter):
             if row:
                 return self._row_to_segment(row)
             return None
+        finally:
+            await conn.close()
     
     async def get_segments_by_session(
         self,
@@ -347,7 +369,8 @@ class SQLiteAdapter(StorageAdapter):
         offset: int = 0
     ) -> List[TranscriptSegment]:
         """Get all segments for a session, ordered by timestamp."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             cursor = await conn.execute(
                 """
                 SELECT * FROM transcript_segments 
@@ -359,6 +382,8 @@ class SQLiteAdapter(StorageAdapter):
             )
             rows = await cursor.fetchall()
             return [self._row_to_segment(row) for row in rows]
+        finally:
+            await conn.close()
     
     async def get_segment_context(
         self,
@@ -370,8 +395,8 @@ class SQLiteAdapter(StorageAdapter):
         if not segment:
             return [], None, []
         
-        # Get context by temporal proximity
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             # Before
             cursor = await conn.execute(
                 """
@@ -399,6 +424,8 @@ class SQLiteAdapter(StorageAdapter):
             after = [self._row_to_segment(row) for row in after_rows]
             
             return before, segment, after
+        finally:
+            await conn.close()
     
     # Search operations
     
@@ -412,7 +439,8 @@ class SQLiteAdapter(StorageAdapter):
         """Full-text search with filters using FTS5."""
         filters = filters or SearchFilters()
         
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             # Build query with FTS5 and filters
             sql = """
                 SELECT ts.*, s.*, rank
@@ -432,13 +460,16 @@ class SQLiteAdapter(StorageAdapter):
                 params.append(filters.time_range_end.isoformat())
             if filters.source_filter:
                 sources = [s.value for s in filters.source_filter]
-                sql += f" AND ts.source IN ({','.join('?' * len(sources))})"
+                placeholders = ','.join('?' * len(sources))
+                sql += f" AND ts.source IN ({placeholders})"
                 params.extend(sources)
             if filters.speaker_filter:
-                sql += f" AND ts.speaker_id IN ({','.join('?' * len(filters.speaker_filter))})"
+                placeholders = ','.join('?' * len(filters.speaker_filter))
+                sql += f" AND ts.speaker_id IN ({placeholders})"
                 params.extend(filters.speaker_filter)
             if filters.session_ids:
-                sql += f" AND ts.session_id IN ({','.join('?' * len(filters.session_ids))})"
+                placeholders = ','.join('?' * len(filters.session_ids))
+                sql += f" AND ts.session_id IN ({placeholders})"
                 params.extend([str(sid) for sid in filters.session_ids])
             if filters.min_confidence > 0:
                 sql += " AND ts.confidence >= ?"
@@ -467,6 +498,8 @@ class SQLiteAdapter(StorageAdapter):
                 ))
             
             return results
+        finally:
+            await conn.close()
     
     async def semantic_search(
         self,
@@ -475,8 +508,6 @@ class SQLiteAdapter(StorageAdapter):
         limit: int = 20
     ) -> List[SearchResult]:
         """Vector similarity search (not implemented in SQLite without extension)."""
-        # SQLite doesn't support vector search natively
-        # This would require an extension or fallback to keyword search
         raise NotImplementedError(
             "Semantic search requires PostgreSQL with pgvector or a vector database. "
             "Use keyword search with SQLite."
@@ -486,7 +517,8 @@ class SQLiteAdapter(StorageAdapter):
     
     async def get_stats(self) -> dict:
         """Get storage statistics."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             # Session count
             cursor = await conn.execute("SELECT COUNT(*) FROM sessions")
             session_count = (await cursor.fetchone())[0]
@@ -513,20 +545,26 @@ class SQLiteAdapter(StorageAdapter):
                 "oldest_session": row[0],
                 "newest_session": row[1]
             }
+        finally:
+            await conn.close()
     
     async def compact(self) -> None:
         """Compact/optimize the database."""
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             await conn.execute("VACUUM")
             await conn.execute("ANALYZE")
             await conn.commit()
+        finally:
+            await conn.close()
     
     async def delete_old_sessions(self, days: int = 90) -> int:
         """Delete sessions older than N days (except pinned)."""
         cutoff = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
         cutoff_iso = datetime.fromtimestamp(cutoff).isoformat()
         
-        async with self._get_connection() as conn:
+        conn = await self._connect()
+        try:
             cursor = await conn.execute(
                 """
                 DELETE FROM sessions 
@@ -536,13 +574,18 @@ class SQLiteAdapter(StorageAdapter):
             )
             await conn.commit()
             return cursor.rowcount
+        finally:
+            await conn.close()
     
     async def health_check(self) -> bool:
         """Check if storage is healthy."""
         try:
-            async with self._get_connection() as conn:
+            conn = await self._connect()
+            try:
                 await conn.execute("SELECT 1")
                 return True
+            finally:
+                await conn.close()
         except Exception:
             return False
     
@@ -551,7 +594,14 @@ class SQLiteAdapter(StorageAdapter):
     def _row_to_session(self, row: sqlite3.Row, prefix: str = "") -> Session:
         """Convert a database row to a Session object."""
         def get(col: str):
-            return row[f"{prefix}{col}"] if prefix else row[col]
+            key = f"{prefix}{col}" if prefix else col
+            try:
+                return row[key]
+            except IndexError:
+                # Fallback: try without prefix if with prefix fails
+                if prefix:
+                    return row[col]
+                raise
         
         return Session(
             id=UUID(get("id")),

@@ -6,6 +6,10 @@
 **Ticket:** TCK-20260214-084 (created in WORKLOG_TICKETS.md)  
 **Source:** `docs/IMPLEMENTATION_ROADMAP_2026-02-14.md` - Phase 3 Strategic Capabilities
 
+> **Update (2026-02-16):** OCR planning and partial implementation were reconciled in backlog docs.
+> Implemented/planned artifacts are tracked under `TCK-20260214-084` and `TCK-20260214-089` (DONE), with remaining completion work ticketized as `TCK-20260216-012` (OPEN).
+> Use `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md` and `docs/WORKLOG_TICKETS.md` for current status.
+
 ---
 
 ## 1. Executive Summary

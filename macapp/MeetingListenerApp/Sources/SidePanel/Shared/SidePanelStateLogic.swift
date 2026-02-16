@@ -746,12 +746,12 @@ extension SidePanelView {
         case transcript(TranscriptSegment)
         case voiceNote(VoiceNote)
         
-        var id: String {
+        var id: UUID {
             switch self {
             case .transcript(let segment):
                 return segment.id
             case .voiceNote(let note):
-                return note.id.uuidString
+                return note.id
             }
         }
         

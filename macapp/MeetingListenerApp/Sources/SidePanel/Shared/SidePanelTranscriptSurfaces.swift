@@ -62,14 +62,65 @@ extension SidePanelView {
         // VNI: Use timeline items for Roll/Compact modes to show voice note markers
         if style == .full {
             // Full mode uses only transcript segments
-            return fullTranscriptRows(style: style, spacing: spacing)
+            return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
+                if visibleTranscriptSegments.isEmpty {
+                    emptyTranscriptState
+                } else {
+                    ForEach(Array(visibleTranscriptSegments.enumerated()), id: \.element.id) { index, segment in
+                        transcriptRow(segment: segment)
+                            .id(segment.id)
+                            .transaction { transaction in
+                                if appState.sessionState == .listening && !transcriptUI.followLive {
+                                    transaction.animation = nil
+                                }
+                            }
+                    }
+                }
+            }
+            .padding(.vertical, spacing.verticalPadding)
+            .padding(.horizontal, spacing.horizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .gesture(
+                DragGesture(minimumDistance: 3).onChanged { _ in
+                    if transcriptUI.followLive {
+                        transcriptUI.followLive = false
+                    }
+                }
+            )
         } else {
             // Roll/Compact modes use timeline items (transcript + voice notes)
-            return timelineRows(style: style, spacing: spacing)
+            let items = visibleTimelineItems
+            return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
+                if items.isEmpty {
+                    emptyTranscriptState
+                } else {
+                    ForEach(items) { item in
+                        timelineRow(item: item, style: style)
+                            .transaction { transaction in
+                                if appState.sessionState == .listening && !transcriptUI.followLive {
+                                    transaction.animation = nil
+                                }
+                            }
+                    }
+                }
+            }
+            .padding(.vertical, spacing.verticalPadding)
+            .padding(.horizontal, spacing.horizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .gesture(
+                DragGesture(minimumDistance: 3).onChanged { _ in
+                    if transcriptUI.followLive {
+                        transcriptUI.followLive = false
+                    }
+                }
+            )
         }
     }
+    }
     
-    private func fullTranscriptRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> some View {
+    private func fullTranscriptRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> LazyVStack<Any, EmptyView> {
         LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
             if visibleTranscriptSegments.isEmpty {
                 emptyTranscriptState
@@ -85,20 +136,9 @@ extension SidePanelView {
                 }
             }
         }
-        .padding(.vertical, spacing.verticalPadding)
-        .padding(.horizontal, spacing.horizontalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .gesture(
-            DragGesture(minimumDistance: 3).onChanged { _ in
-                if transcriptUI.followLive {
-                    transcriptUI.followLive = false
-                }
-            }
-        )
     }
     
-    private func timelineRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> some View {
+    private func timelineRows(style: TranscriptStyle, spacing: ViewModeSpacing) -> LazyVStack<Any, EmptyView> {
         let items = visibleTimelineItems
         
         return LazyVStack(alignment: .leading, spacing: spacing.rowSpacing) {
@@ -115,17 +155,21 @@ extension SidePanelView {
                 }
             }
         }
-        .padding(.vertical, spacing.verticalPadding)
-        .padding(.horizontal, spacing.horizontalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .gesture(
-            DragGesture(minimumDistance: 3).onChanged { _ in
-                if transcriptUI.followLive {
-                    transcriptUI.followLive = false
+    }
+    
+    private func transcriptRowsWithModifiers<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.vertical, spacing.verticalPadding)
+            .padding(.horizontal, spacing.horizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .gesture(
+                DragGesture(minimumDistance: 3).onChanged { _ in
+                    if transcriptUI.followLive {
+                        transcriptUI.followLive = false
+                    }
                 }
-            }
-        )
+            )
     }
     
     private func timelineRow(item: TimelineItem, style: TranscriptStyle) -> some View {
@@ -178,23 +222,7 @@ extension SidePanelView {
         }
         .accessibilityLabel("Voice note: \(note.text)")
     }
-                        }
-                }
-            }
-        }
-        .padding(.vertical, spacing.verticalPadding)
-        .padding(.horizontal, spacing.horizontalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .gesture(
-            DragGesture(minimumDistance: 3).onChanged { _ in
-                if transcriptUI.followLive {
-                    transcriptUI.followLive = false
-                }
-            }
-        )
-    }
-
+    
     private func transcriptRow(segment: TranscriptSegment) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             TranscriptLineRow(
