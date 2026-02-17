@@ -3,7 +3,6 @@
 Provides REST API for reading and writing configuration.
 """
 
-import hmac
 import logging
 import os
 from typing import Optional
@@ -19,36 +18,11 @@ from server.config import (
     save_config
 )
 from server.db import get_storage_adapter, StorageConfig
+from server.security import require_http_auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/config", tags=["config"])
-
-AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
-
-
-def _extract_token(request: Request) -> str:
-    query_token = request.query_params.get("token", "").strip()
-    if query_token:
-        return query_token
-
-    header_token = request.headers.get("x-echopanel-token", "").strip()
-    if header_token:
-        return header_token
-
-    auth_header = request.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-    return ""
-
-
-def _require_http_auth(request: Request) -> None:
-    required_token = os.getenv(AUTH_TOKEN_ENV, "").strip()
-    if not required_token:
-        return
-    provided_token = _extract_token(request)
-    if not provided_token or not hmac.compare_digest(provided_token, required_token):
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # Pydantic models for API
@@ -97,7 +71,7 @@ async def get_configuration(request: Request) -> ConfigResponse:
     Returns the current configuration with sensitive values
     like passwords replaced with '***'.
     """
-    _require_http_auth(request)
+    require_http_auth(request)
     config = get_config()
     data = config.to_dict(mask_secrets=True)
     
@@ -120,7 +94,7 @@ async def update_configuration(request: Request, body: ConfigUpdateRequest) -> d
             }
         }
     """
-    _require_http_auth(request)
+    require_http_auth(request)
     try:
         manager = get_config_manager()
         
@@ -162,7 +136,7 @@ async def test_storage_connection(request: Request, body: StorageTestRequest) ->
             "postgres_url": "postgresql://user:pass@localhost/echopanel"
         }
     """
-    _require_http_auth(request)
+    require_http_auth(request)
     try:
         if request.backend == "sqlite":
             return await _test_sqlite_connection(request.sqlite_path)
@@ -262,11 +236,13 @@ async def _test_postgresql_connection(url: Optional[str]) -> StorageTestResponse
 
 
 @router.post("/reload")
-async def reload_configuration() -> dict:
+async def reload_configuration(request: Request) -> dict:
     """Reload configuration from file.
     
     Useful when config file was manually edited.
+    Requires authentication.
     """
+    require_http_auth(request)
     try:
         manager = get_config_manager()
         config = manager.reload()
@@ -282,11 +258,13 @@ async def reload_configuration() -> dict:
 
 
 @router.post("/reset")
-async def reset_configuration() -> dict:
+async def reset_configuration(request: Request) -> dict:
     """Reset configuration to defaults.
     
     WARNING: This will overwrite your current configuration!
+    Requires authentication.
     """
+    require_http_auth(request)
     try:
         # Create new default config
         default_config = Config()
@@ -317,4 +295,4 @@ def get_storage_adapter_from_config():
     return get_adapter(StorageConfig(**storage_config))
 
 
-import os  # For os.access in _test_sqlite_connection
+

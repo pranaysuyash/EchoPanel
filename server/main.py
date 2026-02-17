@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import hmac
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -12,11 +11,11 @@ from server.api.ws_live_listener import router as ws_router
 from server.api.brain_dump_query import router as brain_dump_router
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
+from server.security import extract_http_token, is_authorized
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
 HF_TOKEN_ENV = "ECHOPANEL_HF_TOKEN"
 
 def _load_local_dotenv_defaults() -> None:
@@ -67,30 +66,6 @@ def _sync_huggingface_token_env() -> None:
     # Only fill if unset so explicit user configuration wins.
     os.environ.setdefault("HF_TOKEN", token)
     os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", token)
-
-
-def _extract_token(request: Request) -> str:
-    query_token = request.query_params.get("token", "").strip()
-    if query_token:
-        return query_token
-
-    header_token = request.headers.get("x-echopanel-token", "").strip()
-    if header_token:
-        return header_token
-
-    auth_header = request.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-    return ""
-
-
-def _require_http_auth(request: Request) -> None:
-    required_token = os.getenv(AUTH_TOKEN_ENV, "").strip()
-    if not required_token:
-        return
-    provided_token = _extract_token(request)
-    if not provided_token or not hmac.compare_digest(provided_token, required_token):
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -178,6 +153,24 @@ async def lifespan(app: FastAPI):
 
     # Ensure HF token is available for model downloads (if configured).
     _sync_huggingface_token_env()
+    
+    # Security: Warn if authentication is not configured in production
+    from server.security import is_auth_required
+    if not is_auth_required():
+        env_mode = os.getenv("ECHOPANEL_ENV", "development").lower()
+        if env_mode == "production":
+            logger.error(
+                "CRITICAL: ECHOPANEL_WS_AUTH_TOKEN is not configured in production mode. "
+                "This exposes your personal audio memories to unauthorized access. "
+                "Please set ECHOPANEL_WS_AUTH_TOKEN to a strong token before starting the server."
+            )
+            raise RuntimeError("Missing required authentication token in production mode")
+        else:
+            logger.warning(
+                "Authentication is NOT configured (permissive mode). "
+                "All endpoints are accessible without credentials. "
+                "Set ECHOPANEL_WS_AUTH_TOKEN for security."
+            )
     
     # TCK-20260211-009: Auto-select provider based on capabilities
     _auto_select_provider()

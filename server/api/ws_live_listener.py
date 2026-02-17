@@ -59,7 +59,9 @@ DEBUG_AUDIO_DUMP_MAX_FILES = int(os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_FILES
 DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES = int(
     os.getenv("ECHOPANEL_DEBUG_AUDIO_DUMP_MAX_TOTAL_BYTES", str(512 * 1024 * 1024))
 )
-WS_AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
+
+# Import auth utilities from shared security module
+from server.security import extract_ws_token, is_authorized
 
 # TCK-20260213-074: Dual-lane pipeline configuration
 # Lane A (Realtime): Bounded queue, may drop to stay live
@@ -345,41 +347,12 @@ def _health_to_payload(value: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_ws_auth_token(websocket: WebSocket) -> str:
-    # Priority: Authorization header -> custom header -> query param (legacy)
-    # Prefer headers for security (query params visible in logs/proxy)
-    auth_header = websocket.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-
-    header_token = websocket.headers.get("x-echopanel-token")
-    if header_token:
-        return header_token.strip()
-
-    # Fallback to query param for backward compatibility
-    query_token = websocket.query_params.get("token")
-    if query_token:
-        return query_token.strip()
-    
-    return ""
-
-
-def _is_ws_authorized(websocket: WebSocket) -> bool:
-    required_token = os.getenv(WS_AUTH_TOKEN_ENV, "").strip()
-    if not required_token:
-        return True
-
-    provided_token = _extract_ws_auth_token(websocket)
-    if not provided_token:
-        return False
-
-    return hmac.compare_digest(provided_token, required_token)
-
-
 async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> None:
-    """Send event to websocket, safely handling closed connections."""
-    if state.closed:
-        return
+    """Send event to websocket, safely handling closed connections.
+    
+    NOTE: state.closed check is inside the lock to prevent race conditions where
+    the connection is closed between the check and the actual send operation.
+    """
     # V1: Inject correlation IDs for safer client-side state validation.
     # Keep this additive and do not mutate the caller's dict.
     payload = event
@@ -394,7 +367,11 @@ async def ws_send(state: SessionState, websocket: WebSocket, event: dict) -> Non
         if payload is event:
             payload = dict(payload)
         payload["connection_id"] = state.connection_id
+    
     async with state.send_lock:
+        # Check state.closed inside the lock to prevent race conditions
+        if state.closed:
+            return
         try:
             await websocket.send_text(json.dumps(payload))
         except (RuntimeError, WebSocketDisconnect):
@@ -1184,7 +1161,10 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
             except Exception as e:
                 logger.debug(f"Failed to query provider health: {e}")
             
-            for source, q in state.queues.items():
+            # Snapshot queues to avoid "dictionary changed size during iteration" errors
+            # when new sources are added concurrently (from get_queue in main loop)
+            queues_snapshot = list(state.queues.items())
+            for source, q in queues_snapshot:
                 source_key = _normalize_source(source)
                 
                 # Byte-based queue metrics for predictable latency
@@ -1307,7 +1287,8 @@ async def _metrics_loop(websocket: WebSocket, state: SessionState) -> None:
 async def ws_live_listener(websocket: WebSocket) -> None:
     await websocket.accept()
 
-    if not _is_ws_authorized(websocket):
+    provided_token = extract_ws_token(websocket)
+    if not is_authorized(provided_token):
         await websocket.send_text(json.dumps({
             "type": "status",
             "state": "error",
@@ -1895,7 +1876,18 @@ async def ws_live_listener(websocket: WebSocket) -> None:
         all_tasks = state.tasks + state.asr_tasks + state.analysis_tasks
         for task in all_tasks:
             task.cancel()
-        await asyncio.gather(*all_tasks, return_exceptions=True)
+        
+        # Enforce timeout on task cleanup to prevent indefinite hangs during disconnect
+        # (similar to the stop handler which uses timeout=5.0). This ensures server
+        # resources are released even if a task ignores CancelledError or blocks indefinitely.
+        try:
+            await asyncio.wait_for(asyncio.gather(*all_tasks, return_exceptions=True), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Task cleanup for session {state.session_id} timed out after 5s "
+                "(some tasks may still be running). Forcing closure."
+            )
+        
         # Brain Dump: End indexing session
         try:
             integration = get_integration()

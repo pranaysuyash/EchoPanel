@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from server.services.rag_store import get_rag_store
+from server.security import require_http_auth
 
 router = APIRouter()
-AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
 
 
 class DocumentIndexRequest(BaseModel):
@@ -41,33 +41,9 @@ class DocumentQueryResult(BaseModel):
     score: float
 
 
-def _extract_token(request: Request) -> str:
-    query_token = request.query_params.get("token", "").strip()
-    if query_token:
-        return query_token
-
-    header_token = request.headers.get("x-echopanel-token", "").strip()
-    if header_token:
-        return header_token
-
-    auth_header = request.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-    return ""
-
-
-def _require_http_auth(request: Request) -> None:
-    required_token = os.getenv(AUTH_TOKEN_ENV, "").strip()
-    if not required_token:
-        return
-    provided_token = _extract_token(request)
-    if not provided_token or not hmac.compare_digest(provided_token, required_token):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
 @router.get("/documents")
 async def list_documents(request: Request) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     store = get_rag_store()
     documents = [DocumentSummary(**doc).model_dump() for doc in store.list_documents()]
     return {"documents": documents, "count": len(documents)}
@@ -75,7 +51,7 @@ async def list_documents(request: Request) -> dict:
 
 @router.post("/documents/index")
 async def index_document(request: Request, body: DocumentIndexRequest) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     store = get_rag_store()
     try:
         indexed = store.index_document(
@@ -91,7 +67,7 @@ async def index_document(request: Request, body: DocumentIndexRequest) -> dict:
 
 @router.post("/documents/query")
 async def query_documents(request: Request, body: DocumentQueryRequest) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     store = get_rag_store()
     results = [DocumentQueryResult(**row).model_dump() for row in store.query(body.query, top_k=body.top_k)]
     return {"query": body.query, "results": results, "count": len(results)}
@@ -99,7 +75,7 @@ async def query_documents(request: Request, body: DocumentQueryRequest) -> dict:
 
 @router.delete("/documents/{document_id}")
 async def delete_document(request: Request, document_id: str) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     store = get_rag_store()
     deleted = store.delete_document(document_id)
     if not deleted:

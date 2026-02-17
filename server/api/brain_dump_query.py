@@ -1,8 +1,6 @@
 """Brain Dump Query API - REST endpoints for searching personal audio memory."""
 
-import hmac
 import logging
-import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
@@ -21,36 +19,11 @@ from server.db import (
 from server.services.brain_dump_indexer import get_indexer
 from server.services.hybrid_search import HybridSearchEngine, create_hybrid_search_engine
 from server.services.embeddings import get_embedding_service
+from server.security import require_http_auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/brain-dump", tags=["brain-dump"])
-
-AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
-
-
-def _extract_token(request: Request) -> str:
-    query_token = request.query_params.get("token", "").strip()
-    if query_token:
-        return query_token
-
-    header_token = request.headers.get("x-echopanel-token", "").strip()
-    if header_token:
-        return header_token
-
-    auth_header = request.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-    return ""
-
-
-def _require_http_auth(request: Request) -> None:
-    required_token = os.getenv(AUTH_TOKEN_ENV, "").strip()
-    if not required_token:
-        return
-    provided_token = _extract_token(request)
-    if not provided_token or not hmac.compare_digest(provided_token, required_token):
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # Pydantic models for API
@@ -168,7 +141,7 @@ async def search(
     - "Sarah API" - Find where Sarah mentioned API
     - Use time_range to narrow down
     """
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     try:
         # Build filters
         filters = SearchFilters(
@@ -265,7 +238,7 @@ async def search_get(
     
     Example: /brain-dump/search?q=roadmap&days=7
     """
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     # Build time range from days
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(days=days)
@@ -341,7 +314,7 @@ async def search_hybrid(
     }
     ```
     """
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     # Only support hybrid/semantic if embedding service available
     embedding_service = get_embedding_service()
     
@@ -413,7 +386,7 @@ async def ask(
     - "Summarize my standup meetings this week"
     - "What were my action items from the product meeting?"
     """
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     # TODO: Implement RAG with local LLM
     # For now, return a placeholder
     
@@ -477,7 +450,7 @@ async def list_sessions(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> SessionListResponse:
     """List recording sessions."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     sessions = await adapter.list_sessions(limit, offset, pinned_only)
     
     return SessionListResponse(
@@ -505,7 +478,7 @@ async def get_session(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> SessionResponse:
     """Get a specific session by ID."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     session = await adapter.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -530,7 +503,7 @@ async def get_session_segments(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> List[SegmentResponse]:
     """Get all transcript segments for a session."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     segments = await adapter.get_segments_by_session(session_id, limit, offset)
     
     return [
@@ -555,7 +528,7 @@ async def pin_session(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> dict:
     """Pin a session to prevent auto-deletion."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     session = await adapter.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -571,7 +544,7 @@ async def delete_session(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> dict:
     """Delete a session and all its segments."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     deleted = await adapter.delete_session(session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -584,7 +557,7 @@ async def get_stats(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> StatsResponse:
     """Get storage statistics."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     stats = await adapter.get_stats()
     
     return StatsResponse(
@@ -604,7 +577,7 @@ async def compact_database(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> dict:
     """Compact/optimize the database."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     await adapter.compact()
     return {"status": "compacted"}
 
@@ -616,6 +589,6 @@ async def cleanup_old_sessions(
     adapter: StorageAdapter = Depends(get_storage)
 ) -> dict:
     """Delete sessions older than N days (except pinned)."""
-    _require_http_auth(http_request)
+    require_http_auth(http_request)
     deleted = await adapter.delete_old_sessions(days)
     return {"status": "cleaned", "deleted_sessions": deleted}

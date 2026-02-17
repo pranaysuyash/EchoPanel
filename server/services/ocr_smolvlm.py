@@ -1,8 +1,13 @@
 """
-SmolVLM Pipeline for EchoPanel
+SmolVLM2 Pipeline for EchoPanel
 
-Vision-Language Model for semantic slide understanding.
-Uses Hugging Face SmolVLM-256M for contextual OCR enrichment.
+Vision-Language Model for semantic slide understanding and video analysis.
+Uses Hugging Face SmolVLM2-500M for contextual OCR enrichment and video understanding.
+
+Upgrade from SmolVLM-256M:
+- Better OCR accuracy
+- Native video understanding support
+- Improved semantic understanding
 """
 
 import asyncio
@@ -11,7 +16,8 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from enum import Enum
+from typing import List, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -20,10 +26,22 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 SMOLVLM_ENABLED = os.getenv("ECHOPANEL_SMOLVLM_ENABLED", "true").lower() == "true"
-SMOLVLM_MODEL = os.getenv("ECHOPANEL_SMOLVLM_MODEL", "HuggingFaceTB/SmolVLM-256M-Instruct")
+SMOLVLM_MODEL = os.getenv("ECHOPANEL_SMOLVLM_MODEL", "HuggingFaceTB/SmolVLM2-500M-Instruct")
 SMOLVLM_DEVICE = os.getenv("ECHOPANEL_SMOLVLM_DEVICE", "auto")
 SMOLVLM_DTYPE = os.getenv("ECHOPANEL_SMOLVLM_DTYPE", "bfloat16")
 SMOLVLM_MAX_TOKENS = int(os.getenv("ECHOPANEL_SMOLVLM_MAX_TOKENS", "300"))
+
+# Video-specific configuration
+VLM_FRAME_INTERVAL = int(os.getenv("ECHOPANEL_VLM_FRAME_INTERVAL", "10"))  # Process every N seconds
+VLM_MAX_FRAMES = int(os.getenv("ECHOPANEL_VLM_MAX_FRAMES", "20"))  # Max frames per segment
+VLM_FRAME_SAMPLING = os.getenv("ECHOPANEL_VLM_FRAME_SAMPLING", "uniform")  # uniform, center, keyframe
+
+
+class FrameSamplingStrategy(str, Enum):
+    UNIFORM = "uniform"  # Evenly spaced frames (recommended for most video)
+    CENTER = "center"  # Single center frame (SmolVLM2 optimal per research)
+    KEYFRAME = "keyframe"  # Scene change detection
+    FIRST = "first"  # First frame only
 
 try:
     from transformers import AutoProcessor, AutoModelForVision2Seq
@@ -285,3 +303,206 @@ Provide a concise answer based only on what's visible."""
             "total_processing_time_ms": 0,
             "total_tokens_generated": 0,
         }
+
+
+@dataclass
+class VideoFrame:
+    """A single video frame with metadata."""
+    image: Image.Image
+    timestamp_ms: int
+    frame_index: int
+
+
+@dataclass
+class VideoAnalysisResult:
+    """Result from video understanding."""
+    frame_summaries: List[str] = field(default_factory=list)
+    overall_summary: str = ""
+    key_scenes: List[str] = field(default_factory=list)
+    detected_text: List[str] = field(default_factory=list)
+    visual_context: str = ""
+    confidence: float = 0.0
+    processing_time_ms: float = 0.0
+    frames_analyzed: int = 0
+    error: Optional[str] = None
+    
+    @property
+    def success(self) -> bool:
+        return self.error is None
+    
+    def to_narrative(self) -> str:
+        """Generate narrative description of video."""
+        parts = []
+        if self.overall_summary:
+            parts.append(f"Visual Summary: {self.overall_summary}")
+        if self.key_scenes:
+            parts.append(f"Key Scenes: {'; '.join(self.key_scenes)}")
+        if self.detected_text:
+            parts.append(f"Text Content: {' '.join(self.detected_text[:5])}")
+        if self.visual_context:
+            parts.append(f"Context: {self.visual_context}")
+        return "\n".join(parts) if parts else "No visual content analyzed"
+
+
+class VideoFrameSampler:
+    """Extract frames from video for VLM processing."""
+    
+    def __init__(
+        self,
+        strategy: FrameSamplingStrategy = FrameSamplingStrategy.UNIFORM,
+        max_frames: int = 20,
+        interval_seconds: int = 10
+    ):
+        self.strategy = strategy
+        self.max_frames = max_frames
+        self.interval_seconds = interval_seconds
+    
+    def sample_uniform(
+        self,
+        video_duration_seconds: float,
+        frame_fn: callable  # function(timestamp_ms) -> Image
+    ) -> List[VideoFrame]:
+        """Sample frames uniformly across video duration."""
+        if video_duration_seconds <= 0:
+            return []
+        
+        num_frames = min(self.max_frames, int(video_duration_seconds / self.interval_seconds) + 1)
+        interval_ms = int((video_duration_seconds * 1000) / num_frames)
+        
+        frames = []
+        for i in range(num_frames):
+            timestamp_ms = i * interval_ms
+            try:
+                image = frame_fn(timestamp_ms)
+                frames.append(VideoFrame(
+                    image=image,
+                    timestamp_ms=timestamp_ms,
+                    frame_index=i
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to extract frame at {timestamp_ms}ms: {e}")
+        
+        return frames
+    
+    def sample_center(
+        self,
+        video_duration_seconds: float,
+        frame_fn: callable
+    ) -> List[VideoFrame]:
+        """Sample single center frame (optimal for SmolVLM2 per research)."""
+        if video_duration_seconds <= 0:
+            return []
+        
+        center_ms = int(video_duration_seconds * 1000 / 2)
+        try:
+            image = frame_fn(center_ms)
+            return [VideoFrame(image=image, timestamp_ms=center_ms, frame_index=0)]
+        except Exception as e:
+            logger.warning(f"Failed to extract center frame: {e}")
+            return []
+    
+    def sample(
+        self,
+        video_duration_seconds: float,
+        frame_fn: callable
+    ) -> List[VideoFrame]:
+        """Sample frames based on configured strategy."""
+        if self.strategy == FrameSamplingStrategy.CENTER:
+            return self.sample_center(video_duration_seconds, frame_fn)
+        else:
+            return self.sample_uniform(video_duration_seconds, frame_fn)
+
+
+class VideoUnderstandingPipeline:
+    """Pipeline for video understanding using SmolVLM2."""
+    
+    def __init__(
+        self,
+        model_name: str = None,
+        device: str = None,
+        dtype: str = None,
+        max_tokens: int = None,
+        max_frames: int = None,
+        frame_interval: int = None,
+        frame_sampling: str = None
+    ):
+        self.vlm = SmolVLMPipeline(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            max_tokens=max_tokens
+        )
+        self.sampler = VideoFrameSampler(
+            strategy=FrameSamplingStrategy(frame_sampling or VLM_FRAME_SAMPLING),
+            max_frames=max_frames or VLM_MAX_FRAMES,
+            interval_seconds=frame_interval or VLM_FRAME_INTERVAL
+        )
+        self._stats = {
+            "videos_processed": 0,
+            "videos_failed": 0,
+            "total_frames": 0,
+            "total_processing_time_ms": 0,
+        }
+    
+    def is_available(self) -> bool:
+        return self.vlm.is_available()
+    
+    async def analyze_video(
+        self,
+        video_duration_seconds: float,
+        frame_fn: callable  # function(timestamp_ms) -> Image
+    ) -> VideoAnalysisResult:
+        """Analyze video and return understanding."""
+        start_time = time.time()
+        
+        if not self.is_available():
+            return VideoAnalysisResult(error="Video understanding not available")
+        
+        frames = self.sampler.sample(video_duration_seconds, frame_fn)
+        if not frames:
+            return VideoAnalysisResult(error="No frames extracted")
+        
+        frame_summaries = []
+        detected_texts = []
+        
+        for frame in frames:
+            try:
+                result = await self.vlm.process(frame.image)
+                if result.success:
+                    frame_summaries.append(result.semantic_summary or result.text)
+                    if result.text:
+                        detected_texts.append(result.text)
+            except Exception as e:
+                logger.warning(f"Frame analysis error: {e}")
+        
+        overall_summary = " ".join(frame_summaries[:3]) if frame_summaries else ""
+        
+        processing_time = (time.time() - start_time) * 1000
+        self._stats["videos_processed"] += 1
+        self._stats["total_frames"] += len(frames)
+        self._stats["total_processing_time_ms"] += processing_time
+        
+        return VideoAnalysisResult(
+            frame_summaries=frame_summaries,
+            overall_summary=overall_summary[:500],
+            detected_text=detected_texts,
+            confidence=0.7 if frame_summaries else 0.0,
+            processing_time_ms=processing_time,
+            frames_analyzed=len(frames)
+        )
+    
+    async def generate_narrative(
+        self,
+        video_duration_seconds: float,
+        frame_fn: callable
+    ) -> str:
+        """Generate narrative description of video content."""
+        result = await self.analyze_video(video_duration_seconds, frame_fn)
+        return result.to_narrative()
+    
+    def get_stats(self) -> dict:
+        stats = self._stats.copy()
+        if stats["videos_processed"] > 0:
+            stats["avg_processing_time_ms"] = stats["total_processing_time_ms"] / stats["videos_processed"]
+            stats["avg_frames_per_video"] = stats["total_frames"] / stats["videos_processed"]
+        return stats
