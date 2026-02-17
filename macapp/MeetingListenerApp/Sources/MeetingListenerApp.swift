@@ -9,6 +9,7 @@ struct MeetingListenerApp: App {
     @State private var sidePanelController = SidePanelController()
     @StateObject private var betaGating = BetaGatingManager.shared
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
+    @State private var showTermsAcceptance = !UserDefaults.standard.bool(forKey: "hasAcceptedTerms")
     @State private var showRecoveryPrompt = false
 
     init() {
@@ -33,6 +34,11 @@ struct MeetingListenerApp: App {
             labelContent
         }
         .menuBarExtraStyle(.menu)
+        .onChange(of: showTermsAcceptance) { newValue in
+            if newValue {
+                openWindow(id: "terms-acceptance")
+            }
+        }
         .onChange(of: showOnboarding) { newValue in
             if newValue {
                 openWindow(id: "onboarding")
@@ -61,6 +67,13 @@ struct MeetingListenerApp: App {
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .help("Export transcript as Markdown for notes and documents")
+
+                Menu("Export Minutes (MOM)") {
+                    Button("Default") { appState.exportMinutesOfMeeting(template: .standard) }
+                    Button("Executive") { appState.exportMinutesOfMeeting(template: .executive) }
+                    Button("Engineering") { appState.exportMinutesOfMeeting(template: .engineering) }
+                }
+                .help("Export structured Minutes of Meeting")
 
                 Divider()
                 
@@ -91,6 +104,28 @@ struct MeetingListenerApp: App {
                 .keyboardShortcut("?", modifiers: [.command])
                 
                 Divider()
+                
+                Menu("ASR Backend") {
+                    Button("A/B Testing...") {
+                        openWindow(id: "asr-testing")
+                    }
+                    
+                    Button("Backend Comparison") {
+                        openWindow(id: "asr-comparison")
+                    }
+                    
+                    #if DEBUG
+                    Divider()
+                    
+                    Button("Reset Feature Flags") {
+                        FeatureFlagManager.shared.resetToDefaults()
+                    }
+                    
+                    Button("Enable All Dev Features") {
+                        FeatureFlagManager.shared.enableAllForDev()
+                    }
+                    #endif
+                }
                 Button("Quit") { 
                     BackendManager.shared.stopServer()
                     NSApp.terminate(nil) 
@@ -98,6 +133,19 @@ struct MeetingListenerApp: App {
             }
         }
         
+        // Terms acceptance window shown on first launch
+        Window("Terms and Conditions", id: "terms-acceptance") {
+            TermsAcceptanceView {
+                showTermsAcceptance = false
+                if showOnboarding {
+                    openWindow(id: "onboarding")
+                }
+            }
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 500, height: 400)
+        .windowResizability(.contentSize)
+
         // Onboarding window shown on first launch
         Window("Welcome to EchoPanel", id: "onboarding") {
             OnboardingView(appState: appState, isPresented: $showOnboarding) {
@@ -143,6 +191,20 @@ struct MeetingListenerApp: App {
             KeyboardCheatsheetView()
         }
         .defaultSize(width: 600, height: 500)
+        .windowResizability(.contentSize)
+        
+        // MARK: - ASR Backend Testing Windows
+        
+        Window("ASR A/B Testing", id: "asr-testing") {
+            BackendComparisonTestView()
+        }
+        .defaultSize(width: 800, height: 600)
+        .windowResizability(.contentSize)
+        
+        Window("ASR Backend Status", id: "asr-status") {
+            ASRBackendStatusView()
+        }
+        .defaultSize(width: 400, height: 300)
         .windowResizability(.contentSize)
     }
 
@@ -318,6 +380,25 @@ struct MeetingListenerApp: App {
                         Text("⌘⇧M")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty)
+
+                Menu {
+                    Button("Default") { appState.exportMinutesOfMeeting(template: .standard) }
+                    Button("Executive") { appState.exportMinutesOfMeeting(template: .executive) }
+                    Button("Engineering") { appState.exportMinutesOfMeeting(template: .engineering) }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 14))
+                            .foregroundColor(.teal)
+                        Text("Export MOM")
+                            .font(.subheadline)
+                        Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)

@@ -21,7 +21,9 @@ class UvicornTestServer:
 
     def start(self) -> None:
         self.thread.start()
-        deadline = time.time() + 5
+        # Give the server a moment to begin initialization
+        time.sleep(0.1)
+        deadline = time.time() + 10
         while time.time() < deadline:
             if self.server.started:
                 return

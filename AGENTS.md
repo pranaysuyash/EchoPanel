@@ -30,9 +30,21 @@ Outputs:
 - `.agent/AGENT_KICKOFF_PROMPT.txt`
 - `.agent/STEP1_ENV.sh`
 
+### Automation (already configured)
+- Terminal auto-loads `.agent/STEP1_ENV.sh` when you `cd` into a project under `/Users/pranay/Projects` (zsh hook).
+- VS Code/Antigravity can run `agent-start --skip-index` on folder open via `.vscode/tasks.json`.
+
 ### How agents should use this
 - Provide `.agent/AGENT_KICKOFF_PROMPT.txt` and `.agent/SESSION_CONTEXT.md` as the first context for the agent.
 - If sources conflict, the agent must cite concrete file paths and ask before proceeding.
+- If `.agent` files are missing or stale, run `/Users/pranay/Projects/agent-start --skip-index` before planning changes.
+- Do not start implementation until `.agent/AGENT_KICKOFF_PROMPT.txt` and `.agent/SESSION_CONTEXT.md` are loaded.
+
+### Optional commit safety net
+Install repo-local git pre-commit hooks that refresh and stage `.agent/*` before commit:
+```bash
+python3 /Users/pranay/Projects/workspace_memory/scripts/install_git_precommit_agent_hook.py
+```
 
 <!-- PROJECTS_MEMORY_AGENT_ALIGNMENT_END -->
 

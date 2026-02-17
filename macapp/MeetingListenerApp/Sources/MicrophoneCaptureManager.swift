@@ -8,7 +8,7 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     var onAudioLevelUpdate: ((Float) -> Void)?
     var onError: ((Error) -> Void)?
     
-    private let audioEngine = AVAudioEngine()
+    private lazy var audioEngine = AVAudioEngine()
     private var isRunning = false
     private var pcmRemainder: [Int16] = []
     private let frameSize = 320 // 20ms at 16kHz
@@ -17,9 +17,9 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     
     // MARK: - Metrics (AUD-002 Improvement)
     private var metricsLock = NSLock()
-    private(set) var framesProcessed: UInt64 = 0
-    private(set) var framesDropped: UInt64 = 0
-    private(set) var bufferUnderruns: UInt64 = 0
+    nonisolated private(set) var framesProcessed: UInt64 = 0
+    nonisolated private(set) var framesDropped: UInt64 = 0
+    nonisolated private(set) var bufferUnderruns: UInt64 = 0
     private var lastProcessTime: TimeInterval = 0
     
     // MARK: - Limiter State (P0-2 Fix)
@@ -312,7 +312,7 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     }
     
     /// Thread-safe getter for current audio level
-    var currentLevel: Float {
+    nonisolated var currentLevel: Float {
         levelLock.lock()
         let level = levelEMA
         levelLock.unlock()

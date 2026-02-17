@@ -5,6 +5,7 @@ description = "EchoPanel v0.1 backend and tooling"
 requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "chromadb>=1.5.0",
     "fastapi==0.115.6",
     "huggingface-hub>=0.34.0,<1.0",
     "mlx-audio>=0.2.9",
@@ -12,6 +13,7 @@ dependencies = [
     "pytesseract>=0.3.10",
     "pywhispercpp>=1.4.1",
     "qwen-asr>=0.0.6",
+    "sentence-transformers>=5.2.2",
     "uvicorn[standard]==0.34.0",
     "vllm>=0.7.3",
     "websockets==14.1",
@@ -35,6 +37,14 @@ diarization = [
 ]
 hf_tools = [
     "huggingface_hub>=0.34.0,<1.0",
+]
+
+ocr = [
+    "paddleocr>=2.7.0",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+    "scipy>=1.10.0",
+    "scikit-image>=0.20.0",
 ]
 
 [build-system]

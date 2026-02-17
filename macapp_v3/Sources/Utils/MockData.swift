@@ -9,6 +9,57 @@ enum MockData {
         ]
     }
     
+    static func generateCalendarEvents() -> [CalendarEvent] {
+        let now = Date()
+        return [
+            CalendarEvent(
+                id: UUID(),
+                title: "Team Standup",
+                startTime: now.addingTimeInterval(3600),
+                endTime: now.addingTimeInterval(3900),
+                meetingURL: "https://zoom.us/j/123456",
+                attendees: ["Sarah Chen", "Alex Kim", "Mike Johnson", "You"],
+                isrecurring: true
+            ),
+            CalendarEvent(
+                id: UUID(),
+                title: "1:1 with Sarah",
+                startTime: now.addingTimeInterval(86400),
+                endTime: now.addingTimeInterval(88200),
+                meetingURL: "https://meet.google.com/abc-defg-hij",
+                attendees: ["Sarah Chen", "You"],
+                isrecurring: false
+            ),
+            CalendarEvent(
+                id: UUID(),
+                title: "Sprint Planning",
+                startTime: now.addingTimeInterval(172800),
+                endTime: now.addingTimeInterval(180000),
+                meetingURL: "https://zoom.us/j/789012",
+                attendees: ["Alex Kim", "Mike Johnson", "Jordan Lee", "Taylor Swift", "You"],
+                isrecurring: true
+            ),
+            CalendarEvent(
+                id: UUID(),
+                title: "Client Call - Acme Corp",
+                startTime: now.addingTimeInterval(259200),
+                endTime: now.addingTimeInterval(267000),
+                meetingURL: "https://teams.microsoft.com/l/meetup-join/abc123",
+                attendees: ["John Smith", "Jane Doe", "You"],
+                isrecurring: false
+            ),
+            CalendarEvent(
+                id: UUID(),
+                title: "Design Review",
+                startTime: now.addingTimeInterval(345600),
+                endTime: now.addingTimeInterval(352800),
+                meetingURL: "https://zoom.us/j/456789",
+                attendees: ["Design Team", "You"],
+                isrecurring: true
+            )
+        ]
+    }
+    
     static func generateTeamStandupSession() -> Session {
         let sessionId = UUID()
         let startTime = Date().addingTimeInterval(-7200) // 2 hours ago
@@ -212,7 +263,7 @@ enum MockData {
         // Highlights
         let highlights: [Highlight] = [
             Highlight(
-                id: "highlight_1",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440001") ?? UUID(),
                 type: .action(ActionItem(
                     id: UUID(),
                     assignee: "Alex Kim",
@@ -226,7 +277,7 @@ enum MockData {
                 evidence: "Should be ready for testing by Friday"
             ),
             Highlight(
-                id: "highlight_2",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440002") ?? UUID(),
                 type: .decision(Decision(
                     id: UUID(),
                     statement: "Complete full integration by end of next week",
@@ -238,7 +289,7 @@ enum MockData {
                 evidence: "Let's aim to have everything integrated by the end of next week"
             ),
             Highlight(
-                id: "highlight_3",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440003") ?? UUID(),
                 type: .action(ActionItem(
                     id: UUID(),
                     assignee: "Sarah Chen",
@@ -252,7 +303,7 @@ enum MockData {
                 evidence: "I'll send out an invite"
             ),
             Highlight(
-                id: "highlight_4",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440004") ?? UUID(),
                 type: .risk(Risk(
                     id: UUID(),
                     description: "Performance issues with new search feature",
@@ -265,7 +316,7 @@ enum MockData {
                 evidence: "We should profile it before release"
             ),
             Highlight(
-                id: "highlight_5",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440005") ?? UUID(),
                 type: .action(ActionItem(
                     id: UUID(),
                     assignee: "Alex Kim",
@@ -279,7 +330,7 @@ enum MockData {
                 evidence: "I'll run some benchmarks and report back"
             ),
             Highlight(
-                id: "highlight_6",
+                id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440006") ?? UUID(),
                 type: .keyPoint("Database migration review needed before go-live"),
                 timestamp: startTime.addingTimeInterval(35),
                 confidence: 0.82,
@@ -384,7 +435,7 @@ enum MockData {
             id: sessionId,
             title: "Team Standup",
             startTime: startTime,
-            duration: 1800, // 30 minutes
+            duration: 1800,
             status: .finalized,
             liveTranscript: liveTranscript,
             finalTranscript: finalTranscript,
@@ -394,7 +445,10 @@ enum MockData {
             audioSource: .systemAndMic,
             provider: .fasterWhisper,
             isPinned: false,
-            tags: ["standup", "api", "planning"]
+            tags: ["standup", "api", "planning"],
+            voiceNotes: [],
+            pinnedMoments: [],
+            meetingTemplate: MeetingTemplate.defaults[0]
         )
     }
     
@@ -406,7 +460,7 @@ enum MockData {
             id: sessionId,
             title: "Client Call - Acme Corp",
             startTime: startTime,
-            duration: 2700, // 45 minutes
+            duration: 2700,
             status: .finalized,
             liveTranscript: [],
             finalTranscript: [],
@@ -416,19 +470,22 @@ enum MockData {
             audioSource: .systemOnly,
             provider: .whisperCpp,
             isPinned: true,
-            tags: ["client", "acme-corp"]
+            tags: ["client", "acme-corp"],
+            voiceNotes: [],
+            pinnedMoments: [],
+            meetingTemplate: nil
         )
     }
     
     static func generateSprintPlanningSession() -> Session {
         let sessionId = UUID()
-        let startTime = Date().addingTimeInterval(-86400) // 1 day ago
+        let startTime = Date().addingTimeInterval(-86400)
         
         return Session(
             id: sessionId,
             title: "Sprint Planning",
             startTime: startTime,
-            duration: 3600, // 1 hour
+            duration: 3600,
             status: .finalized,
             liveTranscript: [],
             finalTranscript: [],
@@ -438,19 +495,26 @@ enum MockData {
             audioSource: .systemAndMic,
             provider: .auto,
             isPinned: false,
-            tags: ["sprint", "planning", "agile"]
+            tags: ["sprint", "planning", "agile"],
+            voiceNotes: [],
+            pinnedMoments: [],
+            meetingTemplate: MeetingTemplate.defaults[2]
         )
     }
     
     // Generate final transcript from live transcript (simulating post-processing)
     static func generateFinalTranscript(from liveTranscript: [LiveTranscriptSegment]) -> [FinalTranscriptSegment] {
-        // In real app, this would run diarization and improve ASR
-        // Here we just map with placeholder speakers
-        liveTranscript.enumerated().map { index, live in
-            FinalTranscriptSegment(
+        let speakerNames = ["Alice Johnson", "Bob Chen", "Carol Davis", "David Martinez"]
+        let voiceCharacteristics = ["host", "guest", "moderator", "expert"]
+
+        return liveTranscript.enumerated().map { index, live in
+            let speakerIndex = index % speakerNames.count
+            let voiceIndex = index % voiceCharacteristics.count
+
+            return FinalTranscriptSegment(
                 id: live.id,
-                speakerId: "speaker_\(index % 3 + 1)",
-                speakerName: nil, // Would be filled by diarization
+                speakerId: "speaker_\(speakerIndex + 1)_\(voiceCharacteristics[voiceIndex])",
+                speakerName: speakerNames[speakerIndex],
                 text: live.text,
                 timestamp: live.timestamp,
                 confidence: live.confidence,

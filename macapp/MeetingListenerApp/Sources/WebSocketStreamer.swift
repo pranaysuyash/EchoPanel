@@ -353,6 +353,18 @@ private let session: URLSession = {
         voiceNoteSessionID = nil
     }
 
+    // OCR: Send client-side OCR text payloads (best-effort)
+    func sendOCRText(_ text: String, timestamp: TimeInterval = Date().timeIntervalSince1970) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let payload: [String: Any] = [
+            "type": "ocr_text",
+            "text": trimmed,
+            "timestamp": timestamp
+        ]
+        sendJSON(payload)
+    }
+
     private func sendBinaryAudioFrame(_ data: Data, source: String) {
         // Binary audio framing (v1):
         // Header: "EP" + version byte + source byte + raw PCM16 payload.

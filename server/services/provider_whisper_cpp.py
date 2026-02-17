@@ -40,6 +40,22 @@ class WhisperCppProvider(ASRProvider):
     - C++ performance
     """
 
+    # Model registry for UI/testing
+    MODELS = {
+        "tiny": {"file": "ggml-tiny.bin", "memory_mb": 75, "description": "Fastest, basic accuracy"},
+        "tiny.en": {"file": "ggml-tiny.en.bin", "memory_mb": 75, "description": "Fastest, English only"},
+        "base": {"file": "ggml-base.bin", "memory_mb": 142, "description": "Balanced speed & accuracy"},
+        "base.en": {"file": "ggml-base.en.bin", "memory_mb": 142, "description": "Balanced, English only"},
+        "small": {"file": "ggml-small.bin", "memory_mb": 466, "description": "Better accuracy"},
+        "small.en": {"file": "ggml-small.en.bin", "memory_mb": 466, "description": "Better, English only"},
+        "medium": {"file": "ggml-medium.bin", "memory_mb": 1500, "description": "High accuracy"},
+        "medium.en": {"file": "ggml-medium.en.bin", "memory_mb": 1500, "description": "High, English only"},
+        "large-v1": {"file": "ggml-large-v1.bin", "memory_mb": 3000, "description": "Best accuracy"},
+        "large-v2": {"file": "ggml-large-v2.bin", "memory_mb": 3000, "description": "Best accuracy"},
+        "large-v3": {"file": "ggml-large-v3.bin", "memory_mb": 3100, "description": "Best accuracy"},
+        "large-v3-turbo": {"file": "ggml-large-v3-turbo.bin", "memory_mb": 1600, "description": "Best accuracy, faster"},
+    }
+
     def __init__(self, config: ASRConfig):
         super().__init__(config)
         self.bin_path = os.getenv("WHISPER_CPP_BIN", "whisper-cli")
@@ -52,31 +68,15 @@ class WhisperCppProvider(ASRProvider):
         
     def _get_model_path(self) -> Path:
         """Get GGML model path from config."""
-        # Map model names to GGML files
-        model_map = {
-            "tiny": "ggml-tiny.bin",
-            "tiny.en": "ggml-tiny.en.bin",
-            "base": "ggml-base.bin",
-            "base.en": "ggml-base.en.bin",
-            "small": "ggml-small.bin",
-            "small.en": "ggml-small.en.bin",
-            "medium": "ggml-medium.bin",
-            "medium.en": "ggml-medium.en.bin",
-            "large-v1": "ggml-large-v1.bin",
-            "large-v2": "ggml-large-v2.bin",
-            "large-v3": "ggml-large-v3.bin",
-            "large-v3-turbo": "ggml-large-v3-turbo.bin",
-        }
-        
         model_name = self.config.model_name
-        ggml_file = model_map.get(model_name, f"ggml-{model_name}.bin")
-        path = self.model_dir / ggml_file
         
-        if not path.exists():
-            # Try with .bin extension
-            path = self.model_dir / f"{model_name}.bin"
+        # Use MODELS registry if available
+        if model_name in self.MODELS:
+            ggml_file = self.MODELS[model_name]["file"]
+        else:
+            ggml_file = f"ggml-{model_name}.bin"
         
-        return path
+        return self.model_dir / ggml_file
 
     @property
     def name(self) -> str:
@@ -85,11 +85,11 @@ class WhisperCppProvider(ASRProvider):
     @property
     def is_available(self) -> bool:
         """Check if whisper.cpp is installed and model exists."""
-        # Check model first (synchronous)
+        # Check model first
         if not self.model_path.exists():
             return False
         
-        # Check binary (use subprocess directly, not async)
+        # Check binary
         try:
             result = subprocess.run(
                 [self.bin_path, "--help"],
@@ -99,6 +99,54 @@ class WhisperCppProvider(ASRProvider):
             return result.returncode == 0
         except Exception:
             return False
+
+    @property
+    def capabilities(self):
+        """Override capabilities for whisper.cpp."""
+        from .asr_providers import ProviderCapabilities
+        return ProviderCapabilities(
+            supports_streaming=True,
+            supports_batch=True,
+            supports_gpu=self._is_apple_silicon(),
+            supports_metal=self._is_apple_silicon(),
+            supports_cuda=False,
+            supports_vad=False,
+            supports_diarization=False,
+            supports_multilanguage=True,
+            min_ram_gb=2.0,
+            recommended_ram_gb=4.0,
+        )
+
+    def _is_apple_silicon(self) -> bool:
+        """Check if running on Apple Silicon."""
+        return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+    def _get_optimal_threads(self) -> int:
+        """Get optimal thread count for the system."""
+        cpu_count = os.cpu_count() or 4
+        if self._is_apple_silicon():
+            # Apple Silicon: use performance cores
+            return min(cpu_count // 2, 8)
+        return min(cpu_count, 8)
+
+    def get_performance_stats(self) -> dict:
+        """Get performance statistics."""
+        if not self._infer_times:
+            return {
+                "avg_inference_ms": 0.0,
+                "realtime_factor": 0.0,
+                "chunks_processed": 0,
+            }
+        
+        avg_infer = sum(self._infer_times) / len(self._infer_times)
+        chunk_seconds = self.config.chunk_seconds
+        rtf = avg_infer / chunk_seconds if chunk_seconds > 0 else 0
+        
+        return {
+            "avg_inference_ms": avg_infer * 1000,
+            "realtime_factor": rtf,
+            "chunks_processed": self._chunks_processed,
+        }
     
     async def _check_binary(self) -> bool:
         """Check if whisper-cli binary is available."""

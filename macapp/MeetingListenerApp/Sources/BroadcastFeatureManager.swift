@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 import SwiftUI
 
 // MARK: - NTP Client
@@ -10,19 +11,118 @@ final class NTPClient {
     private var offset: TimeInterval = 0
     private let ntpHost = "pool.ntp.org"
     private let ntpPort: UInt16 = 123
-    
+    private let timeout: TimeInterval = 5.0
+
     /// Synchronize with NTP server and return offset
     func sync() async throws -> TimeInterval {
-        // Simplified implementation - in production, use proper NTP protocol
-        // This is a placeholder that returns 0 offset (local time)
-        offset = 0
+        let connection = try await createNTPConnection()
+        let ntpTime = try await queryNTPServer(connection: connection)
+        let localTime = Date().timeIntervalSince1970
+        let rtt = try await measureRoundTripTime(connection: connection)
+
+        let calculatedOffset = ntpTime - localTime - (rtt / 2.0)
+        offset = calculatedOffset
+
+        NSLog("🕐 NTP synchronized: offset=\(calculatedOffset)s, rtt=\(rtt)s")
         return offset
     }
-    
+
+    private func createNTPConnection() async throws -> NWConnection {
+        let hostEndpoint = NWEndpoint.Host(ntpHost)
+        let portEndpoint = NWEndpoint.Port(rawValue: ntpPort)!
+        let connection = NWConnection(host: hostEndpoint, port: portEndpoint, using: .udp)
+
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                NSLog("✅ NTP connection ready")
+            case .failed(let error):
+                NSLog("❌ NTP connection failed: \(error)")
+            default:
+                break
+            }
+        }
+
+        connection.start(queue: .global())
+        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        return connection
+    }
+
+    private func queryNTPServer(connection: NWConnection) async throws -> TimeInterval {
+        let ntpPacket = buildNTPPacket()
+        let packetData = ntpPacket.withUnsafeBytes { Data($0) }
+
+        connection.send(content: packetData, completion: .contentProcessed { error in
+            if let error = error {
+                NSLog("❌ NTP send error: \(error)")
+            }
+        })
+
+        var receivedData = Data()
+
+        connection.receive(minimumIncompleteLength: 48, maximumLength: 48) { data, _, _, error in
+            if let data = data {
+                receivedData = data
+            }
+            if let error = error {
+                NSLog("❌ NTP receive error: \(error)")
+            }
+        }
+
+        let startTime = Date()
+        while receivedData.isEmpty && Date().timeIntervalSince(startTime) < timeout {
+            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
+
+        guard receivedData.count == 48 else {
+            throw NTPError.invalidResponse
+        }
+
+        return parseNTPTimestamp(receivedData)
+    }
+
+    private func measureRoundTripTime(connection: NWConnection) async throws -> TimeInterval {
+        let start = Date()
+        let pingPacket = buildNTPPacket()
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: pingPacket.withUnsafeBytes { Data($0) }, completion: .contentProcessed { error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        return Date().timeIntervalSince(start)
+    }
+
+    private func buildNTPPacket() -> [UInt8] {
+        var packet = [UInt8](repeating: 0, count: 48)
+        packet[0] = 0x23 // LI=0, VN=4, Mode=3 (Client)
+        return packet
+    }
+
+    private func parseNTPTimestamp(_ data: Data) -> TimeInterval {
+        let seconds = UInt32(data[40]) << 24 | UInt32(data[41]) << 16 | UInt32(data[42]) << 8 | UInt32(data[43])
+        let fraction = UInt32(data[44]) << 24 | UInt32(data[45]) << 16 | UInt32(data[46]) << 8 | UInt32(data[47])
+
+        let ntpTimestamp = TimeInterval(seconds) + TimeInterval(fraction) / 4_294_967_296.0
+        return ntpTimestamp - 2_208_988_800.0 // NTP epoch offset (1900-1970)
+    }
+
     /// Get NTP-corrected timestamp
     func now() -> Date {
         return Date().addingTimeInterval(offset)
     }
+}
+
+enum NTPError: Error {
+    case invalidResponse
+    case timeout
+    case connectionFailed
 }
 
 /// Manager for broadcast-specific features.

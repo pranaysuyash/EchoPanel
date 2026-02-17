@@ -1,7 +1,8 @@
-> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
-> See implementation references below. Original audit preserved for historical context.
->
-> **Implementation refs:** F-001 (History readable viewer — `SessionHistoryView.swift` Summary/Transcript/JSON tabs), F-002 (Delete controls — `SessionHistoryView.swift` delete alert, `SessionStore.swift` `deleteSession`), F-003 (Search/filter — `SessionHistoryView.swift` `searchText`/`filteredSessions`). Additional: "Reveal in Finder" affordance added.
+> **⚠️ OBSOLETE (2026-02-16):** All 3 findings resolved — verified against source code:
+> - F-001 (readable History): `SessionHistoryView.swift:17-19` — Summary/Transcript/JSON tabs
+> - F-002 (delete controls): `SessionHistoryView.swift:14,228-229` — delete confirmation alert + `SessionStore.swift:287` `deleteSession()`
+> - F-003 (search/filter): `SessionHistoryView.swift:12,57,73` — `searchText` field + `filteredSessions` computed property
+> - Additional: Reveal in Finder via `NSWorkspace.shared.activateFileViewerSelecting` (`SessionHistoryView.swift:148`)
 
 # UI/UX Design Audit (EchoPanel) — Comprehensive Pass — 2026-02-04
 

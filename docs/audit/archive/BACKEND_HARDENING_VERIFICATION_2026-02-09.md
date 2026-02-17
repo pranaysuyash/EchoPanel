@@ -1,7 +1,11 @@
-> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
-> See implementation references below. Original audit preserved for historical context.
->
-> **Implementation refs:** P0-1 KeychainHelper migration (✅), P0-2 terminateGracefully SIGTERM→SIGKILL (✅), P0-3 crash recovery with backoff (✅), P0-4 #if DEBUG wrapper (✅), P1-1 log redaction (✅), P1-2 asyncio.wait_for timeout (✅), P1-3 logger.debug migration (✅). Residual P2/P3 risks accepted and tracked separately. SessionStore path sanitization resolved TCK-20260213-025.
+> **⚠️ OBSOLETE (2026-02-16):** All 9 P0/P1 checks verified against source code:
+> - P0-1 Keychain migration: `KeychainHelper.swift` — `kSecAttrAccessibleAfterFirstUnlock`, UserDefaults migration
+> - P0-2 Graceful terminate: `BackendManager.swift` — SIGTERM then SIGKILL sequence
+> - P0-3 Crash recovery with backoff: `BackendManager.swift` — `maxRestartAttempts`, exponential delay
+> - P0-4 Debug guards: `ws_live_listener.py:27` — `DEBUG = os.getenv("ECHOPANEL_DEBUG", "0") == "1"`
+> - P1-1 Log redaction: `StructuredLogger.swift` — regex PII patterns for tokens, paths
+> - P1-2 Async timeouts: `ws_live_listener.py` — `asyncio.wait_for(...)` on NLP calls
+> - P1-3 Structured logging: `StructuredLogger.swift:13` — JSON format with component/level/metadata
 
 # Backend Hardening Verification Report
 **Ticket:** TCK-20260209-003  

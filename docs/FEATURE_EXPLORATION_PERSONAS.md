@@ -9,9 +9,6 @@
 > `TCK-20260216-001` (MOM Generator),
 > `TCK-20260216-002` (Share to Slack/Teams/Email),
 > `TCK-20260216-003` (Meeting Templates).
-> Near-term candidates also ticketized:
-> `TCK-20260216-010` (Calendar Integration + Auto-Join),
-> `TCK-20260216-011` (Action Items -> Task Managers Sync).
 
 ---
 

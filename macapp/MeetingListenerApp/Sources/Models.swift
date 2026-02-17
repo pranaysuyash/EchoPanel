@@ -85,10 +85,22 @@ struct ContextQueryResult: Identifiable, Equatable {
 
 struct VoiceNote: Identifiable, Equatable {
     let id = UUID()
-    let text: String
+    var text: String
     let startTime: TimeInterval
     let endTime: TimeInterval
     let createdAt: Date
     let confidence: Double
     var isPinned: Bool = false
+    var tags: [String] = []
+    
+    // Custom equality that compares content, not ID
+    static func == (lhs: VoiceNote, rhs: VoiceNote) -> Bool {
+        return lhs.text == rhs.text &&
+               lhs.startTime == rhs.startTime &&
+               lhs.endTime == rhs.endTime &&
+               lhs.createdAt == rhs.createdAt &&
+               lhs.confidence == rhs.confidence &&
+               lhs.isPinned == rhs.isPinned &&
+               lhs.tags == rhs.tags
+    }
 }

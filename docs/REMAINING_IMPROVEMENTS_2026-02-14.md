@@ -325,5 +325,4 @@ Export Everything (Bundle)
 
 ---
 
-**Next Step (2026-02-16):** Execute remaining manual verification and exploration tickets via
-`DOC-003`, `TCK-20260214-074`, `TCK-20260214-075`, and `TCK-20260216-001` through `TCK-20260216-012`.
+**Next Step**: Create tickets for P0 items and begin implementation

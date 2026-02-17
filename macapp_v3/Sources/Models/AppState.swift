@@ -99,6 +99,11 @@ struct Session: Identifiable, Hashable {
     var isPinned: Bool
     var tags: [String]
     
+    // Brain Dump features
+    var voiceNotes: [VoiceNote]
+    var pinnedMoments: [PinnedMoment]
+    var meetingTemplate: MeetingTemplate?
+    
     enum SessionStatus: String {
         case live = "Live"
         case paused = "Paused"
@@ -309,6 +314,180 @@ struct PerformanceMetrics {
     }
 }
 
+// MARK: - Pinned Moment (Brain Dump feature)
+
+struct PinnedMoment: Identifiable, Hashable {
+    let id: UUID
+    let timestamp: Date
+    let relativeTime: TimeInterval
+    let text: String
+    let transcriptSegmentId: UUID?
+    var note: String? // User's note about why pinned
+    var tags: [String]
+}
+
+// MARK: - Voice Note
+
+struct VoiceNote: Identifiable, Hashable {
+    let id: UUID
+    let text: String
+    let timestamp: Date
+    let audioPath: String?
+    var isPinned: Bool
+    var tags: [String]
+}
+
+// MARK: - Meeting Template
+
+struct MeetingTemplate: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let description: String
+    let icon: String
+    let sections: [String]
+    let promptPreset: String?
+    
+    static let defaults: [MeetingTemplate] = [
+        MeetingTemplate(id: UUID(), name: "Daily Standup", description: "Quick team sync", icon: "sunrise", sections: ["Yesterday", "Today", "Blockers"], promptPreset: "standup"),
+        MeetingTemplate(id: UUID(), name: "Weekly 1:1", description: "Personal check-in", icon: "person.2", sections: ["Updates", "Feedback", "Career", "Action Items"], promptPreset: "one-on-one"),
+        MeetingTemplate(id: UUID(), name: "Sprint Planning", description: "Sprint scope planning", icon: "chart.bar.doc.horizontal", sections: ["Attendees", "Sprint Goal", "Stories", "Capacity"], promptPreset: "sprint-planning"),
+        MeetingTemplate(id: UUID(), name: "Design Review", description: "Design feedback session", icon: "paintbrush", sections: ["Presenter", "Designs", "Feedback", "Decisions"], promptPreset: "design-review"),
+        MeetingTemplate(id: UUID(), name: "Board Meeting", description: "Formal board update", icon: "building.columns", sections: ["Attendees", "Financials", "Strategic Updates", "Decisions", "Next Steps"], promptPreset: "board"),
+        MeetingTemplate(id: UUID(), name: "All Hands", description: "Company-wide meeting", icon: "person.3", sections: ["Highlights", "Announcements", "Q&A"], promptPreset: "all-hands"),
+        MeetingTemplate(id: UUID(), name: "Brainstorm", description: "Open ideation session", icon: "lightbulb", sections: ["Topic", "Ideas", "Voting", "Next Steps"], promptPreset: "brainstorm"),
+        MeetingTemplate(id: UUID(), name: "Retrospective", description: "Team feedback", icon: "arrow.counterclockwise", sections: ["What went well", "What to improve", "Action Items"], promptPreset: "retro")
+    ]
+}
+
+// MARK: - Calendar Event (Mock)
+
+struct CalendarEvent: Identifiable, Hashable {
+    let id: UUID
+    let title: String
+    let startTime: Date
+    let endTime: Date
+    let meetingURL: String?
+    let attendees: [String]
+    let isrecurring: Bool
+}
+
+// MARK: - Export Format
+
+enum ExportFormat: String, CaseIterable, Identifiable {
+    case markdown = "Markdown"
+    case json = "JSON"
+    case plainText = "Plain Text"
+    case html = "HTML"
+    case docx = "Word Document"
+    case pdf = "PDF"
+    case srt = "SRT (Subtitles)"
+    case vtt = "VTT (WebVTT)"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .markdown: return "doc.text"
+        case .json: return "curlybraces"
+        case .plainText: return "doc.plaintext"
+        case .html: return "globe"
+        case .docx: return "doc.richtext"
+        case .pdf: return "doc.fill"
+        case .srt: return "captions.bubble"
+        case .vtt: return "captions.bubble"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .markdown: return "Human-readable format, great for Obsidian"
+        case .json: return "Structured data for programmatic use"
+        case .plainText: return "Simple text without formatting"
+        case .html: return "Web-ready HTML document"
+        case .docx: return "Microsoft Word document"
+        case .pdf: return "Print-ready PDF"
+        case .srt: return "Subtitle format with timestamps"
+        case .vtt: return "Web subtitle format"
+        }
+    }
+}
+
+// MARK: - Share Destination
+
+enum ShareDestination: String, CaseIterable, Identifiable {
+    case slack = "Slack"
+    case teams = "Microsoft Teams"
+    case email = "Email"
+    case clipboard = "Copy to Clipboard"
+    case notion = "Notion"
+    case obsidian = "Obsidian"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .slack: return "number.square"
+        case .teams: return "person.2.square.stack"
+        case .email: return "envelope"
+        case .clipboard: return "doc.on.clipboard"
+        case .notion: return "notebook"
+        case .obsidian: return "diamond"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .slack: return .purple
+        case .teams: return .blue
+        case .email: return .red
+        case .clipboard: return .gray
+        case .notion: return .black
+        case .obsidian: return .purple
+        }
+    }
+}
+
+// MARK: - Task Integration
+
+enum TaskIntegration: String, CaseIterable, Identifiable {
+    case asana = "Asana"
+    case todoist = "Todoist"
+    case jira = "Jira"
+    case linear = "Linear"
+    case things = "Things 3"
+    case reminders = "Reminders"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .asana: return "checkmark.square"
+        case .todoist: return "list.bullet"
+        case .jira: return "j.circle"
+        case .linear: return "line.diagonal"
+        case .things: return "tree"
+        case .reminders: return "bell"
+        }
+    }
+}
+
+// MARK: - MOM Section
+
+struct MOMSection: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    var content: String
+    var items: [MOMItem]
+}
+
+struct MOMItem: Identifiable, Hashable {
+    let id = UUID()
+    let text: String
+    var assignee: String?
+    var dueDate: Date?
+    var isCompleted: Bool
+}
+
 // MARK: - App State
 
 @MainActor
@@ -367,6 +546,21 @@ class AppState: ObservableObject {
         }
     }
     
+    // MARK: - Brain Dump Features
+    @Published var meetingTemplates: [MeetingTemplate] = MeetingTemplate.defaults
+    @Published var calendarEvents: [CalendarEvent] = []
+    @Published var pinnedMoments: [PinnedMoment] = []
+    @Published var voiceNotes: [VoiceNote] = []
+    
+    // MARK: - Search
+    @Published var searchQuery: String = ""
+    @Published var searchResults: [Session] = []
+    
+    // MARK: - Export/Share
+    @Published var showExportPanel: Bool = false
+    @Published var showShareSheet: Bool = false
+    @Published var showMOMGenerator: Bool = false
+    
     // MARK: - Timer
     private var recordingTimer: Timer?
     private var silenceTimer: Timer?
@@ -374,13 +568,15 @@ class AppState: ObservableObject {
     
     // MARK: - Initialization
     init() {
-        // Load mock data for demonstration
         self.sessions = MockData.generateSessions()
+        self.currentSession = sessions.first
         self.selectedSession = sessions.first
+        self.calendarEvents = MockData.generateCalendarEvents()
     }
     
     // MARK: - Recording Controls
     func startRecording() {
+        let template = meetingTemplates.first // Default to first template
         let newSession = Session(
             id: UUID(),
             title: generateSessionTitle(),
@@ -395,7 +591,10 @@ class AppState: ObservableObject {
             audioSource: audioSource,
             provider: asrProvider,
             isPinned: false,
-            tags: []
+            tags: [],
+            voiceNotes: [],
+            pinnedMoments: [],
+            meetingTemplate: template
         )
         
         currentSession = newSession
@@ -406,8 +605,6 @@ class AppState: ObservableObject {
         
         startRecordingTimer()
         startSilenceDetection()
-        
-        // Simulate live transcript streaming
         simulateLiveTranscription()
     }
     
@@ -416,7 +613,6 @@ class AppState: ObservableObject {
         silenceTimer?.invalidate()
         
         if var session = currentSession {
-            // Calculate final duration
             let duration: TimeInterval
             switch recordingState {
             case .recording(let dur, _), .paused(let dur, _, _):
@@ -429,7 +625,6 @@ class AppState: ObservableObject {
             session.status = .processing
             currentSession = session
             
-            // Update in sessions array
             if let index = sessions.firstIndex(where: { $0.id == session.id }) {
                 sessions[index] = session
             }
@@ -438,8 +633,6 @@ class AppState: ObservableObject {
         recordingState = .idle
         isPanelVisible = false
         isDashboardOpen = true
-        
-        // Simulate post-processing
         processFinalTranscript()
     }
     
@@ -465,6 +658,40 @@ class AppState: ObservableObject {
         }
     }
     
+    // MARK: - Pin Moment
+    func pinMoment(_ moment: PinnedMoment) {
+        pinnedMoments.append(moment)
+        if var session = currentSession {
+            session.pinnedMoments.append(moment)
+            currentSession = session
+        }
+    }
+    
+    // MARK: - Voice Note
+    func addVoiceNote(_ note: VoiceNote) {
+        voiceNotes.append(note)
+        if var session = currentSession {
+            session.voiceNotes.append(note)
+            currentSession = session
+        }
+    }
+    
+    // MARK: - Search
+    func search(_ query: String) {
+        searchQuery = query
+        if query.isEmpty {
+            searchResults = []
+            return
+        }
+        
+        searchResults = sessions.filter { session in
+            session.title.localizedCaseInsensitiveContains(query) ||
+            session.summary?.localizedCaseInsensitiveContains(query) == true ||
+            session.finalTranscript.contains { $0.text.localizedCaseInsensitiveContains(query) } ||
+            session.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+    
     // MARK: - Private Methods
     private func startRecordingTimer() {
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -482,7 +709,6 @@ class AppState: ObservableObject {
                     }
                     
                 case .paused(let duration, let startTime, let pausedAt):
-                    // Calculate duration up to pause point
                     let totalPaused = Date().timeIntervalSince(pausedAt)
                     let activeDuration = pausedAt.timeIntervalSince(startTime) - totalPaused
                     self.recordingState = .paused(duration: activeDuration, startTime: startTime, pausedAt: pausedAt)
@@ -498,8 +724,6 @@ class AppState: ObservableObject {
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                // Check if audio has been received recently
-                // In real app, would check actual audio input
             }
         }
     }
@@ -512,7 +736,6 @@ class AppState: ObservableObject {
     }
     
     private func simulateLiveTranscription() {
-        // Simulate live transcript updates
         Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] timer in
             guard let self = self else {
                 timer.invalidate()
@@ -524,19 +747,14 @@ class AppState: ObservableObject {
                     timer.invalidate()
                     return
                 }
-                
-                // Add new transcript segment
-                // In real app, this comes from WebSocket
             }
         }
     }
     
     private func processFinalTranscript() {
-        // Simulate post-processing
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self = self, var session = self.currentSession else { return }
             
-            // Generate final transcript with speaker labels
             session.finalTranscript = MockData.generateFinalTranscript(from: session.liveTranscript)
             session.entities = MockData.generateEntities()
             session.highlights = MockData.generateHighlights()

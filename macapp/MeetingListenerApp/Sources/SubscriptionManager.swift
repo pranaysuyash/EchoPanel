@@ -300,3 +300,12 @@ final class SubscriptionManager: ObservableObject {
         updateListenerTask?.cancel()
     }
 }
+
+// MARK: - ASR Tier Bridge
+
+extension SubscriptionManager {
+    /// Returns true if Pro features are enabled
+    var isASRTierPro: Bool {
+        isProFeatureEnabled()
+    }
+}

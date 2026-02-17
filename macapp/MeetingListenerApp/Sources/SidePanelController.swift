@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+/// Custom NSPanel subclass that supports dragging from anywhere in the content area
+/// This makes the panel feel more like a floating assistant that can be repositioned easily
+final class DraggablePanel: NSPanel {
+    /// Customize behavior to make it feel like a true floating assistant
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        // Ensure smooth dragging from window background
+        isMovable = true
+        isMovableByWindowBackground = true
+    }
+}
+
 final class SidePanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var hostingController: NSHostingController<SidePanelView>?
@@ -17,9 +29,9 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 let host = NSHostingController(rootView: view)
                 self.hostingController = host
 
-                let panel = NSPanel(
+                let panel = DraggablePanel(
                     contentRect: NSRect(x: 0, y: 0, width: 460, height: 760),
-                    styleMask: [.titled, .closable, .resizable, .utilityWindow],
+                    styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
                     backing: .buffered,
                     defer: false
                 )
@@ -28,7 +40,12 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 panel.level = .floating
                 panel.hidesOnDeactivate = false
                 panel.isReleasedWhenClosed = false
-                panel.collectionBehavior = .moveToActiveSpace
+                // Critical: Stay visible over fullscreen apps (Zoom, Teams, etc.)
+                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                // Don't steal keyboard focus from meeting apps
+                panel.becomesKeyOnlyIfNeeded = true
+                // Allow dragging from window background for easy repositioning
+                panel.isMovableByWindowBackground = true
                 panel.contentViewController = host
                 panel.delegate = self // Set delegate to capture close event
                 panel.minSize = NSSize(width: 390, height: 620)
@@ -39,9 +56,7 @@ final class SidePanelController: NSObject, NSWindowDelegate {
                 hostingController.rootView = self.makeRootView(appState: appState, onEndSession: onEndSession)
             }
 
-            // Force activation; MenuBarExtra apps can otherwise fail to bring panels forward.
-            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-            NSApp.activate(ignoringOtherApps: true)
+            // Bring panel forward without stealing focus from meeting apps
             self.panel?.center()
             self.panel?.makeKeyAndOrderFront(nil)
             self.panel?.orderFrontRegardless()

@@ -4,10 +4,6 @@
 **Participants:** Pranay (Product Owner), AI Agent  
 **Status:** Analysis Complete - Action Items Identified
 
-> **Update (2026-02-16):** Major remediation from this discussion has been implemented and ticketized.
-> Completed/verified: provider/runtime rollout and testing (`TCK-20260214-080`), analysis/backpressure quick wins (`TCK-20260214-082`), docs backlog reconciliation (`TCK-20260216-004`).
-> Remaining strategic/deferred items should be tracked via `docs/EXPLORATION_ACTION_TRIAGE_2026-02-16.md`, not this historical discussion checklist.
-
 ---
 
 ## Part 1: The Core Question

@@ -17,7 +17,7 @@ final class HotKeyManager: ObservableObject {
     
     // MARK: - Hot Key Definitions
     
-    enum HotKeyAction: String, CaseIterable, Identifiable {
+    enum HotKeyAction: String, CaseIterable, Identifiable, Codable {
         case startSession = "start_session"
         case stopSession = "stop_session"
         case insertMarker = "insert_marker"
@@ -213,17 +213,33 @@ final class HotKeyManager: ObservableObject {
     }
     
     private func loadBindings() {
-        // Load from UserDefaults or use defaults
         let defaults = HotKeyAction.allCases.reduce(into: [:]) { dict, action in
             dict[action] = HotKeyBinding(action: action, keyCombo: action.defaultKey, isEnabled: true)
         }
-        
-        // TODO: Load custom bindings from UserDefaults
-        bindings = defaults
+
+        if let savedData = UserDefaults.standard.data(forKey: "customHotKeyBindings"),
+           let savedBindingsArray = try? JSONDecoder().decode([HotKeyBinding].self, from: savedData) {
+            var mergedBindings = defaults
+            for binding in savedBindingsArray {
+                mergedBindings[binding.action] = binding
+            }
+            bindings = mergedBindings
+            NSLog("📋 Loaded \(savedBindingsArray.count) custom hot key bindings")
+        } else {
+            bindings = defaults
+            NSLog("📋 Using default hot key bindings")
+        }
     }
-    
+
     private func saveBindings() {
-        // TODO: Save to UserDefaults
+        let bindingsArray = Array(bindings.values)
+        let encoder = JSONEncoder()
+        if let encoded = try? encoder.encode(bindingsArray) {
+            UserDefaults.standard.set(encoded, forKey: "customHotKeyBindings")
+            NSLog("💾 Saved \(bindingsArray.count) hot key bindings")
+        } else {
+            NSLog("❌ Failed to save hot key bindings")
+        }
     }
 }
 
@@ -315,7 +331,7 @@ enum KeyCode: UInt16, Codable, CaseIterable {
     }
 }
 
-struct HotKeyBinding: Equatable {
+struct HotKeyBinding: Equatable, Codable {
     let action: HotKeyManager.HotKeyAction
     let keyCombo: KeyCombo
     var isEnabled: Bool

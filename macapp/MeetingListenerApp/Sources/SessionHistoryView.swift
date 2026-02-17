@@ -120,6 +120,21 @@ struct SessionHistoryView: View {
                     }
                     .buttonStyle(.bordered)
 
+                    Menu {
+                        Button("Export MOM (Default)…") {
+                            exportSelectedMOM(template: .standard)
+                        }
+                        Button("Export MOM (Executive)…") {
+                            exportSelectedMOM(template: .executive)
+                        }
+                        Button("Export MOM (Engineering)…") {
+                            exportSelectedMOM(template: .engineering)
+                        }
+                    } label: {
+                        Label("Export MOM…", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(.bordered)
+
                     Button {
                         exportSelectedSnapshot()
                     } label: {
@@ -389,6 +404,30 @@ struct SessionHistoryView: View {
         }
     }
 
+    private func exportSelectedMOM(template: MinutesOfMeetingTemplate) {
+        guard let selectedSnapshot else { return }
+
+        let input = MinutesOfMeetingGenerator.buildInput(from: selectedSnapshot, fallbackTitle: "Meeting Minutes")
+        let markdown = MinutesOfMeetingGenerator.generate(from: input, template: template)
+
+        let panel = NSSavePanel()
+        if let markdownType = UTType(filenameExtension: markdownFilenameExtension) {
+            panel.allowedContentTypes = [markdownType]
+        } else {
+            panel.allowedContentTypes = [UTType.plainText]
+        }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = momFilename(template: template, date: input.date)
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSLog("SessionHistory export MOM failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func exportSelectedSnapshot() {
         guard let selectedSnapshot else { return }
         let panel = NSSavePanel()
@@ -407,6 +446,13 @@ struct SessionHistoryView: View {
     }
 
     private let markdownFilenameExtension = "md"
+
+    private func momFilename(template: MinutesOfMeetingTemplate, date: Date?) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        let dateStamp = formatter.string(from: date ?? Date())
+        return "echopanel-\(template.filenameSuffix)-\(dateStamp).md"
+    }
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()

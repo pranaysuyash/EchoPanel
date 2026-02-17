@@ -1,78 +1,75 @@
 import SwiftUI
+import AppKit
 
 struct MenuBarView: View {
     @EnvironmentObject private var appState: AppState
-    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            headerSection
-            
-            Divider()
-            
-            // Status
-            statusSection
-            
-            Divider()
-            
-            // Main Actions
-            actionsSection
-            
-            Divider()
-            
-            // Recent Sessions
-            recentSessionsSection
-            
-            Divider()
-            
-            // System Actions
-            systemActionsSection
+            MenuHeader()
+            Divider().padding(.horizontal, 12)
+            MenuActions()
+            if !appState.sessions.isEmpty {
+                Divider().padding(.horizontal, 12)
+                MenuSessions()
+            }
+            Divider().padding(.horizontal, 12)
+            MenuFooter()
         }
-        .frame(width: 280)
+        .frame(width: 220)
     }
+}
+
+struct MenuHeader: View {
+    @EnvironmentObject private var appState: AppState
     
-    // MARK: Header Section
-    private var headerSection: some View {
-        HStack {
-            Image(systemName: "waveform")
-                .font(.title2)
-                .foregroundColor(.accentColor)
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LinearGradient(
+                        colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(width: 28, height: 28)
+                
+                Image(systemName: "waveform")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+            }
             
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("EchoPanel")
-                    .font(.headline)
-                Text("v3.0.0")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13, weight: .bold))
+                
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 5, height: 5)
+                    Text(statusText)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
             }
             
             Spacer()
+            
+            Text("v3")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
         }
-        .padding()
-    }
-    
-    // MARK: Status Section
-    private var statusSection: some View {
-        HStack {
-            statusDot
-            Text(statusText)
-                .font(.caption)
-            Spacer()
-        }
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-    
-    private var statusDot: some View {
-        Circle()
-            .fill(statusColor)
-            .frame(width: 8, height: 8)
     }
     
     private var statusColor: Color {
         switch appState.recordingState {
-        case .idle: return .gray
+        case .idle: return .green
         case .recording: return .red
         case .paused: return .orange
         case .error: return .red
@@ -87,227 +84,312 @@ struct MenuBarView: View {
         case .error: return "Error"
         }
     }
+}
+
+struct MenuActions: View {
+    @EnvironmentObject private var appState: AppState
     
-    // MARK: Actions Section
-    private var actionsSection: some View {
-        VStack(spacing: 0) {
-            // Record/Stop Button
+    var body: some View {
+        VStack(spacing: 3) {
             Button(action: toggleRecording) {
-                HStack {
-                    Image(systemName: isRecording ? "stop.fill" : "record.circle")
-                    Text(isRecording ? "End Session" : "Start Recording")
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(isRecording ? Color.red.opacity(0.4) : Color.green.opacity(0.4))
+                            .frame(width: 24, height: 24)
+                        
+                        Image(systemName: isRecording ? "stop.fill" : "record.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(isRecording ? .red : .green)
+                    }
+                    
+                    Text(isRecording ? "Stop Recording" : "Start Recording")
+                        .font(.system(size: 12, weight: .medium))
+                    
                     Spacer()
+                    
                     Text("⌘⇧R")
-                        .font(.caption)
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .background(isRecording ? Color.red.opacity(0.1) : Color.clear)
             
-            // Show Panel Button
-            if appState.recordingState != .idle {
-                Button(action: showPanel) {
-                    HStack {
+            Button(action: openLivePanel) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: 24, height: 24)
+                        
                         Image(systemName: "rectangle.stack")
-                        Text("Show Panel")
-                        Spacer()
-                        Text("⌘⇧S")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11))
+                            .foregroundColor(.blue)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
+                    
+                    Text("Show Panel")
+                        .font(.system(size: 12))
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            if appState.recordingState != .idle {
+                Button(action: openLivePanel) {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.4))
+                                .frame(width: 24, height: 24)
+                            
+                            Image(systemName: "rectangle.stack")
+                                .font(.system(size: 11))
+                                .foregroundColor(.blue)
+                        }
+                        
+                        Text("Show Panel (Recording)")
+                            .font(.system(size: 12))
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             
-            // Export Last Session
             if !appState.sessions.isEmpty && appState.recordingState == .idle {
-                Button(action: exportLastSession) {
-                    HStack {
-                        Image(systemName: "square.and.arrow.up")
+                Button(action: {}) {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.orange.opacity(0.4))
+                                .frame(width: 24, height: 24)
+                            
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                        }
+                        
                         Text("Export Last Session")
+                            .font(.system(size: 12))
+                        
                         Spacer()
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
+        .padding(.vertical, 8)
     }
     
     private var isRecording: Bool {
-        if case .recording = appState.recordingState {
-            return true
-        }
+        if case .recording = appState.recordingState { return true }
         return false
     }
     
-    // MARK: Recent Sessions Section
-    @ViewBuilder
-    private var recentSessionsSection: some View {
-        if !appState.sessions.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Recent Sessions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                
-                ForEach(appState.sessions.prefix(3)) { session in
-                    Button(action: { openSession(session) }) {
-                        HStack {
-                            Image(systemName: "waveform.circle")
-                                .font(.caption)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(session.title)
-                                    .lineLimit(1)
-                                Text(session.formattedDate)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if session.isPinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-    
-    // MARK: System Actions Section
-    private var systemActionsSection: some View {
-        VStack(spacing: 0) {
-            Button(action: openDashboard) {
-                HStack {
-                    Image(systemName: "list.bullet.rectangle")
-                    Text("Open Dashboard")
-                    Spacer()
-                    Text("⌘⇧D")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-            
-            Divider()
-                .padding(.horizontal)
-            
-            Button(action: openSettings) {
-                HStack {
-                    Image(systemName: "gear")
-                    Text("Settings...")
-                    Spacer()
-                    Text("⌘,")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-            
-            Button(action: quitApp) {
-                HStack {
-                    Image(systemName: "power")
-                    Text("Quit")
-                    Spacer()
-                    Text("⌘Q")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-    
-    // MARK: Actions
     private func toggleRecording() {
         switch appState.recordingState {
-        case .idle:
-            appState.startRecording()
-        case .recording, .paused:
-            appState.stopRecording()
-        case .error:
-            appState.startRecording()
+        case .idle: appState.startRecording()
+        case .recording, .paused: appState.stopRecording()
+        case .error: appState.startRecording()
         }
     }
     
-    private func showPanel() {
+    private func openLivePanel() {
         NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "live-panel")
-    }
-    
-    private func openDashboard() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "dashboard")
-    }
-    
-    private func openSession(_ session: Session) {
-        appState.selectedSession = session
-        openDashboard()
-    }
-    
-    private func exportLastSession() {
-        // Trigger export for last session
-    }
-    
-    private func openSettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-    }
-    
-    private func quitApp() {
-        NSApp.terminate(nil)
+        NotificationCenter.default.post(name: .openLivePanel, object: nil)
     }
 }
 
-// MARK: - Menu Bar Icon View
+extension Notification.Name {
+    static let openLivePanel = Notification.Name("openLivePanel")
+    static let openDashboard = Notification.Name("openDashboard")
+}
+
+struct MenuSessions: View {
+    @EnvironmentObject private var appState: AppState
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(appState.sessions.prefix(3)) { session in
+                Button(action: {
+                    appState.selectedSession = session
+                    NSApp.activate(ignoringOtherApps: true)
+                    NotificationCenter.default.post(name: .openDashboard, object: nil)
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20)
+                        
+                        Text(session.title)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                        
+                        Spacer()
+                        
+                        Text(session.formattedDuration)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+struct MenuFooter: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .openDashboard, object: nil)
+            }) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: 22, height: 22)
+                        
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Text("Dashboard")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Spacer()
+            
+            Divider().frame(height: 16)
+            
+            Spacer()
+            
+            Button(action: {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.gray.opacity(0.4))
+                            .frame(width: 22, height: 22)
+                        
+                        Image(systemName: "gear")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Text("Settings")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Spacer()
+            
+            Divider().frame(height: 16)
+            
+            Spacer()
+            
+            Button(action: { NSApp.terminate(nil) }) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.red.opacity(0.4))
+                            .frame(width: 22, height: 22)
+                        
+                        Image(systemName: "power")
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                    }
+                    
+                    Text("Quit")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+    }
+}
+
 struct MenuBarIconView: View {
     let state: RecordingState
     
     var body: some View {
         switch state {
         case .idle:
-            Image(systemName: "waveform")
-                .symbolRenderingMode(.hierarchical)
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(LinearGradient(
+                        colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(width: 20, height: 20)
+                
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+            }
         
         case .recording(let duration, _):
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 Circle()
                     .fill(Color.red)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 6, height: 6)
                 Text(formatDuration(duration))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
             }
         
         case .paused(let duration, _, _):
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 Image(systemName: "pause.fill")
-                    .foregroundStyle(.orange)
-                    .font(.system(size: 8))
+                    .font(.system(size: 7))
+                    .foregroundColor(.orange)
                 Text(formatDuration(duration))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
             }
         
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
+                .foregroundColor(.red)
         }
     }
     

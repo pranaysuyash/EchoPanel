@@ -1,7 +1,8 @@
-> **⚠️ OBSOLETE (2026-02-15):** All findings in this audit have been addressed. Moved to archive.
-> See implementation references below. Original audit preserved for historical context.
->
-> **Implementation refs:** SidePanelView decomposition complete (2,738→284 LOC, 9 files), all tests pass (79/79 + 12 skipped snapshots), Grade A validation. Follow-up items (extract @Observable, design system) are future enhancements, not open findings. See `docs/audit/REFACTOR_VALIDATION_CHECKLIST.md` for living checklist.
+> **⚠️ OBSOLETE (2026-02-16):** Refactor validated — verified against source code:
+> - SidePanelView decomposed: `SidePanelView.swift` (284 LOC) + `SidePanel/` directory with 9 sub-files
+> - Shared components: `SidePanel/Shared/SidePanelTranscriptSurfaces.swift`, `SidePanelStateLogic.swift`
+> - Mode-specific views: `SidePanel/Roll/`, `SidePanel/Compact/`, `SidePanel/Full/`
+> - Tests: `swift test` — 79/79 pass, 12 visual snapshots skipped (opt-in via `RUN_VISUAL_SNAPSHOTS=1`)
 
 # Refactoring Validation Report
 

@@ -175,7 +175,7 @@ extension SidePanelView {
         if items.isEmpty {
             items.append(
                 FullSessionItem(
-                    id: "placeholder",
+                    id: "empty-state-placeholder",
                     name: "No saved sessions yet",
                     when: "Start listening to create one",
                     duration: "--",
@@ -746,12 +746,12 @@ extension SidePanelView {
         case transcript(TranscriptSegment)
         case voiceNote(VoiceNote)
         
-        var id: UUID {
+        var id: String {
             switch self {
             case .transcript(let segment):
-                return segment.id
+                return segment.id.uuidString
             case .voiceNote(let note):
-                return note.id
+                return note.id.uuidString
             }
         }
         

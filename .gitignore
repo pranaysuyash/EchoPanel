@@ -25,11 +25,15 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+
 # Generated test and tool output
 /output/
 playwright-report/
+
 # Playwright artifacts
 output/playwright/
+
+# Vim temporary files
 *.swp
 *.swo
 *~
@@ -38,16 +42,16 @@ output/playwright/
 .agent/
 .agent/*
 
-# Local model weights / large artifacts (do not commit)
+# Git hooks (workspace-specific)
+.githooks/
+
+# Screenshots (development/debugging artifacts)
+Screenshot*.png
+Screenshot*.jpg
+
+# macOS app bundles (build artifacts)
+**/*.app/
+
+# ML models (too large for git)
 models/
-*.safetensors
-*.gguf
-*.bin
-
-# Local app bundle build outputs
-*.app/
-*.dmg
-
-# Local hook manager generated files
-.githooks/post-*
-.githooks/pre-push
+temp_vad_model/

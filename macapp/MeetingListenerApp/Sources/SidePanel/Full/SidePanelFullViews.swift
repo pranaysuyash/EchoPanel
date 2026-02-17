@@ -669,6 +669,16 @@ extension SidePanelView {
                 
                 Spacer()
                 
+                // Edit button
+                Button {
+                    appState.editingVoiceNote = note.id
+                } label: {
+                    Image(systemName: "pencil.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Edit note")
+                
                 // Pin button
                 Button {
                     appState.toggleVoiceNotePin(id: note.id)
@@ -690,10 +700,26 @@ extension SidePanelView {
                 .help("Delete note")
             }
             
-            Text(note.text)
+            if appState.editingVoiceNote == note.id {
+                // Edit mode
+                TextField("Edit note", text: Binding(
+                    get: { note.text },
+                    set: { newValue in
+                        appState.updateVoiceNote(id: note.id, newText: newValue)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
                 .font(.footnote)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .onSubmit {
+                    appState.editingVoiceNote = nil
+                }
+            } else {
+                // Display mode
+                Text(note.text)
+                    .font(.footnote)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(Spacing.sm)
         .background(BackgroundStyle.control.color(for: colorScheme))

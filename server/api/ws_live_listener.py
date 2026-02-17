@@ -22,6 +22,22 @@ from server.services.concurrency_controller import (
 )
 from server.services.degrade_ladder import DegradeLadder, DegradeLevel
 from server.services.screen_ocr import get_ocr_handler, OCRFrameHandler
+from server.services.brain_dump_integration import (
+    get_integration,
+    index_transcript_event,
+    initialize_integration,
+    shutdown_integration
+)
+from server.api.ws_schemas import (
+    parse_websocket_message,
+    StartMessage,
+    StopMessage,
+    AudioMessage,
+    VoiceNoteStartMessage,
+    VoiceNoteAudioMessage,
+    VoiceNoteStopMessage,
+    OCRTextMessage,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -65,6 +81,7 @@ class SessionState:
     asr_tasks: list[asyncio.Task] = field(default_factory=list)
     analysis_tasks: list[asyncio.Task] = field(default_factory=list)
     transcript: list[dict] = field(default_factory=list)
+    transcript_lock: asyncio.Lock = field(default_factory=asyncio.Lock)  # Protect transcript mutations
     # Source-aware PCM buffers used for session-end diarization.
     pcm_buffers_by_source: Dict[str, bytearray] = field(default_factory=dict)
     diarization_enabled: bool = False
@@ -329,18 +346,21 @@ def _health_to_payload(value: Any) -> Optional[Dict[str, Any]]:
 
 
 def _extract_ws_auth_token(websocket: WebSocket) -> str:
-    # Priority: query param -> custom header -> Authorization: Bearer <token>
-    query_token = websocket.query_params.get("token")
-    if query_token:
-        return query_token.strip()
+    # Priority: Authorization header -> custom header -> query param (legacy)
+    # Prefer headers for security (query params visible in logs/proxy)
+    auth_header = websocket.headers.get("authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
 
     header_token = websocket.headers.get("x-echopanel-token")
     if header_token:
         return header_token.strip()
 
-    auth_header = websocket.headers.get("authorization", "").strip()
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
+    # Fallback to query param for backward compatibility
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return query_token.strip()
+    
     return ""
 
 
@@ -390,7 +410,7 @@ def _init_audio_dump(state: SessionState, source: str) -> None:
     """Initialize audio dump file for a source (P2-13)."""
     if not DEBUG_AUDIO_DUMP or source in state.debug_dump_files:
         return
-    
+
     try:
         DEBUG_AUDIO_DUMP_DIR.mkdir(parents=True, exist_ok=True)
         _cleanup_audio_dump_dir()
@@ -398,8 +418,10 @@ def _init_audio_dump(state: SessionState, source: str) -> None:
         session_id = state.session_id or "unknown"
         filename = f"{session_id}_{source}_{timestamp}.pcm"
         filepath = DEBUG_AUDIO_DUMP_DIR / filename
-        
+
         file_handle = open(filepath, "wb")
+        # Set restrictive permissions (owner read/write only)
+        os.chmod(filepath, 0o600)
         state.debug_dump_files[source] = file_handle
         logger.info(f"Audio dump enabled for {source}: {filepath}")
     except Exception as e:
@@ -619,15 +641,19 @@ def _init_recording_lane(state: SessionState, source: str, sample_rate: int = 16
             wav_path = RECORDING_LANE_DIR / f"{base_name}.wav"
             # Open for read/write, we'll update the header at the end
             wav_file = open(wav_path, "w+b")
+            # Set restrictive permissions (owner read/write only)
+            os.chmod(wav_path, 0o600)
             # Write placeholder header (will be updated on close)
             _write_wav_header(wav_file, sample_rate, 0)
             files['wav'] = wav_file
             paths['wav'] = wav_path
             logger.info(f"Recording lane (WAV) initialized: {wav_path}")
-        
+
         if RECORDING_LANE_FORMAT in ("pcm", "both"):
             pcm_path = RECORDING_LANE_DIR / f"{base_name}.pcm"
             pcm_file = open(pcm_path, "wb")
+            # Set restrictive permissions (owner read/write only)
+            os.chmod(pcm_path, 0o600)
             files['pcm'] = pcm_file
             paths['pcm'] = pcm_path
             logger.info(f"Recording lane (PCM) initialized: {pcm_path}")
@@ -923,7 +949,20 @@ async def _asr_loop(websocket: WebSocket, state: SessionState, queue: asyncio.Qu
                 source_key = _normalize_source(event.get("source", source))
                 state.asr_last_t1_by_source[source_key] = float(event.get("t1", 0.0))
                 _update_source_clock_spread(state)
-                state.transcript.append(event)
+                async with state.transcript_lock:
+                    state.transcript.append(event)
+                
+                # Brain Dump: Index transcript event
+                try:
+                    integration = get_integration()
+                    if integration and state.connection_id:
+                        await index_transcript_event(
+                            connection_id=state.connection_id,
+                            event=event,
+                            source=event.get("source", source)
+                        )
+                except Exception as e:
+                    logger.debug(f"Failed to index transcript: {e}")
             
             await ws_send(state, websocket, event)
             
@@ -968,7 +1007,8 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
                 logger.debug("Skipping entity analysis: no new transcript segments")
                 continue
             
-            snapshot = list(state.transcript)
+            async with state.transcript_lock:
+                snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
                 # Use incremental entity extraction
@@ -991,7 +1031,8 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
                 logger.debug("Skipping card analysis: no new transcript segments")
                 continue
             
-            snapshot = list(state.transcript)
+            async with state.transcript_lock:
+                snapshot = list(state.transcript)
             # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
                 # Use incremental card extraction
@@ -1309,17 +1350,38 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         logger.debug(f"ws_live_listener: processing message type: {msg_type}")
 
                     if msg_type == "start":
-                        state.session_id = payload.get("session_id")
-                        state.attempt_id = payload.get("attempt_id")  # V1: Client attempt ID
-                        state.connection_id = payload.get("connection_id") or str(uuid.uuid4())  # V1: Generate if not provided
+                        # Validate message schema
+                        try:
+                            start_msg = parse_websocket_message(payload)
+                        except ValueError as e:
+                            logger.warning(f"Invalid start message: {e}")
+                            await ws_send(state, websocket, {
+                                "type": "error",
+                                "message": f"Invalid start message: {str(e)}"
+                            })
+                            await websocket.close()
+                            return
+                        
+                        # Cast to StartMessage for type safety
+                        if not isinstance(start_msg, StartMessage):
+                            await ws_send(state, websocket, {
+                                "type": "error",
+                                "message": "Expected start message"
+                            })
+                            await websocket.close()
+                            return
+                        
+                        state.session_id = start_msg.session_id
+                        state.attempt_id = start_msg.attempt_id  # V1: Client attempt ID
+                        state.connection_id = start_msg.connection_id or str(uuid.uuid4())  # V1: Generate if not provided
                         client_features = _extract_client_features(payload)
                         state.client_clock_drift_compensation_enabled = client_features["clock_drift_compensation_enabled"]
                         state.client_vad_enabled = client_features["client_vad_enabled"]
                         state.client_clock_drift_telemetry_enabled = client_features["clock_drift_telemetry_enabled"]
                         state.client_vad_telemetry_enabled = client_features["client_vad_telemetry_enabled"]
-                        sample_rate = payload.get("sample_rate", 16000)
-                        encoding = payload.get("format", "pcm_s16le")
-                        channels = payload.get("channels", 1)
+                        sample_rate = start_msg.sample_rate
+                        encoding = start_msg.format
+                        channels = start_msg.channels
                         
                         # Validate format
                         if sample_rate != 16000 or encoding != "pcm_s16le" or channels != 1:
@@ -1392,6 +1454,18 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                   f"client_vad={state.client_vad_enabled}, "
                                   f"clock_drift_comp={state.client_clock_drift_compensation_enabled}")
                         
+                        # Brain Dump: Start indexing session
+                        try:
+                            integration = get_integration()
+                            if integration:
+                                await integration.start_session(
+                                    connection_id=state.connection_id,
+                                    title=f"Session {state.session_id}",
+                                    source_app="echopanel"
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to start brain dump session: {e}")
+                        
                         if DEBUG:
                             logger.debug(f"ws_live_listener: start session_id={state.session_id}")
                         state.analysis_tasks.append(asyncio.create_task(_analysis_loop(websocket, state)))
@@ -1437,28 +1511,79 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 if ocr_handler.enabled:
                                     image_data = payload.get("image_data", "")
                                     timestamp = payload.get("timestamp", time.time())
+                                    mode = payload.get("mode", "background")  # background, query, quality
                                     
-                                    result = await ocr_handler.handle_frame(
-                                        image_base64=image_data,
-                                        session_id=state.session_id or "unknown",
-                                        timestamp=timestamp
-                                    )
+                                    # Use hybrid pipeline with mode
+                                    from server.services.ocr_hybrid import HybridOCRPipeline
+                                    hybrid = getattr(ocr_handler, '_hybrid', None)
                                     
-                                    # Send result back to client
-                                    await ws_send(state, websocket, {
-                                        "type": "ocr_result",
-                                        "timestamp": timestamp,
-                                        "success": result.success,
-                                        "text_preview": result.text[:100] + "..." if len(result.text) > 100 else result.text,
-                                        "word_count": result.word_count,
-                                        "confidence": round(result.confidence, 1),
-                                        "indexed": result.should_index,
-                                        "is_duplicate": result.is_duplicate,
-                                        "processing_time_ms": round(result.processing_time_ms, 1),
-                                    })
+                                    if hybrid and mode in ["query", "quality"]:
+                                        # Direct hybrid pipeline for special modes
+                                        image_bytes = base64.b64decode(image_data)
+                                        result = await hybrid.process_frame(
+                                            image_bytes=image_bytes,
+                                            session_id=state.session_id or "unknown",
+                                            mode=mode,
+                                            skip_duplicates=(mode == "background")
+                                        )
+                                        
+                                        # Build enriched response
+                                        response = {
+                                            "type": "ocr_result",
+                                            "timestamp": timestamp,
+                                            "success": result.success,
+                                            "text_preview": result.primary_text[:100] + "..." if len(result.primary_text) > 100 else result.primary_text,
+                                            "full_text": result.primary_text,
+                                            "word_count": result.word_count,
+                                            "confidence": round(result.confidence, 1),
+                                            "source": result.source,
+                                            "is_enriched": result.is_enriched,
+                                            "layout_type": result.layout_type,
+                                            "processing_time_ms": round(result.processing_time_ms, 1),
+                                        }
+                                        
+                                        # Add enrichment data if available
+                                        if result.semantic_summary:
+                                            response["semantic_summary"] = result.semantic_summary
+                                        if result.key_insights:
+                                            response["key_insights"] = result.key_insights
+                                        if result.entities:
+                                            response["entities"] = [{"text": e.text, "type": e.type} for e in result.entities]
+                                        
+                                        await ws_send(state, websocket, response)
+                                    else:
+                                        # Standard OCR handling
+                                        result = await ocr_handler.handle_frame(
+                                            image_base64=image_data,
+                                            session_id=state.session_id or "unknown",
+                                            timestamp=timestamp
+                                        )
+                                        
+                                        # Build response with new fields if available
+                                        response = {
+                                            "type": "ocr_result",
+                                            "timestamp": timestamp,
+                                            "success": result.success,
+                                            "text_preview": result.text[:100] + "..." if len(result.text) > 100 else result.text,
+                                            "word_count": result.word_count,
+                                            "confidence": round(result.confidence, 1),
+                                            "indexed": result.should_index,
+                                            "is_duplicate": result.is_duplicate,
+                                            "processing_time_ms": round(result.processing_time_ms, 1),
+                                        }
+                                        
+                                        # Add hybrid fields if available
+                                        if hasattr(result, 'is_enriched'):
+                                            response["is_enriched"] = result.is_enriched
+                                        if hasattr(result, 'semantic_summary') and result.semantic_summary:
+                                            response["semantic_summary"] = result.semantic_summary
+                                        if hasattr(result, 'layout_type'):
+                                            response["layout_type"] = result.layout_type
+                                        
+                                        await ws_send(state, websocket, response)
                                     
                                     if DEBUG:
-                                        logger.debug(f"OCR processed: {result.word_count} words, {result.confidence:.1f}% confidence")
+                                        logger.debug(f"OCR processed: {result.word_count if hasattr(result, 'word_count') else len(result.primary_text.split())} words, mode={mode}")
                                 else:
                                     if DEBUG:
                                         logger.debug("OCR disabled, ignoring screen frame")
@@ -1466,6 +1591,55 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                 logger.error(f"OCR processing error: {e}")
                                 await ws_send(state, websocket, {
                                     "type": "ocr_result",
+                                    "timestamp": time.time(),
+                                    "success": False,
+                                    "error": str(e),
+                                })
+                    
+                    elif msg_type == "slide_query":
+                        # Query a specific slide (requires hybrid OCR)
+                        if state.started:
+                            try:
+                                ocr_handler = get_ocr_handler()
+                                hybrid = getattr(ocr_handler, '_hybrid', None)
+                                
+                                if hybrid and hybrid.is_available():
+                                    image_data = payload.get("image_data", "")
+                                    query = payload.get("query", "")
+                                    timestamp = payload.get("timestamp", time.time())
+                                    
+                                    if image_data and query:
+                                        answer = await hybrid.answer_query(
+                                            image_bytes=base64.b64decode(image_data),
+                                            query=query,
+                                            session_id=state.session_id or "unknown"
+                                        )
+                                        
+                                        await ws_send(state, websocket, {
+                                            "type": "slide_query_result",
+                                            "timestamp": timestamp,
+                                            "query": query,
+                                            "answer": answer,
+                                            "success": True,
+                                        })
+                                    else:
+                                        await ws_send(state, websocket, {
+                                            "type": "slide_query_result",
+                                            "timestamp": time.time(),
+                                            "success": False,
+                                            "error": "Missing image_data or query",
+                                        })
+                                else:
+                                    await ws_send(state, websocket, {
+                                        "type": "slide_query_result",
+                                        "timestamp": time.time(),
+                                        "success": False,
+                                        "error": "Hybrid OCR not available",
+                                    })
+                            except Exception as e:
+                                logger.error(f"Slide query error: {e}")
+                                await ws_send(state, websocket, {
+                                    "type": "slide_query_result",
                                     "timestamp": time.time(),
                                     "success": False,
                                     "error": str(e),
@@ -1522,10 +1696,30 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                         )
 
                     elif msg_type == "stop":
+                        # Validate message schema
+                        try:
+                            stop_msg = parse_websocket_message(payload)
+                        except ValueError as e:
+                            logger.warning(f"Invalid stop message: {e}")
+                            await ws_send(state, websocket, {
+                                "type": "error",
+                                "message": f"Invalid stop message: {str(e)}"
+                            })
+                            await websocket.close()
+                            return
+                        
+                        if not isinstance(stop_msg, StopMessage):
+                            await ws_send(state, websocket, {
+                                "type": "error",
+                                "message": "Expected stop message"
+                            })
+                            await websocket.close()
+                            return
+                        
                         # Signal EOF to all queues
                         for q in state.queues.values():
                             await q.put(None)
-                            
+
                         if DEBUG:
                             logger.debug("ws_live_listener: stop")
                         
@@ -1702,6 +1896,14 @@ async def ws_live_listener(websocket: WebSocket) -> None:
         for task in all_tasks:
             task.cancel()
         await asyncio.gather(*all_tasks, return_exceptions=True)
+        # Brain Dump: End indexing session
+        try:
+            integration = get_integration()
+            if integration and state.connection_id:
+                await integration.end_session(state.connection_id)
+        except Exception as e:
+            logger.warning(f"Failed to end brain dump session: {e}")
+        
         # Log session metrics for observability
         logger.info(f"Session {state.session_id} complete: "
                    f"connection_id={state.connection_id}, "

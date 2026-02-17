@@ -4,6 +4,10 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedTab = 0
     @State private var searchText = ""
+    @State private var showingExportSheet = false
+    @State private var showingShareSheet = false
+    @State private var showingMOMGenerator = false
+    @State private var showingCalendar = false
     
     var filteredSessions: [Session] {
         if searchText.isEmpty {
@@ -11,24 +15,59 @@ struct DashboardView: View {
         }
         return appState.sessions.filter {
             $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.summary?.localizedCaseInsensitiveContains(searchText) == true
+            $0.summary?.localizedCaseInsensitiveContains(searchText) == true ||
+            $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
         }
     }
     
     var body: some View {
         NavigationView {
-            // MARK: Sidebar
             sidebar
-            
-            // MARK: Detail View
             detailView
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                // Calendar button
+                Button(action: { showingCalendar = true }) {
+                    Image(systemName: "calendar")
+                }
+                .help("Calendar")
+                
+                // MOM Generator
+                Button(action: { showingMOMGenerator = true }) {
+                    Image(systemName: "doc.text.fill")
+                }
+                .help("Generate Meeting Minutes")
+                
+                // Share
+                Button(action: { showingShareSheet = true }) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .help("Share")
+                
+                // Export
+                Button(action: { showingExportSheet = true }) {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("Export")
+                
+                Divider()
+                
+                // Record button
                 RecordButton()
-                Spacer()
-                ExportButton()
             }
+        }
+        .sheet(isPresented: $showingExportSheet) {
+            ExportSheet()
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareSheet()
+        }
+        .sheet(isPresented: $showingMOMGenerator) {
+            MOMGeneratorSheet()
+        }
+        .sheet(isPresented: $showingCalendar) {
+            CalendarView()
         }
     }
     
@@ -910,5 +949,326 @@ struct ExportButton: View {
             Image(systemName: "square.and.arrow.up")
         }
         .menuStyle(.borderlessButton)
+    }
+}
+
+// MARK: - Export Sheet
+struct ExportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedFormat: ExportFormat = .markdown
+    @State private var includeTranscript = true
+    @State private var includeHighlights = true
+    @State private var includeSummary = true
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Export Session").font(.headline)
+                Spacer()
+                Button("Cancel") { dismiss() }
+            }
+            .padding()
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Format").font(.subheadline.weight(.semibold))
+                    
+                    FormatPickerView(selectedFormat: $selectedFormat)
+                    
+                    Divider()
+                    
+                    Text("Include").font(.subheadline.weight(.semibold))
+                    Toggle("Full Transcript", isOn: $includeTranscript)
+                    Toggle("Highlights", isOn: $includeHighlights)
+                    Toggle("Summary", isOn: $includeSummary)
+                }
+                .padding()
+            }
+            
+            Divider()
+            
+            HStack {
+                Spacer()
+                Button("Export") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        }
+        .frame(width: 400, height: 450)
+    }
+}
+
+struct FormatPickerView: View {
+    @Binding var selectedFormat: ExportFormat
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(ExportFormat.allCases) { format in
+                FormatRowView(format: format, isSelected: selectedFormat == format) {
+                    selectedFormat = format
+                }
+            }
+        }
+    }
+}
+
+struct FormatRowView: View {
+    let format: ExportFormat
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: format.icon).frame(width: 24)
+                VStack(alignment: .leading) {
+                    Text(format.rawValue).font(.subheadline)
+                    Text(format.description).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark").foregroundColor(.accentColor)
+                }
+            }
+            .padding(8)
+            .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Share Sheet
+struct ShareSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedDestination: ShareDestination = .clipboard
+    @State private var includeSummary = true
+    @State private var includeActionItems = true
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Share").font(.headline)
+                Spacer()
+                Button("Cancel") { dismiss() }
+            }
+            .padding()
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Share to").font(.subheadline.weight(.semibold))
+                    ShareDestinationPickerView(selectedDestination: $selectedDestination)
+                    
+                    Divider()
+                    
+                    Text("Include").font(.subheadline.weight(.semibold))
+                    Toggle("Summary", isOn: $includeSummary)
+                    Toggle("Action Items", isOn: $includeActionItems)
+                }
+                .padding()
+            }
+            
+            Divider()
+            
+            HStack {
+                Spacer()
+                Button("Share") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        }
+        .frame(width: 380, height: 400)
+    }
+}
+
+struct ShareDestinationPickerView: View {
+    @Binding var selectedDestination: ShareDestination
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(ShareDestination.allCases) { dest in
+                ShareDestRowView(dest: dest, isSelected: selectedDestination == dest) {
+                    selectedDestination = dest
+                }
+            }
+        }
+    }
+}
+
+struct ShareDestRowView: View {
+    let dest: ShareDestination
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: dest.icon).frame(width: 24).foregroundStyle(dest.color)
+                Text(dest.rawValue)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark").foregroundColor(.accentColor)
+                }
+            }
+            .padding(8)
+            .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - MOM Generator Sheet
+struct MOMGeneratorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTemplateIndex = 0
+    @State private var selectedStyleIndex = 0
+    @State private var isGenerating = false
+    
+    let styles = ["Formal", "Casual", "Executive", "Technical"]
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Meeting Minutes").font(.headline)
+                Spacer()
+                Button("Cancel") { dismiss() }
+            }
+            .padding()
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Meeting Type").font(.subheadline.weight(.semibold))
+                    
+                    Text("Daily Standup, Weekly 1:1, Sprint Planning, etc.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    
+                    Divider()
+                    
+                    Text("Style").font(.subheadline.weight(.semibold))
+                    
+                    Picker("Style", selection: $selectedStyleIndex) {
+                        ForEach(0..<styles.count, id: \.self) { i in
+                            Text(styles[i]).tag(i)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Divider()
+                    
+                    Button(action: {
+                        isGenerating = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            isGenerating = false
+                            dismiss()
+                        }
+                    }) {
+                        HStack {
+                            if isGenerating { ProgressView().scaleEffect(0.8) }
+                            Text(isGenerating ? "Generating..." : "Generate Minutes")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isGenerating)
+                }
+                .padding()
+            }
+            
+            Divider()
+            
+            HStack {
+                Spacer()
+                Button("Copy") { }
+                Button("Share") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        }
+        .frame(width: 400, height: 350)
+    }
+}
+
+// MARK: - Calendar View
+struct CalendarView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+    @State private var selectedDate = Date()
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Upcoming Meetings").font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+            }
+            .padding()
+            
+            Divider()
+            
+            DatePicker("Date", selection: $selectedDate, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .padding()
+            
+            Divider()
+            
+            ScrollView {
+                VStack(spacing: 8) {
+                    if appState.calendarEvents.isEmpty {
+                        Text("No upcoming meetings")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 40)
+                    } else {
+                        ForEach(appState.calendarEvents.sorted { $0.startTime < $1.startTime }) { event in
+                            EventRowView(event: event)
+                        }
+                    }
+                }
+                .padding()
+            }
+            
+            Divider()
+            
+            HStack {
+                Button("Sync") { }
+                    .buttonStyle(.bordered)
+                Spacer()
+                Button("Add Meeting") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        }
+        .frame(width: 450, height: 550)
+    }
+}
+
+struct EventRowView: View {
+    let event: CalendarEvent
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(event.title).font(.subheadline.weight(.semibold))
+                Spacer()
+                if event.isrecurring {
+                    Image(systemName: "repeat").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Text(event.startTime, style: .time)
+                Text("•")
+                Text(event.attendees.prefix(2).joined(separator: ", "))
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
     }
 }

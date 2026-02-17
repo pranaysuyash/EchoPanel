@@ -3,8 +3,11 @@ import AVFoundation
 import Combine
 import CoreGraphics
 import Foundation
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
+
+private let logger = Logger(subsystem: "com.echopanel.app", category: "AppState")
 
 /**
  * Main application state manager for EchoPanel's real-time streaming audio processing.
@@ -164,6 +167,7 @@ final class AppState: ObservableObject {
     @Published var voiceNoteError: VoiceNoteCaptureManager.VoiceNoteCaptureError?
     @Published var currentVoiceNote: VoiceNote?
     @Published var voiceNotes: [VoiceNote] = []
+    @Published var editingVoiceNote: UUID? = nil
     
     @Published var permissionDebugLine: String = ""
     @Published var debugLine: String = ""
@@ -181,7 +185,24 @@ final class AppState: ObservableObject {
     private var lastAudioTimestamp: Date?
     private var silenceCheckTimer: Timer?
 
-    @Published var transcriptSegments: [TranscriptSegment] = []
+    private enum Constants {
+        static let maxActiveSegments = 5000
+        static let archiveThreshold = 4000
+        static let silenceCheckInterval: TimeInterval = 5.0
+        static let silenceDurationThreshold: TimeInterval = 10.0
+        static let startTimeoutSeconds: TimeInterval = 5.0
+        static let userNoticeAutoClearSeconds: TimeInterval = 6.0
+    }
+
+    @Published var transcriptSegments: [TranscriptSegment] = [] {
+        didSet {
+            manageMemoryForTranscript()
+        }
+    }
+    private var archivedSegments: [TranscriptSegment] = []
+    private let maxActiveSegments = Constants.maxActiveSegments // Keep recent segments in memory
+    private let archiveThreshold = Constants.archiveThreshold // Start archiving at this point
+    private var isManagingTranscriptMemory: Bool = false
     @Published var actions: [ActionItem] = []
     @Published var decisions: [DecisionItem] = []
     @Published var risks: [RiskItem] = []
@@ -248,9 +269,91 @@ final class AppState: ObservableObject {
     private var startAttemptId: UUID?
     private var startTimeoutTask: Task<Void, Never>?
 
-    private let audioCapture = AudioCaptureManager()
-    private let micCapture = MicrophoneCaptureManager()
-    private let voiceNoteCapture = VoiceNoteCaptureManager()
+    private lazy var audioCapture: AudioCaptureManager = {
+        let manager = AudioCaptureManager()
+        manager.onSampleCount = { [weak self] sampleCount in
+            Task { @MainActor in
+                self?.debugSamples = sampleCount
+                self?.updateDebugLine()
+            }
+        }
+        manager.onScreenFrameCount = { [weak self] frameCount in
+            Task { @MainActor in
+                self?.debugScreenFrames = frameCount
+                self?.updateDebugLine()
+            }
+        }
+        manager.onAudioQualityUpdate = { [weak self] quality in
+            Task { @MainActor in self?.audioQuality = quality }
+        }
+        manager.onAudioLevelUpdate = { [weak self] level in
+            Task { @MainActor in self?.systemAudioLevel = level }
+        }
+        manager.onPCMFrame = { [weak self] frame, source in
+            guard let self else { return }
+            Task { @MainActor in
+                self.debugBytes += frame.count
+                if self.debugEnabled {
+                    self.updateDebugLine()
+                }
+                self.markInputFrame(source: source)
+                self.lastAudioTimestamp = Date()
+                if self.noAudioDetected {
+                    self.noAudioDetected = false
+                    self.silenceMessage = ""
+                }
+            }
+            self.streamer.sendPCMFrame(frame, source: source)
+        }
+        return manager
+    }()
+    
+    private lazy var micCapture: MicrophoneCaptureManager = {
+        let manager = MicrophoneCaptureManager()
+        manager.onPCMFrame = { [weak self] frame, source in
+            guard let self else { return }
+            Task { @MainActor in
+                self.debugBytes += frame.count
+                if self.debugEnabled {
+                    self.updateDebugLine()
+                }
+                self.markInputFrame(source: source)
+                self.lastAudioTimestamp = Date()
+                if self.noAudioDetected {
+                    self.noAudioDetected = false
+                    self.silenceMessage = ""
+                }
+            }
+            self.streamer.sendPCMFrame(frame, source: source)
+        }
+        manager.onAudioLevelUpdate = { [weak self] level in
+            Task { @MainActor in self?.microphoneAudioLevel = level }
+        }
+        return manager
+    }()
+    
+    private lazy var voiceNoteCapture: VoiceNoteCaptureManager = {
+        let manager = VoiceNoteCaptureManager()
+        manager.onPCMFrame = { [weak self] data in
+            guard let self else { return }
+            // Send voice note audio to backend for transcription
+            self.streamer.sendVoiceNoteAudio(data: data)
+        }
+        manager.onRecordingStarted = { [weak self] in
+            Task { @MainActor in
+                self?.isRecordingVoiceNote = true
+                self?.voiceNoteError = nil
+            }
+        }
+        manager.onRecordingStopped = { [weak self] duration in
+            Task { @MainActor in
+                self?.isRecordingVoiceNote = false
+                self?.voiceNoteAudioLevel = 0
+                // Voice note object will be created when transcript arrives
+            }
+        }
+        return manager
+    }()
     private let streamer: WebSocketStreamer
     // Note: URL hardcoding is acceptable for v0.2 MVP as per M9 resolution plan (low risk local app)
     // But ideally should read from configuration. Keeping as is for now to avoid large refactor risk.
@@ -272,82 +375,8 @@ final class AppState: ObservableObject {
                 self?.refreshPermissionStatuses()
             }
 
-        audioCapture.onSampleCount = { [weak self] sampleCount in
-            Task { @MainActor in
-                self?.debugSamples = sampleCount
-                self?.updateDebugLine()
-            }
-        }
-        audioCapture.onScreenFrameCount = { [weak self] frameCount in
-            Task { @MainActor in
-                self?.debugScreenFrames = frameCount
-                self?.updateDebugLine()
-            }
-        }
-        audioCapture.onAudioQualityUpdate = { [weak self] quality in
-            Task { @MainActor in self?.audioQuality = quality }
-        }
-        audioCapture.onAudioLevelUpdate = { [weak self] level in
-            Task { @MainActor in self?.systemAudioLevel = level }
-        }
-        audioCapture.onPCMFrame = { [weak self] frame, source in
-            guard let self else { return }
-            Task { @MainActor in
-                self.debugBytes += frame.count
-                if self.debugEnabled {
-                    self.updateDebugLine()
-                }
-                self.markInputFrame(source: source)
-                self.lastAudioTimestamp = Date()
-                if self.noAudioDetected {
-                    self.noAudioDetected = false
-                    self.silenceMessage = ""
-                }
-            }
-            self.streamer.sendPCMFrame(frame, source: source)
-        }
+        // Note: audioCapture and micCapture callbacks are now set up in their lazy initializers
         
-        // Mic capture callbacks (v0.2)
-        micCapture.onPCMFrame = { [weak self] frame, source in
-            guard let self else { return }
-            Task { @MainActor in
-                self.debugBytes += frame.count
-                if self.debugEnabled {
-                    self.updateDebugLine()
-                }
-                self.markInputFrame(source: source)
-                self.lastAudioTimestamp = Date()
-                if self.noAudioDetected {
-                    self.noAudioDetected = false
-                    self.silenceMessage = ""
-                }
-            }
-            self.streamer.sendPCMFrame(frame, source: source)
-        }
-        micCapture.onAudioLevelUpdate = { [weak self] level in
-            Task { @MainActor in self?.microphoneAudioLevel = level }
-        }
-        
-        // Voice note capture callbacks (VNI)
-        voiceNoteCapture.onPCMFrame = { [weak self] data in
-            guard let self else { return }
-            // Send voice note audio to backend for transcription
-            self.streamer.sendVoiceNoteAudio(data: data)
-        }
-        voiceNoteCapture.onRecordingStarted = { [weak self] in
-            Task { @MainActor in
-                self?.isRecordingVoiceNote = true
-                self?.voiceNoteError = nil
-            }
-        }
-        voiceNoteCapture.onRecordingStopped = { [weak self] duration in
-            Task { @MainActor in
-                self?.isRecordingVoiceNote = false
-                self?.voiceNoteAudioLevel = 0
-                // Voice note object will be created when transcript arrives
-            }
-        }
-
         streamer.onStatus = { [weak self] status, message in
             Task { @MainActor in
                 self?.streamStatus = status
@@ -578,8 +607,32 @@ final class AppState: ObservableObject {
     }
 
     private func bumpTranscriptRevision() {
-        transcriptRevision &+= 1
+        transcriptRevision += 1
     }
+
+    // MARK: - Memory Management
+
+    private func manageMemoryForTranscript() {
+        guard !isManagingTranscriptMemory else { return }
+        // Archive old segments when we exceed the threshold
+        guard transcriptSegments.count > archiveThreshold else { return }
+
+        let segmentsToArchive = transcriptSegments.count - maxActiveSegments
+        guard segmentsToArchive > 0 else { return }
+
+        // Archive the oldest segments
+        let oldSegments = transcriptSegments.prefix(segmentsToArchive)
+        archivedSegments.append(contentsOf: oldSegments)
+
+        // Keep only recent segments in active memory
+        isManagingTranscriptMemory = true
+        transcriptSegments = Array(transcriptSegments.suffix(maxActiveSegments))
+        isManagingTranscriptMemory = false
+
+        logger.info("Archived \(segmentsToArchive) transcript segments to manage memory")
+    }
+
+    // MARK: - Transcript Retrieval
 
     func startSession() {
         guard sessionState != .listening && sessionState != .starting else { return }
@@ -742,7 +795,7 @@ final class AppState: ObservableObject {
             // PR1: Start timeout task for handshake
             startTimeoutTask?.cancel()
             startTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                try? await Task.sleep(nanoseconds: UInt64(Constants.startTimeoutSeconds * 1_000_000_000))
                 
                 guard let self else { return }
                 
@@ -893,6 +946,7 @@ final class AppState: ObservableObject {
         asrLastSeenBySource = [:]
         asrEventCount = 0
         runtimeErrorState = nil
+        archivedSegments = []
     }
     
     /// Save current session snapshot for auto-save (v0.2)
@@ -977,7 +1031,58 @@ final class AppState: ObservableObject {
         setUserNotice("Voice note deleted", level: .info, autoClearAfter: 2.0)
         
         StructuredLogger.shared.info("Voice note deleted", metadata: [
-            "voice_note_id": id.uuidString
+            "voice_note_id": id.uuidString,
+            "text_length": note.text.count
+        ])
+    }
+    
+    /// Update voice note text
+    func updateVoiceNote(id: UUID, newText: String) {
+        guard let index = voiceNotes.firstIndex(where: { $0.id == id }) else { return }
+        
+        var note = voiceNotes[index]
+        note.text = newText
+        voiceNotes[index] = note
+        
+        if currentVoiceNote?.id == id {
+            currentVoiceNote = note
+        }
+        
+        StructuredLogger.shared.info("Voice note updated", metadata: [
+            "voice_note_id": id.uuidString,
+            "old_length": note.text.count,
+            "new_length": newText.count
+        ])
+    }
+    
+    /// Add tag to voice note
+    func addTagToVoiceNote(id: UUID, tag: String) {
+        guard let index = voiceNotes.firstIndex(where: { $0.id == id }) else { return }
+        guard !tag.isEmpty else { return }
+        
+        var note = voiceNotes[index]
+        if !note.tags.contains(tag) {
+            note.tags.append(tag)
+            voiceNotes[index] = note
+            
+            StructuredLogger.shared.info("Tag added to voice note", metadata: [
+                "voice_note_id": id.uuidString,
+                "tag": tag
+            ])
+        }
+    }
+    
+    /// Remove tag from voice note
+    func removeTagFromVoiceNote(id: UUID, tag: String) {
+        guard let index = voiceNotes.firstIndex(where: { $0.id == id }) else { return }
+        
+        var note = voiceNotes[index]
+        note.tags.removeAll { $0 == tag }
+        voiceNotes[index] = note
+        
+        StructuredLogger.shared.info("Tag removed from voice note", metadata: [
+            "voice_note_id": id.uuidString,
+            "tag": tag
         ])
     }
     
@@ -992,7 +1097,7 @@ final class AppState: ObservableObject {
     // MARK: - Gap 2: Silence Detection
     
     private func startSilenceCheck() {
-        silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: Constants.silenceCheckInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkForSilence()
             }
@@ -1011,7 +1116,7 @@ final class AppState: ObservableObject {
         guard let lastAudio = lastAudioTimestamp else { return }
         
         let silenceDuration = Date().timeIntervalSince(lastAudio)
-        if silenceDuration >= 10.0 && !noAudioDetected {
+        if silenceDuration >= Constants.silenceDurationThreshold && !noAudioDetected {
             noAudioDetected = true
             silenceMessage = "No audio detected for \(Int(silenceDuration))s. Check: Is the meeting muted? Is the correct audio source selected?"
         } else if noAudioDetected {
@@ -1113,6 +1218,36 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    func exportMinutesOfMeeting(template: MinutesOfMeetingTemplate) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = minutesOfMeetingFilename(template: template)
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                Task { @MainActor in
+                    self.recordExportCancelled(format: "MOM")
+                }
+                return
+            }
+
+            let input = self.buildMinutesOfMeetingInput()
+            let markdown = MinutesOfMeetingGenerator.generate(from: input, template: template)
+
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+                Task { @MainActor in
+                    self.recordExportSuccess(format: "MOM")
+                }
+            } catch {
+                Task { @MainActor in
+                    self.recordExportFailure(format: "MOM", error: error)
+                }
+                NSLog("Export MOM failed: %@", error.localizedDescription)
+            }
+        }
+    }
     
     // VNI: Render voice notes as Markdown
     private func renderVoiceNotesMarkdown() -> String {
@@ -1135,6 +1270,27 @@ final class AppState: ObservableObject {
         }
         
         return lines.joined(separator: "\n")
+    }
+
+    private func buildMinutesOfMeetingInput() -> MinutesOfMeetingInput {
+        MinutesOfMeetingGenerator.buildInput(
+            title: "Meeting Minutes",
+            sessionStart: sessionStart,
+            sessionEnd: sessionEnd,
+            transcriptSegments: transcriptSegments,
+            actions: actions,
+            decisions: decisions,
+            risks: risks,
+            entities: entities,
+            finalSummaryMarkdown: finalSummaryMarkdown
+        )
+    }
+
+    private func minutesOfMeetingFilename(template: MinutesOfMeetingTemplate) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        let dateStamp = formatter.string(from: sessionStart ?? Date())
+        return "echopanel-\(template.filenameSuffix)-\(dateStamp).md"
     }
 
     func exportSRT() {
@@ -1328,7 +1484,7 @@ final class AppState: ObservableObject {
         userNotice = nil
     }
 
-    func setUserNotice(_ message: String, level: UserNoticeLevel, autoClearAfter: TimeInterval = 6.0) {
+    func setUserNotice(_ message: String, level: UserNoticeLevel, autoClearAfter: TimeInterval = Constants.userNoticeAutoClearSeconds) {
         // Cancel existing timers/tasks
         userNoticeClearTimer?.invalidate()
         userNoticeClearTimer = nil
@@ -1340,14 +1496,14 @@ final class AppState: ObservableObject {
         guard autoClearAfter > 0 else { return }
         
         let messageToMatch = message
-        let timer = Timer(timeInterval: autoClearAfter, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
+        let delayNs = UInt64(max(0, autoClearAfter) * 1_000_000_000)
+        userNoticeClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            await MainActor.run {
                 guard self?.userNotice?.message == messageToMatch else { return }
                 self?.userNotice = nil
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        userNoticeClearTimer = timer
     }
 
     private func renderLiveMarkdown() -> String {
@@ -1615,6 +1771,7 @@ final class AppState: ObservableObject {
                 self.lastPartialIndexBySource[sourceKey] = self.transcriptSegments.count - 1
             }
             self.bumpTranscriptRevision()
+            self.manageMemoryForTranscript()
         }
         
         if shouldAnimate {
@@ -1668,6 +1825,7 @@ final class AppState: ObservableObject {
             }
             lastPartialIndexBySource[sourceKey] = nil
             bumpTranscriptRevision()
+            manageMemoryForTranscript()
             
             // Update confidence tracking for broadcast features
             BroadcastFeatureManager.shared.updateConfidence(fromSegment: segment)

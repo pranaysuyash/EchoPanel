@@ -55,6 +55,18 @@ final class SessionStore: ObservableObject {
             NSLog("SessionStore: Failed to create sessions directory: \(error)")
         }
     }
+
+#if DEBUG
+    // MARK: - Testing Helpers
+
+    func overrideSessionsDirectoryForTesting(_ url: URL) {
+        sessionsDirectory = url
+    }
+
+    func restoreDefaultSessionsDirectoryForTesting() {
+        setupDirectory()
+    }
+#endif
     
     // MARK: - Session Lifecycle
     

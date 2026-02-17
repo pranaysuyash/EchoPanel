@@ -74,8 +74,17 @@ final class RedundantAudioCaptureManager: ObservableObject {
     
     // MARK: - Private Properties
     
-    private let primaryCapture = AudioCaptureManager()
-    private let backupCapture = MicrophoneCaptureManager()
+    private lazy var primaryCapture: AudioCaptureManager = {
+        let manager = AudioCaptureManager()
+        // Callbacks will be set up in setupCallbacks() when first accessed
+        return manager
+    }()
+    
+    private lazy var backupCapture: MicrophoneCaptureManager = {
+        let manager = MicrophoneCaptureManager()
+        // Callbacks will be set up in setupCallbacks() when first accessed
+        return manager
+    }()
     
     private var qualityMonitorTimer: Timer?
     private var lastPrimaryFrame = Date()
@@ -138,6 +147,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
     // Track which source is providing frames
     private var primaryFrameCount = 0
     private var backupFrameCount = 0
+    private var callbacksSetup = false
     
     struct FailoverEvent: Identifiable {
         let id = UUID()
@@ -174,11 +184,19 @@ final class RedundantAudioCaptureManager: ObservableObject {
     // MARK: - Lifecycle
     
     init() {
+        // Note: setupCallbacks() is called lazily when capture starts to avoid
+        // initializing capture managers in test environments
+    }
+    
+    private func ensureCallbacksSetup() {
+        guard !callbacksSetup else { return }
+        callbacksSetup = true
         setupCallbacks()
     }
     
     /// Start redundant capture with both primary and backup sources
     func startRedundantCapture(autoFailover: Bool = true) async throws {
+        ensureCallbacksSetup()
         self.autoFailoverEnabled = autoFailover
         
         // Start primary (system audio)
@@ -208,6 +226,7 @@ final class RedundantAudioCaptureManager: ObservableObject {
     
     /// Start single-source capture (for non-broadcast mode)
     func startSingleCapture(useBackup: Bool = false) async throws {
+        ensureCallbacksSetup()
         autoFailoverEnabled = false
         
         if useBackup {

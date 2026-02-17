@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from server.api.documents import router as documents_router
 from server.api.ws_live_listener import router as ws_router
+from server.api.brain_dump_query import router as brain_dump_router
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
 
@@ -205,6 +206,31 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Embedding model warmup failed: {e}")
         # Continue anyway - RAG will work without embeddings (lexical only)
 
+    # Brain Dump: Initialize storage and indexing
+    try:
+        from server.services.brain_dump_indexer import initialize_indexer
+        from server.services.brain_dump_integration import initialize_integration
+        indexer = await initialize_indexer()
+        initialize_integration(indexer)
+        logger.info("Brain Dump indexer initialized")
+    except Exception as e:
+        logger.warning(f"Brain Dump initialization failed: {e}")
+        # Continue anyway - core functionality works without brain dump
+
+    # Rate Limiter: Initialize for API protection
+    try:
+        from server.api.rate_limiter import initialize_rate_limiter, RateLimitConfig
+        config = RateLimitConfig(
+            requests_per_minute=int(os.getenv("ECHOPANEL_RATE_LIMIT_PER_MINUTE", "60")),
+            requests_per_hour=int(os.getenv("ECHOPANEL_RATE_LIMIT_PER_HOUR", "1000")),
+            burst_size=int(os.getenv("ECHOPANEL_RATE_LIMIT_BURST", "10"))
+        )
+        await initialize_rate_limiter(config)
+        logger.info(f"Rate limiter initialized: {config.requests_per_minute}/min, {config.requests_per_hour}/hour")
+    except Exception as e:
+        logger.warning(f"Rate limiter initialization failed: {e}")
+        # Continue anyway - rate limiting is optional
+
     diarization_prewarm_task: asyncio.Task[bool] | None = None
     if _env_flag("ECHOPANEL_PREWARM_DIARIZATION", default=True):
         try:
@@ -245,12 +271,81 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Model shutdown failed: {e}")
 
+    # Brain Dump: Shutdown indexer
+    try:
+        from server.services.brain_dump_indexer import shutdown_indexer
+        from server.services.brain_dump_integration import shutdown_integration
+        await shutdown_indexer()
+        await shutdown_integration()
+        logger.info("Brain Dump indexer shut down")
+    except Exception as e:
+        logger.warning(f"Brain Dump shutdown failed: {e}")
+
+    # Rate Limiter: Shutdown
+    try:
+        from server.api.rate_limiter import shutdown_rate_limiter
+        await shutdown_rate_limiter()
+        logger.info("Rate limiter shut down")
+    except Exception as e:
+        logger.warning(f"Rate limiter shutdown failed: {e}")
+
     logger.info("Shutting down EchoPanel server...")
 
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(ws_router)
 app.include_router(documents_router)
+app.include_router(brain_dump_router)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to all HTTP requests."""
+    from server.api.rate_limiter import get_rate_limiter
+    
+    # Skip rate limiting for health checks (used by monitoring)
+    if request.url.path == "/health":
+        return await call_next(request)
+    
+    # Skip rate limiting for test clients (TestClient uses "testclient" as host)
+    if request.client and request.client.host == "testclient":
+        return await call_next(request)
+    
+    # Get client identifier (IP address or token)
+    client_id = request.client.host if request.client else "unknown"
+    
+    # Use auth token as client ID if available (per-user rate limiting)
+    auth_token = _extract_token(request)
+    if auth_token:
+        client_id = f"token:{auth_token[:16]}"
+    
+    limiter = get_rate_limiter()
+    if not await limiter.acquire(client_id):
+        remaining = limiter.get_remaining(client_id)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+                "retry_after_minute": 60,
+                "remaining": remaining
+            },
+            headers={
+                "X-RateLimit-Remaining-Minute": str(remaining.get("minute", 0)),
+                "X-RateLimit-Remaining-Hour": str(remaining.get("hour", 0)),
+                "Retry-After": "60"
+            }
+        )
+    
+    response = await call_next(request)
+    
+    # Add rate limit headers to response
+    remaining = limiter.get_remaining(client_id)
+    response.headers["X-RateLimit-Remaining-Minute"] = str(remaining.get("minute", 0))
+    response.headers["X-RateLimit-Remaining-Hour"] = str(remaining.get("hour", 0))
+    
+    return response
 
 
 @app.get("/")

@@ -10,6 +10,10 @@ struct SettingsView: View {
     @AppStorage("llmModel") private var llmModel: String = "gpt-4o-mini"
     @AppStorage("vadEnabled") private var vadEnabled: Bool = true
     @AppStorage("vadThreshold") private var vadThreshold: Double = 0.5
+    @AppStorage("dataRetentionPeriod") private var retentionPeriodDays: Int = 90
+    @AppStorage("ocrMode") private var ocrMode: String = "hybrid"
+    @AppStorage("ocrVLMTrigger") private var ocrVLMTrigger: String = "adaptive"
+    @AppStorage("ocrEnabled") private var ocrEnabled: Bool = true
     @State private var openAIKey: String = ""
     @State private var huggingFaceToken: String = ""
     @State private var backendToken: String = ""
@@ -21,6 +25,7 @@ struct SettingsView: View {
     @State private var showDeleteConfirmation = false
     @State private var showExportSuccess = false
     @State private var exportURL: URL?
+    @State private var lastCleanupDate: Date?
     @StateObject private var subscriptionManager = SubscriptionManager.shared
     
     var body: some View {
@@ -40,14 +45,27 @@ struct SettingsView: View {
                     Label("AI Analysis", systemImage: "brain.head.profile")
                 }
             
+            asrBackendTab
+                .tabItem {
+                    Label("ASR Backend", systemImage: "cpu")
+                }
+            
             privacyTab
                 .tabItem {
                     Label("Data & Privacy", systemImage: "lock.shield")
+                }
+
+            legalTab
+                .tabItem {
+                    Label("Legal", systemImage: "doc.text")
                 }
         }
         .frame(width: 500, height: 380)
         .onAppear {
             loadTokens()
+            refreshStorageStats()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionHistoryShouldRefresh)) { _ in
             refreshStorageStats()
         }
     }
@@ -169,6 +187,39 @@ struct SettingsView: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
+                }
+            }
+            
+            Section(header: Text("Screen Content Recognition (OCR)"), footer: Text("Extract text from shared slides and screens during meetings. Hybrid mode uses fast OCR + AI understanding for best results.")) {
+                Toggle("Enable Screen Capture", isOn: $ocrEnabled)
+                    .onChange(of: ocrEnabled) { newValue in
+                        setBackendOCREnabled(newValue)
+                    }
+                
+                if ocrEnabled {
+                    Picker("Mode", selection: $ocrMode) {
+                        Text("Hybrid — Fast + Smart (Recommended)").tag("hybrid")
+                        Text("Fast Only — Basic text extraction").tag("paddle_only")
+                        Text("Smart Only — AI understanding").tag("vlm_only")
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: ocrMode) { newValue in
+                        setBackendOCRMode(newValue)
+                    }
+                    
+                    Picker("AI Enhancement", selection: $ocrVLMTrigger) {
+                        Text("Adaptive — Smart triggering").tag("adaptive")
+                        Text("Always — Every frame").tag("always")
+                        Text("Confidence — Low confidence only").tag("confidence")
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: ocrVLMTrigger) { newValue in
+                        setBackendOCRVLMTrigger(newValue)
+                    }
+                    
+                    Text("Hybrid: Fast OCR (50ms) + AI (200ms) when needed\nAdaptive: AI runs on charts, tables, and low confidence")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             
@@ -344,6 +395,31 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section(header: Text("Retention"), footer: Text("Cleanup runs daily while EchoPanel is open. Sessions older than the selected period will be removed.")) {
+                Picker("Retention", selection: $retentionPeriodDays) {
+                    Text("Never (keep forever)").tag(0)
+                    Text("30 days").tag(30)
+                    Text("60 days").tag(60)
+                    Text("90 days (default)").tag(90)
+                    Text("180 days").tag(180)
+                    Text("365 days").tag(365)
+                }
+                .pickerStyle(.menu)
+                .onChange(of: retentionPeriodDays) { newValue in
+                    if newValue > 0 {
+                        _ = DataRetentionManager.shared.cleanupOldSessions(retentionDays: newValue)
+                    }
+                    refreshStorageStats()
+                }
+
+                HStack {
+                    Text("Last cleanup:")
+                    Spacer()
+                    Text(formatCleanupDate(lastCleanupDate))
+                        .foregroundColor(.secondary)
+                }
+            }
             
             Section(header: Text("Data Management")) {
                 HStack(spacing: 12) {
@@ -437,6 +513,15 @@ struct SettingsView: View {
     
     private func refreshStorageStats() {
         storageStats = SessionStore.shared.getStorageStatistics()
+        lastCleanupDate = DataRetentionManager.shared.lastCleanupDate
+    }
+
+    private func formatCleanupDate(_ date: Date?) -> String {
+        guard let date else { return "Never" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -539,6 +624,104 @@ struct SettingsView: View {
             appState.recordCredentialSaveFailure(field: "HuggingFace token")
         }
     }
+    
+    // MARK: - OCR Configuration
+    
+    private func setBackendOCREnabled(_ enabled: Bool) {
+        setenv("ECHOPANEL_OCR_ENABLED", enabled ? "true" : "false", 1)
+        backendManager.stopServer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.backendManager.startServer()
+        }
+    }
+    
+    private func setBackendOCRMode(_ mode: String) {
+        setenv("ECHOPANEL_OCR_MODE", mode, 1)
+        // Mode change doesn't require restart
+    }
+    
+    private func setBackendOCRVLMTrigger(_ trigger: String) {
+        setenv("ECHOPANEL_OCR_VLM_TRIGGER", trigger, 1)
+        // Trigger change doesn't require restart
+    }
+    
+    // MARK: - ASR Backend Tab
+    
+    private var asrBackendTab: some View {
+        ASRBackendSettingsView()
+    }
+
+    private var legalTab: some View {
+        Form {
+            Section(header: Text("Legal Documents")) {
+                Button("Privacy Policy") {
+                    openLegalDocument(.privacy)
+                }
+                .help("Read how EchoPanel protects your privacy and handles your data")
+
+                Button("Terms of Service") {
+                    openLegalDocument(.terms)
+                }
+                .help("Read the terms for using EchoPanel")
+            }
+
+            Section(header: Text("Contact")) {
+                Button("Contact Developer") {
+                    openContactEmail()
+                }
+                .help("Email the developer with questions or feedback")
+
+                Button("Report a Problem") {
+                    openSupportEmail()
+                }
+                .help("Get help with technical issues")
+            }
+
+            Section(header: Text("About EchoPanel"), footer: Text("EchoPanel is built by a solo developer who cares about privacy. Your data stays on your Mac, you control what gets processed, and there's no tracking or data selling.")) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("EchoPanel")
+                        .font(.headline)
+                    Text("Privacy-focused meeting transcription")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Version 0.2.0")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding()
+    }
+
+    private func openLegalDocument(_ documentType: LegalDocument) {
+        switch documentType {
+        case .privacy:
+            if let url = URL(string: "https://echopanel.app/privacy") {
+                NSWorkspace.shared.open(url)
+            }
+        case .terms:
+            if let url = URL(string: "https://echopanel.app/terms") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    private func openContactEmail() {
+        if let url = URL(string: "mailto:echo@echopanel.app") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func openSupportEmail() {
+        if let url = URL(string: "mailto:support@echopanel.app") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+enum LegalDocument {
+    case privacy, terms
 }
 
 #Preview {

@@ -17,6 +17,7 @@ final class DataRetentionManager {
     
     /// Start automatic cleanup scheduling
     func start() {
+        defaults.register(defaults: [retentionPeriodKey: 90])
         // Run cleanup on startup if needed
         runCleanupIfNeeded()
         
@@ -81,6 +82,10 @@ final class DataRetentionManager {
         
         // Record cleanup date
         defaults.set(Date(), forKey: lastCleanupKey)
+
+        if deletedCount > 0 {
+            NotificationCenter.default.post(name: .sessionHistoryShouldRefresh, object: nil)
+        }
         
         // Log result
         if deletedCount > 0 {

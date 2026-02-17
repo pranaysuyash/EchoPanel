@@ -1,0 +1,78 @@
+{
+  "pipeline_config": {
+    "mode": "hybrid",
+    "vlm_trigger": "adaptive",
+    "confidence_threshold": 85.0
+  },
+  "results": [
+    {
+      "test_name": "text_financial",
+      "slide_type": "Text: Financial",
+      "primary_text": "",
+      "semantic_summary": "",
+      "key_insights": [],
+      "entities": [],
+      "confidence": 0.0,
+      "source": "vlm_only",
+      "engines_used": [
+        "smolvlm"
+      ],
+      "processing_time_ms": 5532.194137573242,
+      "is_enriched": true,
+      "layout_type": "unknown"
+    },
+    {
+      "test_name": "chart_bar",
+      "slide_type": "Chart: Bar",
+      "primary_text": "",
+      "semantic_summary": "",
+      "key_insights": [],
+      "entities": [],
+      "confidence": 0.0,
+      "source": "vlm_only",
+      "engines_used": [
+        "smolvlm"
+      ],
+      "processing_time_ms": 277.9529094696045,
+      "is_enriched": true,
+      "layout_type": "unknown"
+    },
+    {
+      "test_name": "table_performance",
+      "slide_type": "Table: Performance",
+      "primary_text": "",
+      "semantic_summary": "",
+      "key_insights": [],
+      "entities": [],
+      "confidence": 0.0,
+      "source": "vlm_only",
+      "engines_used": [
+        "smolvlm"
+      ],
+      "processing_time_ms": 284.8231792449951,
+      "is_enriched": true,
+      "layout_type": "unknown"
+    },
+    {
+      "test_name": "diagram_flow",
+      "slide_type": "Diagram: Flow",
+      "primary_text": "",
+      "semantic_summary": "",
+      "key_insights": [],
+      "entities": [],
+      "confidence": 0.0,
+      "source": "vlm_only",
+      "engines_used": [
+        "smolvlm"
+      ],
+      "processing_time_ms": 288.5119915008545,
+      "is_enriched": true,
+      "layout_type": "unknown"
+    }
+  ],
+  "summary": {
+    "total_tests": 4,
+    "avg_time_ms": 1595.870554447174,
+    "enriched_count": 4
+  }
+}

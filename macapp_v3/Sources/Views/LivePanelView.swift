@@ -143,8 +143,9 @@ struct LivePanelView: View {
     private var tabBar: some View {
         Picker("View", selection: $selectedTab) {
             Text("Transcript").tag(0)
-            Text("Highlights").tag(1)
-            Text("Entities").tag(2)
+            Text("Summary").tag(1)
+            Text("Highlights").tag(2)
+            Text("Entities").tag(3)
         }
         .pickerStyle(.segmented)
         .padding(.horizontal)
@@ -158,8 +159,10 @@ struct LivePanelView: View {
         case 0:
             LiveTranscriptView()
         case 1:
-            LiveHighlightsView()
+            SummaryView()
         case 2:
+            LiveHighlightsView()
+        case 3:
             LiveEntitiesView()
         default:
             EmptyView()
@@ -200,6 +203,179 @@ struct LivePanelView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Summary View
+struct SummaryView: View {
+    @EnvironmentObject private var appState: AppState
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let session = appState.currentSession {
+                    // Session Info Card
+                    sessionInfoCard(session)
+                    
+                    // Summary
+                    if let summary = session.summary {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Summary", systemImage: "text.alignleft")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(summary)
+                                .font(.body)
+                                .lineSpacing(4)
+                        }
+                        .padding()
+                        .background(Material.regularMaterial)
+                        .cornerRadius(8)
+                    }
+                    
+                    // Quick Stats
+                    statsRow(session)
+                    
+                    // Speakers
+                    if !session.finalTranscript.isEmpty {
+                        speakersSection(session)
+                    }
+                } else {
+                    emptyState
+                }
+            }
+            .padding()
+        }
+    }
+    
+    private func sessionInfoCard(_ session: Session) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.title)
+                        .font(.title3.weight(.semibold))
+                    
+                    Text(session.formattedDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                statusBadge(session.status)
+            }
+            
+            HStack(spacing: 16) {
+                Label(session.formattedDuration, systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Label(session.audioSource.rawValue, systemImage: session.audioSource.icon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Label(session.provider.rawValue, systemImage: "cpu")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(Material.regularMaterial)
+        .cornerRadius(8)
+    }
+    
+    private func statusBadge(_ status: Session.SessionStatus) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(statusColor(status))
+                .frame(width: 6, height: 6)
+            Text(status.rawValue)
+                .font(.caption.weight(.medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(statusColor(status).opacity(0.15))
+        .foregroundColor(statusColor(status))
+        .cornerRadius(4)
+    }
+    
+    private func statusColor(_ status: Session.SessionStatus) -> Color {
+        switch status {
+        case .live: return .red
+        case .paused: return .orange
+        case .processing: return .blue
+        case .finalized: return .green
+        }
+    }
+    
+    private func statsRow(_ session: Session) -> some View {
+        HStack(spacing: 12) {
+            statCard(title: "Action Items", value: "\(session.actionItems.count)", icon: "checkmark.circle", color: .blue)
+            statCard(title: "Decisions", value: "\(session.highlights.filter { if case .decision = $0.type { return true }; return false }.count)", icon: "arrow.decision", color: .purple)
+            statCard(title: "Risks", value: "\(session.highlights.filter { if case .risk = $0.type { return true }; return false }.count)", icon: "exclamationmark.triangle", color: .orange)
+            statCard(title: "People", value: "\(session.entities.people.count)", icon: "person.2", color: .green)
+        }
+    }
+    
+    private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.title2.weight(.bold))
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.1))
+        .cornerRadius(8)
+    }
+    
+    private func speakersSection(_ session: Session) -> some View {
+        let speakers = Set(session.finalTranscript.compactMap { $0.speakerName })
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            Label("Speakers", systemImage: "person.wave.2")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            FlowLayout(spacing: 8) {
+                ForEach(Array(speakers), id: \.self) { speaker in
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.fill")
+                        Text(speaker)
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor.opacity(0.1))
+                    .cornerRadius(12)
+                }
+            }
+        }
+        .padding()
+        .background(Material.regularMaterial)
+        .cornerRadius(8)
+    }
+    
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            
+            Text("No Session Data")
+                .font(.headline)
+            
+            Text("Start a recording to see live transcription and analysis")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 40)
     }
 }
 
@@ -258,26 +434,101 @@ struct LiveTranscriptView: View {
             ScrollViewReader { proxy in
                 LazyVStack(spacing: 12) {
                     if let session = appState.currentSession {
-                        ForEach(session.liveTranscript) { segment in
-                            LiveTranscriptSegmentRow(segment: segment)
-                        }
-                        
-                        // Recording indicator at bottom
-                        if appState.recordingState != .idle {
-                            HStack {
-                                Spacer()
-                                RecordingIndicator()
-                                Spacer()
+                        // Show final transcript with speakers if available
+                        if !session.finalTranscript.isEmpty {
+                            ForEach(session.finalTranscript) { segment in
+                                LiveFinalTranscriptRow(segment: segment)
                             }
-                            .padding(.vertical, 20)
+                        } else if !session.liveTranscript.isEmpty {
+                            // Fall back to live transcript
+                            ForEach(session.liveTranscript) { segment in
+                                LiveTranscriptSegmentRow(segment: segment)
+                            }
+                            
+                            // Recording indicator at bottom
+                            if appState.recordingState != .idle {
+                                HStack {
+                                    Spacer()
+                                    RecordingIndicator()
+                                    Spacer()
+                                }
+                                .padding(.vertical, 20)
+                            }
+                        } else {
+                            emptyTranscriptState
                         }
                     } else {
-                        EmptyTranscriptState()
+                        emptyTranscriptState
                     }
                 }
                 .padding()
             }
         }
+    }
+    
+    private var emptyTranscriptState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "waveform")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            
+            Text("No Transcript Yet")
+                .font(.headline)
+            
+            Text(appState.recordingState != .idle ? "Listening..." : "Start recording to see transcription")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Final Transcript Row (with speaker)
+struct LiveFinalTranscriptRow: View {
+    let segment: FinalTranscriptSegment
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                // Speaker info
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(speakerColor)
+                        .frame(width: 6, height: 6)
+                    Text(segment.displaySpeaker)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Timestamp
+                Text(segment.formattedTime)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                // Confidence indicator
+                if segment.confidence < 0.8 {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            
+            // Text content
+            Text(segment.text)
+                .font(.body)
+        }
+        .padding()
+        .background(Material.regularMaterial)
+        .cornerRadius(8)
+    }
+    
+    private var speakerColor: Color {
+        let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .teal]
+        let hash = segment.speakerId.hashValue
+        return colors[abs(hash) % colors.count]
     }
 }
 

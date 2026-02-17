@@ -159,27 +159,53 @@ CREATE INDEX idx_sessions_started ON sessions(started_at);
 
 ## Implementation Order
 
-1. ✅ Create models (dataclasses)
-2. ✅ Create storage adapter base class
-3. ✅ Implement SQLite adapter
-4. ⬜ Implement PostgreSQL adapter
-5. ⬜ Create background indexer service
-6. ⬜ Integrate with WebSocket pipeline
-7. ⬜ Create search API endpoints
-8. ⬜ Add configuration UI (macOS)
-9. ⬜ Implement Google Drive sync
-10. ⬜ Write tests
+### Phase 1: Foundation ✅ COMPLETE
+1. ✅ Create models (dataclasses) - `server/db/models.py`
+2. ✅ Create storage adapter base class - `server/db/storage_adapter.py`
+3. ✅ Implement SQLite adapter - `server/db/adapters/sqlite_adapter.py`
+4. ✅ Create background indexer service - `server/services/brain_dump_indexer.py`
+5. ✅ Create search API endpoints - `server/api/brain_dump_query.py`
+6. ✅ Integrate with WebSocket pipeline - `server/services/brain_dump_integration.py`
+7. ✅ Integrate with main app - `server/main.py`, `server/api/ws_live_listener.py`
+8. ✅ Write tests - `tests/test_brain_dump_*.py`
+
+### Phase 2: Semantic Search ✅ COMPLETE
+9. ✅ Embedding service - `server/services/embeddings.py`
+10. ✅ Vector store (ChromaDB) - `server/db/vector_store.py`
+11. ✅ Tests for embedding/vector functionality
+
+### Phase 3.1: Hybrid Search ✅ COMPLETE
+12. ✅ Hybrid search engine (RRF) - `server/services/hybrid_search.py`
+13. ✅ Integrate embeddings with indexer
+14. ✅ Hybrid search API endpoint
+15. ✅ Tests for hybrid search - `tests/test_brain_dump_hybrid.py`
+
+### Phase 3: UI & Advanced Features ⬜ PENDING
+14. ⬜ macOS Settings UI for configuration
+15. ⬜ PostgreSQL adapter
+16. ⬜ Google Drive sync
 
 ---
 
 ## Progress Tracker
 
-| Task | Status | File |
-|------|--------|------|
-| Storage adapter base | ✅ Done | `server/db/storage_adapter.py` |
-| Models | ✅ Done | `server/db/models.py` |
-| SQLite adapter | 🔄 In Progress | `server/db/adapters/sqlite_adapter.py` |
-| Config | ⬜ Todo | `server/db/config.py` |
-| Indexer service | ⬜ Todo | `server/services/brain_dump_indexer.py` |
-| Search API | ⬜ Todo | `server/api/brain_dump_query.py` |
-| Integration | ⬜ Todo | `server/api/ws_live_listener.py` |
+| Task | Status | File | Tests |
+|------|--------|------|-------|
+| Storage adapter base | ✅ Done | `server/db/storage_adapter.py` | ✅ |
+| Models | ✅ Done | `server/db/models.py` | ✅ |
+| SQLite adapter | ✅ Done | `server/db/adapters/sqlite_adapter.py` | ✅ 6 tests |
+| Indexer service | ✅ Done | `server/services/brain_dump_indexer.py` | ✅ |
+| Integration layer | ✅ Done | `server/services/brain_dump_integration.py` | ✅ 7 tests |
+| Search API | ✅ Done | `server/api/brain_dump_query.py` | ✅ |
+| Main app integration | ✅ Done | `server/main.py` | ✅ |
+| WebSocket integration | ✅ Done | `server/api/ws_live_listener.py` | ✅ |
+| **TOTAL** | **✅ 100%** | | **✅ 13 tests pass** |
+
+### Remaining (Future Phases)
+
+| Task | Phase | Status |
+|------|-------|--------|
+| PostgreSQL adapter | Phase 1 ext | ⬜ |
+| Google Drive sync | Phase 1 ext | ⬜ |
+| macOS Settings UI | Phase 2 | ⬜ |
+| Semantic search | Phase 2 | ⬜ |

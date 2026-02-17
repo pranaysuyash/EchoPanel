@@ -33,7 +33,7 @@ final class VoiceNoteCaptureManager: NSObject, ObservableObject {
     
     // MARK: - Private State
     
-    private let audioEngine = AVAudioEngine()
+    private lazy var audioEngine = AVAudioEngine()
     private var isRunning = false
     private var recordingStartTime: Date?
     private var pcmRemainder: [Int16] = []

@@ -23,14 +23,6 @@
 | P1 | Minutes of Meeting generator (persona F2) | `TCK-20260216-001` | OPEN | Selected as immediate v0.4 candidate. |
 | P1 | Share flow (Slack/Teams/Email) (persona F3) | `TCK-20260216-002` | OPEN | Selected as immediate v0.4 candidate. |
 | P1 | Meeting templates (persona F6) | `TCK-20260216-003` | OPEN | Selected as immediate v0.4 candidate. |
-| P1 | UI-v2 companion panel form factor (phase 1) | `TCK-20260216-005` | OPEN | Ticketized from UI V2 roadmap as core UX direction. |
-| P1 | UI-v2 live panel source selector | `TCK-20260216-006` | OPEN | Move source control from settings-only to in-context live panel. |
-| P1 | UI-v2 transcript state clarity (partial vs final text) | `TCK-20260216-007` | OPEN | Improve live-readability and confidence while streaming. |
-| P2 | UI-v2 real-time speaker labels in live transcript | `TCK-20260216-008` | OPEN | Dependent on stable live diarization signal path. |
-| P2 | UI-v2 panel width presets (Narrow/Medium/Wide) | `TCK-20260216-009` | OPEN | Improves alongside-meeting ergonomics. |
-| P2 | Calendar integration + auto-join spike (persona F1) | `TCK-20260216-010` | OPEN | Near-term exploration item promoted to explicit backlog ticket. |
-| P2 | Action-item sync to task managers spike (persona F5) | `TCK-20260216-011` | OPEN | Near-term workflow integration item promoted to ticket. |
-| P2 | OCR pipeline completion (frame capture + privacy controls) | `TCK-20260216-012` | OPEN | Discussion follow-up beyond initial OCR scaffolding. |
 
 ## Resolved (Skip In Next Pass)
 
@@ -51,3 +43,4 @@
 | Offline graceful-behavior verification | `DOC-002` | BLOCKED until local environment can run with network disabled. |
 | Event-driven analysis rewrite | `TCK-20260214-085` | Deferred after QW optimization + LLM integration; revisit after perf baseline. |
 | ML-based NER replacement | `TCK-20260214-086` | Deferred pending quality benchmark target and runtime budget decision. |
+

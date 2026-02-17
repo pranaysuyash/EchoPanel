@@ -20,7 +20,7 @@ final class SidePanelContractsTests: XCTestCase {
     func testFullInsightTabsIncludeContextAndOrder() {
         XCTAssertEqual(
             SidePanelView.FullInsightTab.allCases.map(\.rawValue),
-            ["Summary", "Actions", "Pins", "Context", "Entities", "Raw"]
+            ["Summary", "Actions", "Pins", "Context", "Notes", "Entities", "Raw"]
         )
     }
 
@@ -29,6 +29,7 @@ final class SidePanelContractsTests: XCTestCase {
         XCTAssertEqual(SidePanelView.FullInsightTab.actions.mapsToSurface, .actions)
         XCTAssertEqual(SidePanelView.FullInsightTab.pins.mapsToSurface, .pins)
         XCTAssertNil(SidePanelView.FullInsightTab.context.mapsToSurface)
+        XCTAssertNil(SidePanelView.FullInsightTab.notes.mapsToSurface)
         XCTAssertEqual(SidePanelView.FullInsightTab.entities.mapsToSurface, .entities)
         XCTAssertEqual(SidePanelView.FullInsightTab.raw.mapsToSurface, .raw)
     }
