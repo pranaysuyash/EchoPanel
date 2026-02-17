@@ -19,6 +19,7 @@ from server.db import (
 from server.services.brain_dump_indexer import get_indexer
 from server.services.hybrid_search import HybridSearchEngine, create_hybrid_search_engine
 from server.services.embeddings import get_embedding_service
+from server.services.video_understanding import get_video_understanding_integration
 from server.security import require_http_auth
 
 logger = logging.getLogger(__name__)
@@ -592,3 +593,83 @@ async def cleanup_old_sessions(
     require_http_auth(http_request)
     deleted = await adapter.delete_old_sessions(days)
     return {"status": "cleaned", "deleted_sessions": deleted}
+
+
+class VideoAnalysisRequest(BaseModel):
+    """Request for video analysis endpoint."""
+    session_id: UUID
+    analyze: bool = Field(default=True, description="Whether to analyze or just get existing context")
+
+
+class VideoAnalysisResponse(BaseModel):
+    """Response from video analysis endpoint."""
+    session_id: str
+    overall_summary: str
+    key_scenes: List[str]
+    narrative: str
+    analyzed_frames: int
+    created_at: str
+
+
+@router.post("/video/analyze", response_model=VideoAnalysisResponse)
+async def analyze_session_video(
+    http_request: Request,
+    request: VideoAnalysisRequest,
+    adapter: StorageAdapter = Depends(get_storage)
+) -> VideoAnalysisResponse:
+    """Analyze video/visual content for a session.
+    
+    Uses SmolVLM2 to understand screen capture frames and generate
+    visual context for meetings.
+    
+    Example:
+    ```
+    POST /brain-dump/video/analyze
+    {
+        "session_id": "uuid-here",
+        "analyze": true
+    }
+    ```
+    """
+    require_http_auth(http_request)
+    
+    session = await adapter.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    integration = get_video_understanding_integration()
+    
+    if request.analyze:
+        context = await integration.analyze_session(str(request.session_id))
+    else:
+        context = await integration.get_session_context(str(request.session_id))
+    
+    if not context:
+        return VideoAnalysisResponse(
+            session_id=str(request.session_id),
+            overall_summary="",
+            key_scenes=[],
+            narrative="No visual analysis available",
+            analyzed_frames=0,
+            created_at=datetime.utcnow().isoformat()
+        )
+    
+    return VideoAnalysisResponse(
+        session_id=context.session_id,
+        overall_summary=context.overall_summary,
+        key_scenes=context.key_scenes,
+        narrative=context.narrative,
+        analyzed_frames=context.analyzed_frames,
+        created_at=context.created_at.isoformat()
+    )
+
+
+@router.get("/video/stats")
+async def get_video_stats(
+    http_request: Request,
+) -> dict:
+    """Get video understanding pipeline statistics."""
+    require_http_auth(http_request)
+    
+    integration = get_video_understanding_integration()
+    return integration.get_stats()

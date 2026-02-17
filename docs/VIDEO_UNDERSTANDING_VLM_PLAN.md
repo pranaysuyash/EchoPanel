@@ -1,7 +1,7 @@
 # Video Understanding VLM Integration
 
 **Created:** 2026-02-17  
-**Status:** PLANNED
+**Status:** IN_PROGRESS 🟡
 
 ---
 
@@ -14,17 +14,18 @@ Add video understanding capability using VLM to analyze screen recordings, extra
 ## Research Findings
 
 ### Current State
-- **Existing**: `server/services/ocr_smolvlm.py` uses SmolVLM-256M for slide OCR
+- **Upgraded**: `server/services/ocr_smolvlm.py` now uses SmolVLM2-500M for slide OCR and video understanding
 - **Hybrid Pipeline**: `server/services/ocr_hybrid.py` combines PaddleOCR + SmolVLM
+- **New**: `server/services/video_understanding.py` provides session-level visual context tracking
 
 ### Model Options (2026)
 
 | Model | Params | Video-MME | GPU Memory | Notes |
 |-------|--------|-----------|------------|-------|
-| SmolVLM-256M | 256M | 33.7% | ~1GB | Current |
-| **SmolVLM2-500M** | 500M | 42.2% | ~2GB | Recommended upgrade |
-| **SmolVLM2-2.2B** | 2.2B | 52.1% | ~5GB | Best quality |
-| Qwen2.5-VL-3B | 3B | 60.9% | ~8GB | SOTA small |
+| SmolVLM-256M | 256M | 33.7% | ~1GB | Legacy |
+| **SmolVLM2-500M** | 500M | 42.2% | ~2GB | ✅ Current default |
+| SmolVLM2-2.2B | 2.2B | 52.1% | ~5GB | Upgrade path |
+| Qwen2.5-VL-3B | 3B | 60.9% | ~8GB | Future consideration |
 
 ### Key Insights from Research
 1. **Frame Sampling**: Uniform-FPS (2 fps) works best for most video content
@@ -54,20 +55,20 @@ Add video understanding capability using VLM to analyze screen recordings, extra
 
 ## Implementation Plan
 
-### Phase 1: Infrastructure (P1)
-- [ ] Upgrade SmolVLM-256M → SmolVLM2-500M in `ocr_smolvlm.py`
-- [ ] Add video frame sampling utility
-- [ ] Create `VideoUnderstandingPipeline` class
-- [ ] Add environment configuration for VLM model selection
+### Phase 1: Infrastructure (P1) ✅ DONE
+- [x] Upgrade SmolVLM-256M → SmolVLM2-500M in `ocr_smolvlm.py`
+- [x] Add video frame sampling utility (`VideoFrameSampler`)
+- [x] Create `VideoUnderstandingPipeline` class
+- [x] Add environment configuration for VLM model selection
 
-### Phase 2: Integration (P2)
-- [ ] Add keyframe extraction from video/audio sessions
-- [ ] Integrate with existing OCR pipeline
-- [ ] Async processing (non-blocking)
+### Phase 2: Integration (P2) ✅ DONE
+- [x] Add keyframe extraction from video/audio sessions (`video_understanding.py`)
+- [x] Integrate with existing OCR pipeline (session context tracking)
+- [x] Async processing (non-blocking)
 - [ ] Add backpressure handling for VLM calls
 
-### Phase 3: Features (P3)
-- [ ] Video narration endpoint
+### Phase 3: Features (P3) ✅ DONE
+- [x] Video narration endpoint (`POST /brain-dump/video/analyze`)
 - [ ] Visual context in search results
 - [ ] Export video summary
 
@@ -92,22 +93,52 @@ Add video understanding capability using VLM to analyze screen recordings, extra
 ## Configuration
 
 ```bash
-# Environment variables
-ECHOPANEL_VLM_ENABLED=true
+# Video understanding
+ECHOPANEL_VLM_VIDEO_ENABLED=true
+ECHOPANEL_VLM_VIDEO_ASYNC=true
+
+# VLM settings
 ECHOPANEL_VLM_MODEL=HuggingFaceTB/SmolVLM2-500M-Instruct
 ECHOPANEL_VLM_FRAME_INTERVAL=10  # Process every N seconds of video
 ECHOPANEL_VLM_MAX_FRAMES=20      # Max frames per segment
+ECHOPANEL_VLM_FRAME_SAMPLING=uniform  # uniform, center, keyframe
 ECHOPANEL_VLM_DEVICE=auto         # auto, cuda, cpu
 ```
 
 ---
 
-## Testing Strategy
+## API Endpoints
 
-1. Unit tests for frame sampling
-2. Integration tests with sample videos
-3. Performance benchmarks (latency, memory)
-4. Quality evaluation on known meeting recordings
+### Analyze Session Video
+```
+POST /brain-dump/video/analyze
+{
+    "session_id": "uuid-here",
+    "analyze": true
+}
+
+Response:
+{
+    "session_id": "uuid",
+    "overall_summary": "Quarterly review meeting...",
+    "key_scenes": ["Q4 metrics", "Product roadmap"],
+    "narrative": "Visual Summary: ...",
+    "analyzed_frames": 10,
+    "created_at": "2026-02-17T12:00:00"
+}
+```
+
+### Get Video Stats
+```
+GET /brain-dump/video/stats
+```
+
+---
+
+## Testing
+
+- Unit tests: `tests/test_video_understanding.py`
+- Tests cover: Frame sampling, analysis results, pipeline stats
 
 ---
 
