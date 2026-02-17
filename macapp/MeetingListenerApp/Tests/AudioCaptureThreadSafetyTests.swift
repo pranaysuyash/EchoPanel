@@ -15,27 +15,17 @@ final class AudioCaptureThreadSafetyTests: XCTestCase {
         // Simulate concurrent access to quality metrics
         let expectation = expectation(description: "Concurrent quality access")
         expectation.expectedFulfillmentCount = 100
-        
-        // Simulate capture thread updates
-        DispatchQueue.global(qos: .userInitiated).async {
-            for _ in 0..<50 {
-                // Access via the public callback would normally update metrics
-                // Here we just verify no crash occurs with concurrent access
-                DispatchQueue.main.async {
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<100 {
+                group.addTask {
                     _ = manager.currentQualityMetrics
                     expectation.fulfill()
                 }
             }
+            await group.waitForAll()
         }
-        
-        // Simulate main thread reads
-        for _ in 0..<50 {
-            DispatchQueue.main.async {
-                _ = manager.currentQualityMetrics
-                expectation.fulfill()
-            }
-        }
-        
+
         await fulfillment(of: [expectation], timeout: 5.0)
     }
     
@@ -48,11 +38,11 @@ final class AudioCaptureThreadSafetyTests: XCTestCase {
         
         // State should be readable without crash
         let expectation = expectation(description: "State access")
-        DispatchQueue.global(qos: .background).async {
+        Task.detached {
             _ = manager.streamActive
             expectation.fulfill()
         }
-        
+
         await fulfillment(of: [expectation], timeout: 1.0)
     }
     
@@ -64,15 +54,14 @@ final class AudioCaptureThreadSafetyTests: XCTestCase {
         // Verify level can be read from any thread
         let expectation = expectation(description: "Level access")
         expectation.expectedFulfillmentCount = 10
-        
-        for i in 0..<10 {
-            let queue = i % 2 == 0 ? DispatchQueue.main : DispatchQueue.global()
-            queue.async {
+
+        for _ in 0..<10 {
+            Task.detached {
                 _ = manager.currentLevel
                 expectation.fulfill()
             }
         }
-        
+
         wait(for: [expectation], timeout: 2.0)
     }
     
