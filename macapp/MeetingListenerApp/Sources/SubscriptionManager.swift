@@ -196,37 +196,33 @@ final class SubscriptionManager: ObservableObject {
     }
     
     private func updateSubscriptionStatus() async {
-        do {
-            for await result in Transaction.currentEntitlements {
-                if case .verified(let transaction) = result {
-                    switch transaction.productType {
-                    case .autoRenewable:
-                        if let expirationDate = transaction.expirationDate {
-                            if expirationDate > Date() {
-                                subscriptionStatus = .active(expiresAt: expirationDate)
-                                isSubscribed = true
-                                
-                                if transaction.productID == SubscriptionTier.annual.rawValue {
-                                    subscriptionType = .annual
-                                } else {
-                                    subscriptionType = .monthly
-                                }
+        for await result in Transaction.currentEntitlements {
+            if case .verified(let transaction) = result {
+                switch transaction.productType {
+                case .autoRenewable:
+                    if let expirationDate = transaction.expirationDate {
+                        if expirationDate > Date() {
+                            subscriptionStatus = .active(expiresAt: expirationDate)
+                            isSubscribed = true
+                            
+                            if transaction.productID == SubscriptionTier.annual.rawValue {
+                                subscriptionType = .annual
                             } else {
-                                subscriptionStatus = .expired(expiresAt: expirationDate)
-                                isSubscribed = false
+                                subscriptionType = .monthly
                             }
                         } else {
-                            subscriptionStatus = .active(expiresAt: Date.distantFuture)
-                            isSubscribed = true
+                            subscriptionStatus = .expired(expiresAt: expirationDate)
+                            isSubscribed = false
                         }
-                        
-                    default:
-                        break
+                    } else {
+                        subscriptionStatus = .active(expiresAt: Date.distantFuture)
+                        isSubscribed = true
                     }
+                    
+                default:
+                    break
                 }
             }
-        } catch {
-            NSLog("SubscriptionManager: Failed to update subscription status: \(error)")
         }
     }
     

@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from .ocr_layout_classifier import LayoutType
-from .ocr_paddle import PaddleOCRResult
-from .ocr_smolvlm import Entity, SmolVLMResult
+from .ocr_smolvlm import Entity
 
 logger = logging.getLogger(__name__)
 

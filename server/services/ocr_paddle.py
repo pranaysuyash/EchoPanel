@@ -18,12 +18,12 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 from PIL import Image
 
-from .ocr_layout_classifier import LayoutClassifier, LayoutResult, LayoutType
+from .ocr_layout_classifier import LayoutClassifier, LayoutType
 
 logger = logging.getLogger(__name__)
 

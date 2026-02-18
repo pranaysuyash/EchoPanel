@@ -5,10 +5,8 @@ Provides lightweight in-memory metrics collection for observability.
 Designed for single-server deployments (no external dependencies).
 """
 
-import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable
-from collections import deque
+from typing import Dict, List, Optional
 import threading
 
 

@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import hmac
 import json
 import logging
 import os
@@ -18,25 +17,17 @@ from server.services.diarization import diarize_pcm, merge_transcript_with_speak
 from server.services.transcript_ids import generate_segment_id
 from server.services.concurrency_controller import (
     get_concurrency_controller,
-    BackpressureLevel,
 )
 from server.services.degrade_ladder import DegradeLadder, DegradeLevel
-from server.services.screen_ocr import get_ocr_handler, OCRFrameHandler
+from server.services.screen_ocr import get_ocr_handler
 from server.services.brain_dump_integration import (
     get_integration,
-    index_transcript_event,
-    initialize_integration,
-    shutdown_integration
+    index_transcript_event
 )
 from server.api.ws_schemas import (
     parse_websocket_message,
     StartMessage,
     StopMessage,
-    AudioMessage,
-    VoiceNoteStartMessage,
-    VoiceNoteAudioMessage,
-    VoiceNoteStopMessage,
-    OCRTextMessage,
 )
 
 router = APIRouter()
@@ -713,7 +704,7 @@ def _finalize_recording_lane(state: SessionState, source: str, sample_rate: int 
                 logger.error(f"Failed to finalize WAV for {source}: {e}")
                 try:
                     wav_file.close()
-                except:
+                except Exception:
                     pass
         
         # Finalize PCM: just close
@@ -972,7 +963,7 @@ async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
     # Configuration
     ENTITY_INTERVAL = 12.0  # Min seconds between entity analysis
     CARD_INTERVAL = 28.0    # Min seconds between card analysis
-    IDLE_POLL_INTERVAL = 1.0  # Short poll when idle
+    _IDLE_POLL_INTERVAL = 1.0  # Short poll when idle
     
     try:
         while True:
@@ -1495,7 +1486,6 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                                     mode = payload.get("mode", "background")  # background, query, quality
                                     
                                     # Use hybrid pipeline with mode
-                                    from server.services.ocr_hybrid import HybridOCRPipeline
                                     hybrid = getattr(ocr_handler, '_hybrid', None)
                                     
                                     if hybrid and mode in ["query", "quality"]:

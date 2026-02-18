@@ -11,7 +11,6 @@ from server.api.ws_live_listener import router as ws_router
 from server.api.brain_dump_query import router as brain_dump_router
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
-from server.security import extract_http_token, is_authorized
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

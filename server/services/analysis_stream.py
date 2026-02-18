@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import re
 import asyncio
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -965,7 +964,7 @@ def generate_rolling_summary(transcript: List[dict], window_seconds: float = ANA
              lines.append(f"- {a['text']}")
 
     # 2. Recent Context (Windowed)
-    lines.append(f"\n## 🕒 Recent Context (Last 10m)")
+    lines.append("\n## 🕒 Recent Context (Last 10m)")
     
     topics = entities.get("topics", [])
     if topics:

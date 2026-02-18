@@ -7,7 +7,7 @@ similar images (e.g., same slide with minor changes).
 More robust than MD5/file hash for visual similarity.
 """
 
-from typing import Optional, Union
+from typing import Optional
 
 try:
     from PIL import Image

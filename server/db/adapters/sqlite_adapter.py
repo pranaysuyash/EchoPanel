@@ -9,7 +9,7 @@ from uuid import UUID
 
 import aiosqlite
 
-from ..storage_adapter import StorageAdapter, StorageError, StorageQueryError
+from ..storage_adapter import StorageAdapter
 from ..models import (
     Session,
     TranscriptSegment,

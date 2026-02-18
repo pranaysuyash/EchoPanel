@@ -27,8 +27,7 @@ import os
 import platform
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 try:
     import psutil
@@ -298,7 +297,7 @@ class CapabilityDetector:
             )
             if result.returncode == 0:
                 # Count GPUs from output
-                num_devices = len([l for l in result.stdout.split("\n") if "GPU" in l])
+                num_devices = len([line for line in result.stdout.split("\n") if "GPU" in line])
                 return True, max(1, num_devices)
         except Exception:
             pass
@@ -506,11 +505,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print("EchoPanel Machine Capability Detection")
     print("=" * 60)
-    print(f"\nHardware Profile:")
+    print("\nHardware Profile:")
     for key, value in profile.to_dict().items():
         print(f"  {key}: {value}")
     
-    print(f"\nASR Recommendations:")
+    print("\nASR Recommendations:")
     recommendation = detector.recommend(profile)
     rec_dict = recommendation.to_dict()
     for key, value in rec_dict.items():
@@ -518,11 +517,11 @@ if __name__ == "__main__":
             print(f"  {key}: {value}")
     
     if recommendation.fallback:
-        print(f"\n  Fallback:")
+        print("\n  Fallback:")
         for key, value in recommendation.fallback.to_dict().items():
             print(f"    {key}: {value}")
     
-    print(f"\nEnvironment Variables:")
+    print("\nEnvironment Variables:")
     config = get_optimal_config()
     for key, value in config["env_vars"].items():
         print(f"  export {key}={value}")

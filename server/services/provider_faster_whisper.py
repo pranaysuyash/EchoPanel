@@ -205,7 +205,7 @@ class FasterWhisperProvider(ASRProvider):
                 if len(segments) > 0:
                     self.log(f"DEBUG: First segment: text='{segments[0].text}', start={segments[0].start}, end={segments[0].end}")
                 else:
-                    self.log(f"DEBUG: No segments returned - empty audio?")
+                    self.log("DEBUG: No segments returned - empty audio?")
 
                 for segment in segments:
                     text = segment.text.strip()

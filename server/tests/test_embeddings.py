@@ -2,11 +2,10 @@
 Unit tests for Embedding Service.
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import sys
 

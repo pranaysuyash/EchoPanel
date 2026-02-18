@@ -18,7 +18,6 @@ Usage:
     await caption_ext.end_session()
 """
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -31,7 +30,6 @@ from server.services.caption_output import (
     CaptionOutputConfig,
     CaptionOutputService,
     TranscriptSegment,
-    create_caption_ws_message,
 )
 
 logger = logging.getLogger(__name__)

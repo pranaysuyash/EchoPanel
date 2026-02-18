@@ -10,14 +10,13 @@ Upgrade from SmolVLM-256M:
 - Improved semantic understanding
 """
 
-import asyncio
 import logging
 import os
 import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import torch
 from PIL import Image
@@ -208,9 +207,12 @@ ENTITIES: <entities>"""
                 entities.append(Entity(text=name, type=type_, confidence=0.8))
         
         confidence = 0.7
-        if summary: confidence += 0.1
-        if insights: confidence += 0.1
-        if entities: confidence += 0.1
+        if summary:
+            confidence += 0.1
+        if insights:
+            confidence += 0.1
+        if entities:
+            confidence += 0.1
         
         return SmolVLMResult(
             text=text,

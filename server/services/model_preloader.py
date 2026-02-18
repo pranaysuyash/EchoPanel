@@ -22,9 +22,9 @@ import logging
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 import numpy as np
 
 from .asr_providers import ASRProvider, ASRConfig, ASRProviderRegistry

@@ -32,9 +32,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional, Dict, Any, List
+from dataclasses import dataclass
+from typing import AsyncIterator, Optional, Dict, Any
 
 import numpy as np
 
@@ -257,7 +256,7 @@ class VADASRWrapper(ASRProvider):
                 
                 t0 = processed_samples / sample_rate
                 chunk_samples = len(audio_bytes) // bytes_per_sample
-                t1 = (processed_samples + chunk_samples) / sample_rate
+                _t1 = (processed_samples + chunk_samples) / sample_rate
                 processed_samples += chunk_samples
                 
                 # Update stats

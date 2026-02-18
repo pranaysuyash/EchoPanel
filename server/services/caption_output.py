@@ -18,12 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol, Set
-import struct
+from typing import Dict, List, Optional, Protocol, Set
 
 logger = logging.getLogger(__name__)
 

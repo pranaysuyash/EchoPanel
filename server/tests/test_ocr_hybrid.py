@@ -1,9 +1,6 @@
 """Tests for Hybrid OCR Pipeline."""
 
 import unittest
-import asyncio
-import io
-from unittest.mock import Mock, patch, MagicMock
 from PIL import Image
 import numpy as np
 
@@ -13,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.ocr_layout_classifier import LayoutClassifier, LayoutType
 from services.ocr_fusion import FusionEngine, HybridOCRResult
-from services.ocr_smolvlm import Entity, SmolVLMResult
+from services.ocr_smolvlm import SmolVLMResult
 from services.ocr_paddle import PaddleOCRResult
 
 

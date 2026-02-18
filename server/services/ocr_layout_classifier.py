@@ -13,10 +13,9 @@ Layout types:
 """
 
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 from PIL import Image
@@ -113,7 +112,7 @@ class LayoutClassifier:
         - Shape complexity (diagrams have complex shapes)
         """
         from scipy import ndimage
-        from skimage import feature, measure
+        from skimage import feature
         
         # Convert to grayscale if needed
         if len(img_array.shape) == 3:
@@ -166,7 +165,6 @@ class LayoutClassifier:
     
     def _detect_lines(self, gray: np.ndarray) -> Tuple[int, int]:
         """Detect horizontal and vertical lines."""
-        from scipy import ndimage
         
         # Horizontal lines - look for rows with high variance
         row_diff = np.abs(np.diff(gray.astype(float), axis=1))

@@ -40,14 +40,14 @@ extension SidePanelView {
             ScrollView {
                 transcriptRows(style: style)
             }
-            .onChange(of: transcriptUI.pendingScrollTarget) { target in
+            .onChange(of: transcriptUI.pendingScrollTarget) { _, target in
                 guard let target else { return }
                 performAnimatedUpdate {
                     proxy.scrollTo(target, anchor: .center)
                 }
                 transcriptUI.pendingScrollTarget = nil
             }
-            .onChange(of: transcriptUI.scrollToBottomToken) { _ in
+            .onChange(of: transcriptUI.scrollToBottomToken) { _, _ in
                 guard let last = visibleTranscriptSegments.last?.id else { return }
                 performAnimatedUpdate {
                     proxy.scrollTo(last, anchor: .bottom)

@@ -9,7 +9,7 @@ Optimizes images for Tesseract OCR accuracy through:
 """
 
 from io import BytesIO
-from typing import Optional, Tuple
+from typing import Optional
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter
@@ -80,7 +80,7 @@ class ImagePreprocessor:
         try:
             image = Image.open(BytesIO(image_bytes))
             return self.preprocess(image)
-        except Exception as e:
+        except Exception:
             # Log error and return None
             return None
     

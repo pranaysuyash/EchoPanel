@@ -181,7 +181,7 @@ class ONNXWhisperProvider(ASRProvider):
                 processed_samples += chunk_samples
                 
                 # Convert to numpy
-                audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                _audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
                 
                 try:
                     infer_start = time.perf_counter()

@@ -110,7 +110,7 @@ final class DeviceHotSwapManager: ObservableObject {
     
     func availableInputDevices() -> [DeviceInfo] {
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInMicrophone, .externalUnknown],
+            deviceTypes: [.microphone, .external],
             mediaType: .audio,
             position: .unspecified
         )

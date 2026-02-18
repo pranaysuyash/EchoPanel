@@ -7,7 +7,7 @@ configured storage backend (SQLite by default).
 import asyncio
 import logging
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Optional
 from uuid import UUID, uuid4
 
 from server.db import (

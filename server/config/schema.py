@@ -3,7 +3,6 @@
 This module defines the configuration structure with validation.
 """
 
-import os
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional

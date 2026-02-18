@@ -21,7 +21,6 @@ Optimizations:
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -261,7 +260,7 @@ class MLXWhisperProvider(ASRProvider):
                 except Exception as e:
                     self.log(f"Transcription error: {e}")
                     yield ASRSegment(
-                        text=f"[transcription error]",
+                        text="[transcription error]",
                         t0=t0,
                         t1=t1,
                         confidence=0,

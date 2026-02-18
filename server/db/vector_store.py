@@ -12,7 +12,7 @@ from uuid import UUID
 import chromadb
 from chromadb.config import Settings
 
-from .models import TranscriptSegment, SearchResult, Session
+from .models import TranscriptSegment
 
 logger = logging.getLogger(__name__)
 

@@ -13,11 +13,9 @@ from server.db import (
     StorageAdapter,
     StorageConfig,
     SearchFilters,
-    SearchResult,
     AudioSource
 )
-from server.services.brain_dump_indexer import get_indexer
-from server.services.hybrid_search import HybridSearchEngine, create_hybrid_search_engine
+from server.services.hybrid_search import create_hybrid_search_engine
 from server.services.embeddings import get_embedding_service
 from server.services.video_understanding import get_video_understanding_integration
 from server.security import require_http_auth

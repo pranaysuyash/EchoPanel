@@ -12,7 +12,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -411,8 +411,8 @@ Example output:
                         if json_match:
                             try:
                                 insights_data = json.loads(json_match.group(1))
-                            except:
-                                logger.warning(f"Failed to parse Ollama JSON response")
+                            except json.JSONDecodeError:
+                                logger.warning("Failed to parse Ollama JSON response")
                                 return []
                         else:
                             return []

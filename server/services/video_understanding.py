@@ -16,15 +16,10 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from .ocr_smolvlm import (
     VideoUnderstandingPipeline,
-    VideoAnalysisResult,
-    VLM_FRAME_INTERVAL,
-    VLM_MAX_FRAMES,
-    VLM_FRAME_SAMPLING,
 )
 
 logger = logging.getLogger(__name__)

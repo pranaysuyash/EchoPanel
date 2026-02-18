@@ -10,7 +10,7 @@ Default k=60 (constant that works well across domains)
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from server.db import StorageAdapter, SearchResult, SearchFilters

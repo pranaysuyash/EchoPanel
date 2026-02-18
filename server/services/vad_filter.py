@@ -8,7 +8,7 @@ Reduces ASR load by ~40% in typical meetings.
 import io
 import logging
 import wave
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 

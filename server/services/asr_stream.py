@@ -11,7 +11,7 @@ import logging
 import os
 from typing import AsyncIterator, Optional
 
-from .asr_providers import ASRProvider, ASRConfig, ASRSegment, ASRProviderRegistry, AudioSource
+from .asr_providers import ASRConfig, ASRProviderRegistry, AudioSource
 
 # Import providers to trigger registration
 from . import provider_faster_whisper  # noqa: F401

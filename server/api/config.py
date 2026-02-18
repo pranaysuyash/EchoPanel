@@ -7,17 +7,15 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from server.config import (
     get_config,
     get_config_manager,
-    Config,
-    load_config,
-    save_config
+    Config
 )
-from server.db import get_storage_adapter, StorageConfig
+from server.db import StorageConfig
 from server.security import require_http_auth
 
 logger = logging.getLogger(__name__)
@@ -215,14 +213,14 @@ async def _test_postgresql_connection(url: Optional[str]) -> StorageTestResponse
         try:
             await conn.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
             pgvector_available = True
-        except:
+        except Exception:
             pgvector_available = False
         
         await conn.close()
         
         return StorageTestResponse(
             success=True,
-            message=f"PostgreSQL connection successful",
+            message="PostgreSQL connection successful",
             details={
                 "version": version,
                 "pgvector_available": pgvector_available

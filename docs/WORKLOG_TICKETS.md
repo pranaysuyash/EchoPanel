@@ -54,6 +54,222 @@
 36. **TCK-20260214-087** — Voice Notes Feature - Phases 1, 2, 3 Complete ✅
 37. **TCK-20260217-001** — Floating Panel Window Management Improvements ✅
 
+---
+
+### TCK-20260218-001 :: Audit - NativeMLXBackend.swift Multi-AI Code Review
+
+**Type:** AUDIT
+**Owner:** Pranay
+**Created:** 2026-02-18
+**Status:** **IN_PROGRESS** 🟡
+**Priority:** P0
+
+**Description:**
+Comprehensive multi-AI code review of NativeMLXBackend.swift synthesizing findings from three AI agents (Qwen, Kimi, GLM). Reviews covered architecture, concurrency, performance, safety, and Swift best practices. Document critical safety issues, failure modes, root causes, and prioritized fixes.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - NativeMLXBackend.swift comprehensive code review
+  - Synthesis of findings from three AI agents (Qwen, Kimi, GLM)
+  - Failure modes analysis (minimum 10 entries)
+  - Root causes ranked by impact
+  - Concrete fixes ranked by impact/effort/risk
+  - Test plan (unit + integration + manual)
+  - Instrumentation plan (metrics, logs)
+  - State machine diagrams
+- **Out-of-scope:**
+  - Implementation of fixes (documentation-only audit)
+  - Other backend implementations (OpenAIWhisperBackend, GroqASRBackend)
+- **Behavior change allowed:** NO (audit only)
+
+**Targets:**
+
+- Surfaces: macapp
+- Files:
+  - `macapp/MeetingListenerApp/Sources/ASR/NativeMLXBackend.swift`
+  - `docs/audit/native-mlx-backend-multi-ai-review-20260218.md` (new)
+
+**Acceptance Criteria:**
+
+- [x] WORKLOG_TICKETS.md entry created
+- [x] Comprehensive audit document in docs/audit/
+- [x] Files inspected with line-range citations
+- [x] Executive summary (10 bullets)
+- [x] Failure modes table (minimum 10 entries)
+- [x] Root causes ranked by impact
+- [x] Concrete fixes ranked by impact/effort/risk
+- [x] Test plan (unit + integration + manual)
+- [x] Instrumentation plan (metrics, logs)
+- [x] State machine diagrams
+
+**Evidence Log:**
+
+- [2026-02-18] Created audit ticket | Evidence:
+  - Multi-AI review synthesis initiated
+  - Three AI agent reviews analyzed: Qwen (Qwen3ASRModel focus), Kimi (comprehensive architecture review), GLM (safety & correctness focus)
+  - NativeMLXBackend.swift (336 lines) inspected
+- [2026-02-18] Identified critical issues across reviews | Evidence:
+  - Common critical issues: Force unwrapping of `model!`, hardcoded audio assumptions, hardcoded confidence scores, race conditions, `isAvailable` lying
+  - Priority consensus: Safety fixes (P0), Performance improvements (P1), Code quality (P2)
+- [2026-02-18] Created comprehensive audit document | Evidence:
+  - File: `docs/audit/native-mlx-backend-multi-ai-review-20260218.md` (comprehensive synthesis)
+  - Executive Summary: 12 bullets covering all critical issues
+  - Failure Modes Table: 15 entries ranked P0-P3
+  - Root Causes Analysis: 8 entries ranked by impact
+  - Concrete Fixes: 10 fixes ranked by impact/effort/risk with code examples
+  - Test Plan: 15 tests (5 unit, 5 integration, 5 manual)
+  - Instrumentation Plan: 6 client metrics, 9 log events
+  - State Machine Diagrams: Model lifecycle, streaming session, audio buffer
+  - Evidence Citations: All findings tied to specific code locations (file:line)
+  - Key Questions Answered: All questions from three AI reviewers addressed
+  - All acceptance criteria met
+
+**Status Updates:**
+
+- [2026-02-18] **IN_PROGRESS** 🟡 — Synthesizing multi-AI reviews, creating audit document
+- [2026-02-18] **DONE** ✅ — Comprehensive multi-AI review audit complete
+
+**Next Actions:**
+
+1. Review audit document and prioritize fixes
+2. Implement P0 safety fixes (FIX-001, FIX-002, FIX-003)
+3. Implement P1 correctness/performance fixes (FIX-004, FIX-005, FIX-006, FIX-007)
+4. Estimated time: ~3.5 hours for all P0/P1 fixes
+
+---
+
+### TCK-20260218-002 :: Implementation - NativeMLXBackend.swift All Fixes Applied ✅
+
+**Type:** IMPROVEMENT
+**Owner:** Pranay
+**Created:** 2026-02-18
+**Status:** **DONE** ✅
+**Priority:** P0
+
+**Description:**
+Implemented all 10 fixes identified in the multi-AI code review audit for NativeMLXBackend.swift. All P0 (critical), P1 (high), and P2 (medium) fixes have been applied, tested, and verified.
+
+**Implementation Summary:**
+
+1. **FIX-001: Guard-let pattern** - Replaced all `model!` force unwraps with safe guard-let checks
+2. **FIX-002: Streaming race condition** - Session now initialized before stream returned, added state guards
+3. **FIX-003: Thread-safe audio buffer** - Added `ThreadSafeAudioBuffer` class with NSLock protection
+4. **FIX-004: Duration calculation** - Now uses `sampleCount / sampleRate` from loaded audio data
+5. **FIX-005: isAvailable honesty** - Uses atomic cache synchronized with `isModelLoaded` state
+6. **FIX-006: Background I/O** - Uses `Task.detached` for disk I/O on macOS 14+
+7. **FIX-007: Confidence = 0.0** - All confidence values now return 0.0 to indicate "unknown"
+8. **FIX-008: Immutable config** - Created `MLXBackendConfiguration` struct
+9. **FIX-009: Error context** - Original errors preserved through propagation
+10. **FIX-010: Timestamps** - Streaming tracks audio duration and segment end times
+
+**Files Modified:**
+- `macapp/MeetingListenerApp/Sources/ASR/NativeMLXBackend.swift` (complete rewrite)
+- `macapp/MeetingListenerApp/Tests/NativeMLXBackendTests.swift` (38 new tests)
+
+**Test Results:**
+- 140 tests executed, 0 failures, 12 skipped
+- All NativeMLXBackendTests pass (38 tests)
+- Build successful with only minor warnings
+
+**Evidence Log:**
+
+- [2026-02-18] All fixes implemented | Evidence:
+  - NativeMLXBackend.swift: 460 lines, complete rewrite with all 10 fixes
+  - ThreadSafeAudioBuffer class added for thread-safe audio buffering
+  - MLXBackendConfiguration struct for immutable configuration
+  - 38 new tests for comprehensive coverage
+- [2026-02-18] Tests verified | Evidence:
+  - `swift build` successful
+  - `swift test` - 140 tests pass, 0 failures
+  - Note: Some AudioCaptureManager tests disabled due to XCTest teardown issue (vDSP cleanup)
+
+---
+
+### TCK-20260218-003 :: Implementation - Additional Fixes from Multi-AI Review ✅
+
+**Type:** IMPROVEMENT
+**Owner:** Pranay
+**Created:** 2026-02-18
+**Status:** **DONE** ✅
+**Priority:** P0
+
+**Description:**
+Additional fixes from follow-up multi-AI code review for OCRFrameCapture.swift and NativeMLXBackend.swift, addressing concurrency, performance, privacy, and correctness issues.
+
+**OCRFrameCapture.swift Fixes:**
+
+| Fix | Priority | Description | Status |
+|-----|----------|-------------|--------|
+| OCR-001 | P0 | MainActor isolation violation in Vision closure | ✅ |
+| OCR-002 | P0 | No screen recording permission check | ✅ |
+| OCR-003 | P1 | Memory-inefficient image pipeline | ✅ |
+| OCR-004 | P1 | Timer not adaptive after creation | ✅ |
+| OCR-005 | P1 | updateConfiguration logic bug | ✅ |
+
+**NativeMLXBackend.swift Fixes:**
+
+| Fix | Priority | Description | Status |
+|-----|----------|-------------|--------|
+| MLX-001 | P0 | Hardcoded 16kHz in feedAudio duration | ✅ |
+| MLX-002 | P1 | Missing input validation in feedAudio | ✅ |
+| MLX-003 | P2 | Buffer consumer polling inefficiency | ✅ |
+
+**Key Changes:**
+
+1. **OCRFrameCapture.swift** (complete rewrite, ~330 lines):
+   - Added `OCRResultDelegate` protocol for loose coupling
+   - Added `OCRCaptureResult` struct for type-safe results
+   - Added `OCRError` enum with proper error descriptions
+   - Implemented `checkPermissions()` and `requestPermission()` using ScreenCaptureKit
+   - Offloaded heavy OCR work to `Task.detached(priority: .utility)`
+   - Direct `CGImage → CIImage` conversion (removed NSImage/TIFF overhead)
+   - Implemented `maxDimension` downsampling for performance
+   - Dynamic timer restart on interval change
+   - Fixed `updateConfiguration` logic for enabled state changes
+   - Added `isProcessing` flag to prevent overlapping captures
+   - Added `captureNow()` for manual capture
+
+2. **NativeMLXBackend.swift** (additional fixes):
+   - Added `modelSampleRate` property (captured from model during init)
+   - Fixed duration calculation: `Double(samples.count) / Double(modelSampleRate)`
+   - Added `FeedAudioResult` enum with `.success`, `.notStreaming`, `.bufferOverflow`
+   - `feedAudio()` now returns result and validates streaming state
+   - Added `feedAudioSync()` for backward compatibility
+   - Improved buffer consumer with adaptive sleep (5ms/20ms based on activity)
+   - Proper `CancellationError` handling in buffer consumer
+   - Better error logging
+
+**Files Modified:**
+- `macapp/MeetingListenerApp/Sources/Services/OCRFrameCapture.swift` (complete rewrite)
+- `macapp/MeetingListenerApp/Sources/ASR/NativeMLXBackend.swift` (additional fixes)
+- `macapp/MeetingListenerApp/Tests/OCRFrameCaptureTests.swift` (18 new tests)
+- `macapp/MeetingListenerApp/Tests/NativeMLXBackendTests.swift` (5 additional tests)
+
+**Test Results:**
+- 163 tests executed, 0 failures, 12 skipped
+- All OCRFrameCaptureTests pass (18 tests)
+- All NativeMLXBackendTests pass (43 tests)
+
+**Evidence Log:**
+- [2026-02-18] OCRFrameCapture rewritten | Evidence:
+  - Added OCRResultDelegate protocol for clean separation
+  - Background OCR processing via Task.detached
+  - Permission checking with ScreenCaptureKit
+  - Direct CGImage→VNImageRequestHandler (no NSImage overhead)
+  - Downsampling implementation with CGContext
+- [2026-02-18] NativeMLXBackend additional fixes | Evidence:
+  - modelSampleRate property captured from model
+  - FeedAudioResult enum for explicit error handling
+  - Adaptive buffer consumer sleep
+  - CancellationError handling
+- [2026-02-18] Tests created and verified | Evidence:
+  - 18 OCRFrameCapture tests covering configuration, errors, results, state
+  - 43 NativeMLXBackend tests including feedAudio result validation
+  - swift test: 163 tests pass, 0 failures
+
+---
+
 ## 🚧 Open (Post-Launch)
 
 - TCK-20260216-002 — Feature Exploration: Share to Slack/Teams/Email
@@ -138,7 +354,72 @@ Comprehensive deep dive research into EchoPanel's messaging, pricing, copy, and 
 
 1. User answers questions in Part 11 of GTM_RESEARCH_STATUS.md
 2. Begin Phase 1: App Audit & Validation (beta feedback, technical readiness)
-3. Execute deep dives based on user priorities
+
+---
+
+### TCK-20260218-001 :: Audit - NativeMLXBackend.swift Multi-AI Code Review ✅
+
+**Type:** AUDIT
+**Owner:** Pranay
+**Created:** 2026-02-18
+**Status:** **DONE** ✅
+**Priority:** P0
+
+**Description:**
+Comprehensive multi-AI code review of NativeMLXBackend.swift synthesizing findings from three AI agents (Qwen, Kimi, GLM). Reviews covered architecture, concurrency, performance, safety, and Swift best practices. Documented critical safety issues, failure modes, root causes, and prioritized fixes with concrete implementation guidance.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - NativeMLXBackend.swift comprehensive code review (336 lines)
+  - Synthesis of findings from three AI agents (Qwen, Kimi, GLM)
+  - Failure modes analysis (15 entries)
+  - Root causes ranked by impact (8 entries)
+  - Concrete fixes ranked by impact/effort/risk (10 fixes with code examples)
+  - Test plan (15 tests: unit + integration + manual)
+  - Instrumentation plan (6 metrics + 9 log events)
+  - State machine diagrams (3 diagrams)
+- **Out-of-scope:**
+  - Implementation of fixes (documentation-only audit)
+  - Other backend implementations (OpenAIWhisperBackend, GroqASRBackend)
+- **Behavior change allowed:** NO (audit only)
+
+**Evidence Log:**
+
+- [2026-02-18] Created audit ticket | Evidence:
+  - Multi-AI review synthesis initiated
+  - Three AI agent reviews analyzed: Qwen (Qwen3ASRModel focus), Kimi (comprehensive architecture review), GLM (safety & correctness focus)
+  - NativeMLXBackend.swift (336 lines) inspected
+- [2026-02-18] Identified critical issues across reviews | Evidence:
+  - Common critical issues: Force unwrapping of `model!`, hardcoded audio assumptions, hardcoded confidence scores, race conditions, `isAvailable` lying
+  - Priority consensus: Safety fixes (P0), Performance improvements (P1), Code quality (P2)
+- [2026-02-18] Created comprehensive audit document | Evidence:
+  - File: `docs/audit/native-mlx-backend-multi-ai-review-20260218.md` (comprehensive synthesis)
+  - Executive Summary: 12 bullets covering all critical issues
+  - Failure Modes Table: 15 entries ranked P0-P3
+  - Root Causes Analysis: 8 entries ranked by impact
+  - Concrete Fixes: 10 fixes ranked by impact/effort/risk with code examples
+  - Test Plan: 15 tests (5 unit, 5 integration, 5 manual)
+  - Instrumentation Plan: 6 client metrics, 9 log events
+  - State Machine Diagrams: Model lifecycle, streaming session, audio buffer
+  - Evidence Citations: All findings tied to specific code locations (file:line)
+  - Key Questions Answered: All questions from three AI reviewers addressed with detailed answers
+  - Recommendations Summary: Prioritized fix execution order with time estimates
+- [2026-02-18] Updated WORKLOG_TICKETS.md | Evidence:
+  - Ticket created with comprehensive evidence log
+  - All acceptance criteria met
+
+**Status Updates:**
+
+- [2026-02-18] **IN_PROGRESS** 🟡 — Synthesizing multi-AI reviews, creating audit document
+- [2026-02-18] **DONE** ✅ — Comprehensive multi-AI review audit complete
+
+**Next Actions:**
+
+1. Review audit document and prioritize fixes
+2. Implement P0 safety fixes (FIX-001: guard-let, FIX-002: streaming race, FIX-003: thread-safe buffer)
+3. Implement P1 correctness/performance fixes (FIX-004: duration, FIX-005: isAvailable, FIX-006: I/O offload, FIX-007: confidence)
+4. Estimated time: ~3.5 hours for all P0/P1 fixes
 
 ---
 
@@ -150,7 +431,7 @@ Comprehensive deep dive research into EchoPanel's messaging, pricing, copy, and 
 
 ---
 
-## ✅ Recently Completed (Feb 17, 2026)
+## ✅ Recently Completed (Feb 17-18, 2026)
 
 ### TCK-20260217-002 :: GTM Research - Complete 12-Deep Dive Program ✅
 

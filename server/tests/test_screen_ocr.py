@@ -13,7 +13,7 @@ import base64
 import io
 import sys
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -245,7 +245,7 @@ class TestScreenOCRPipeline:
         try:
             import pytesseract
             pytesseract.get_tesseract_version()
-        except:
+        except Exception:
             pytest.skip("Tesseract not installed")
         
         # Create image with text
@@ -255,7 +255,7 @@ class TestScreenOCRPipeline:
         # Use default font
         try:
             font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
-        except:
+        except OSError:
             font = ImageFont.load_default()
         
         draw.text((10, 30), "OCR Test 123", fill='black', font=font)
@@ -406,7 +406,6 @@ class TestOCRFrameHandler:
         """Test handling valid frame."""
         from PIL import Image
         import io
-        import base64
         from server.services.screen_ocr import OCRFrameHandler
         
         handler = OCRFrameHandler()
@@ -458,8 +457,6 @@ class TestOCRIntegration:
     async def test_end_to_end_with_mock(self):
         """Test full flow with mocked dependencies."""
         from server.services.screen_ocr import (
-            ScreenOCRPipeline,
-            OCRFrameHandler,
             get_ocr_handler,
             reset_ocr_handler
         )

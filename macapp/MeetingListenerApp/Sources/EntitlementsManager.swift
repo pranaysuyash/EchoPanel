@@ -167,7 +167,7 @@ final class EntitlementsManager: ObservableObject {
     
     private func updateEntitlements() async {
         let wasPro = isPro
-        isPro = await SubscriptionManager.shared.isProFeatureEnabled()
+        isPro = SubscriptionManager.shared.isProFeatureEnabled()
         
         NSLog("EntitlementsManager: Pro status updated - was: \(wasPro), now: \(isPro)")
     }

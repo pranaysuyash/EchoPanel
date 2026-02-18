@@ -480,7 +480,7 @@ class AdaptiveASRManager:
         t0 = time.perf_counter()
         
         # Get current provider
-        provider = self.ladder.provider
+        _provider = self.ladder.provider
         
         # Transcribe (this would be the actual transcription call)
         # For now, we just measure the time placeholder

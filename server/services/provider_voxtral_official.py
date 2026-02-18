@@ -52,7 +52,6 @@ import asyncio
 import json
 import os
 import time
-from pathlib import Path
 from typing import AsyncIterator, Optional
 from dataclasses import dataclass
 
@@ -144,7 +143,6 @@ class VoxtralOfficialProvider(ASRProvider):
     def _check_vllm_ready(self) -> bool:
         """Check if vLLM model is ready for inference."""
         import urllib.request
-        import json
         
         try:
             # Try to list models
@@ -179,7 +177,7 @@ class VoxtralOfficialProvider(ASRProvider):
         # Check if model is ready
         is_ready = await loop.run_in_executor(None, self._check_vllm_ready)
         if not is_ready:
-            self.log(f"⚠️  vLLM running but model may not be loaded yet")
+            self.log("⚠️  vLLM running but model may not be loaded yet")
             # Still return True - model might be loading
         
         self.log(f"✅ Connected to vLLM at {self.voxtral_config.vllm_url}")
