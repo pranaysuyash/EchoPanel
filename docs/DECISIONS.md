@@ -210,3 +210,136 @@ This is a lightweight decision log. Prefer short entries that explain why.
 
 **Why**: Required by mlx-audio-swift, FluidAudio, and SwiftData. Already set in `Package.swift`.
 
+---
+
+## 2026-02-26 Research Sprint Decisions
+
+Research sprint: 4 agents × 4 research docs. Sources: `FLUIDAUDIO_API_VERIFICATION_2026-02-26.md`, `RAM_BUDGET_ANALYSIS_2026-02-26.md`, `ASR_BENCHMARK_COMPARISON_2026-02-26.md`, `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md`.
+
+---
+
+### DEC-026: Qwen3-ASR-0.6B-4bit confirmed as primary ASR (decided 2026-02-26)
+
+**Decision**: Qwen3-ASR-0.6B-4bit remains the primary ASR model. No change from Feb 25 selection — now benchmark-verified.
+
+**Why**: 5.8% WER on LibriSpeech, RTF < 0.1 on M1/M2, ~720 MB runtime RAM, streaming via `generateStream` (PR #32). Best balance of accuracy, speed, and memory for the 8 GB Mac target. Full `generateStream` support (chunk-by-chunk) confirmed in mlx-audio-swift v0.1.0.
+
+**Evidence**: `ASR_BENCHMARK_COMPARISON_2026-02-26.md` §1, verified disk size 676 MB via HF API (`RAM_BUDGET_ANALYSIS_2026-02-26.md` §1a).
+
+---
+
+### DEC-027: Parakeet-TDT added to ASR fallback chain as P5 (decided 2026-02-26)
+
+**Decision**: `ParakeetModel` (variant: `tdt`, model slug: `nvidia/parakeet-tdt-0.6b-v2`) is added to the fallback chain at **position 5**, replacing the former GLM-ASR-Nano slot.
+
+**Updated fallback chain:**
+1. `Qwen3-ASR-0.6B-4bit` (fastest, lowest RAM — primary)
+2. `Qwen3-ASR-1.7B-4bit` (higher accuracy, 8 GB viable)
+3. `Qwen3-ASR-1.7B-8bit` (quality fallback — M2+ 16 GB only)
+4. ~~`GLM-ASR-Nano`~~ → removed (batch-only, no streaming, no active development)
+5. `Parakeet-TDT-0.6B-v2` (~1.2 GB, 4.8% WER, streaming — pending Q2 2026 Apple Silicon benchmark)
+6. `PythonBackend` (FastAPI fallback)
+
+**Why**: Parakeet is now available in Swift (PR #51, mlx-audio-swift v0.1.0). Better WER (4.8% vs 5.8%), lower first-token latency (50–150 ms vs 200–400 ms), native timestamps. Held at P5 until Apple Silicon RTF and meeting-audio WER are measured on real data (Q2 2026).
+
+**Evidence**: `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` §2.2, §5; `ASR_BENCHMARK_COMPARISON_2026-02-26.md` §3.
+
+---
+
+### DEC-028: FluidAudio confirmed as primary diarization solution (decided 2026-02-26)
+
+**Decision**: FluidAudio (`github.com/FluidInference/FluidAudio`) is confirmed as the diarization + VAD solution. The "binary risk" concern from the Feb 25 open questions is resolved — it is source code.
+
+**Why**: Full source code, MIT license, Swift 6 strict concurrency, 1,560 stars, 20+ production apps. ANE-based (`.mlmodelc` via `cpuAndNeuralEngine`). Three diarization pipelines: `DiarizerManager` (online), `OfflineDiarizerManager` (VBx batch, best DER), `SortformerDiarizer` (real-time streaming). Actively maintained (commits every few days).
+
+**Correct API (supersedes Feb 25 research doc):**
+```swift
+// Load models first (separate step)
+let models = try await DiarizerModels.download()
+let diarizer = DiarizerManager()          // synchronous init — no model enum
+diarizer.initialize(models: models)
+let result = try diarizer.performCompleteDiarization(audioSamples)
+```
+
+**Evidence**: `FLUIDAUDIO_API_VERIFICATION_2026-02-26.md` (full report). API examples in `NATIVE_SWIFT_STACK_RESEARCH_2026-02-25.md` must be updated.
+
+---
+
+### DEC-029: SortformerDiarizer (mlx-audio-swift) as alternative diarization option (decided 2026-02-26)
+
+**Decision**: `mlx-audio-swift`'s native Sortformer diarization (PR #33, `MLXAudioVAD`) is tracked as an alternative to FluidAudio for the VAD + speaker attribution path.
+
+**Why**: Runs in the MLX/GPU unified memory pool — same pool as ASR and LLM. Enables zero-copy pipeline (no cross-framework data transfer). Useful if FluidAudio ANE + MLX GPU thermal contention becomes a problem in practice.
+
+**Status**: Evaluate after Q8 (diarization accuracy parity study) completes. Not replacing FluidAudio today.
+
+**Evidence**: `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` §2.5.
+
+---
+
+### DEC-030: nomic-embed-text-v1.5 as interim embedding model (decided 2026-02-26)
+
+**Decision**: Use `mlx-community/nomic-embed-text-v1.5` (~130 MB disk, ~140 MB runtime, 768-dim) as the interim embedding model. Swap to `Qwen3-Embedding-0.6B-4bit` when the MLX 4-bit version is published publicly.
+
+**Why**: `mlx-community/Qwen3-Embedding-0.6B-4bit` returned HTTP 401 on 2026-02-26 — not yet public. `nomic-embed-text-v1.5` is already supported as `NomicBert.swift` in `MLXEmbedders` (mlx-swift-lm 2.30.6), saves ~310 MB vs the planned Qwen3 model, Apache 2.0 license.
+
+**Evidence**: `RAM_BUDGET_ANALYSIS_2026-02-26.md` §6; `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` §3.2.
+
+---
+
+### DEC-031: ASR + LLM never run simultaneously — sequential phases (decided 2026-02-26)
+
+**Decision**: The inference pipeline enforces sequential phase scheduling. ASR and LLM are never both running inference at the same time.
+
+**Phases:**
+1. **Recording** — ASR + FluidAudio diarization active; LLM unloaded
+2. **Analysis** — LLM active; ASR idle (resident or evicted based on meeting length)
+3. **Brain Dump** — Embeddings active; LLM evicted after analysis completes
+
+**Why**: Verified RAM budget shows 2.3–2.6 GB for EchoPanel during any single phase, giving 1.4–1.7 GB headroom on an 8 GB Mac. Running ASR + LLM simultaneously would peak at ~3.1 GB for EchoPanel — still safe, but sequential phases leave more headroom for macOS + other apps (Chrome, Slack, Zoom).
+
+**Implementation**: Set model reference to `nil` + call `MLX.GPU.clearCache()` when evicting. Load on demand.
+
+**Evidence**: `RAM_BUDGET_ANALYSIS_2026-02-26.md` §3, §5.
+
+---
+
+### DEC-032: Pin mlx-audio-swift to `from: "0.1.0"` (decided 2026-02-26)
+
+**Decision**: Change the Package.swift dependency from `branch: "main"` to `from: "0.1.0"` for `mlx-audio-swift`.
+
+**Why**: v0.1.0 is the first stable tagged release (Feb 23, 2026). Tracking `branch: "main"` silently pulls breaking changes. v0.1.0 contains all features needed (Parakeet, Qwen3ASR streaming, Sortformer VAD). `swift-tools-version: 6.2` required — verify Xcode version before upgrading.
+
+```swift
+// Before (risky):
+.package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", branch: "main")
+// After (stable):
+.package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", from: "0.1.0")
+```
+
+**Evidence**: `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` §1, §7.
+
+---
+
+### DEC-033: WhisperKit NOT adopted (decided 2026-02-26)
+
+**Decision**: WhisperKit (`argmaxinc/WhisperKit`) will not be added to EchoPanel's dependency chain.
+
+**Why**: WhisperKit uses CoreML/ANE — a separate memory pool from MLX's unified GPU memory. Adding it would break zero-copy pipelining between ASR → embeddings → LLM. Parakeet-TDT is now available in `mlx-audio-swift` (DEC-027) and provides a better accuracy upgrade path within the same memory pool. WhisperKit's WER (8.4–12.1%) is also worse than Qwen3 (5.8%) and Parakeet (4.8%).
+
+**What would change this**: If a future EchoPanel variant targets ANE-first architecture (e.g., battery-optimized mode leaving GPU fully for LLM).
+
+**Evidence**: `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` §4.2, §6; `ASR_BENCHMARK_COMPARISON_2026-02-26.md` §6.
+
+---
+
+### DEC-034: 16 GB Mac tier unlocks Qwen2.5-7B for meeting summaries (decided 2026-02-26)
+
+**Decision**: When EchoPanel detects ≥ 16 GB unified memory, offer `mlx-community/Qwen2.5-7B-Instruct-4bit` (~4.3 GB runtime) as the analysis LLM instead of Qwen2.5-1.5B-Instruct-4bit.
+
+**Why**: On 16 GB Macs, all models can be resident simultaneously (~7 GB total). Qwen2.5-7B provides dramatically better meeting summaries, entity extraction, and action item quality. Full 30-min transcript (~6K tokens) can fit in a single LLM pass without chunking. This is a meaningful product differentiator for users who choose higher-spec hardware.
+
+**8 GB Mac default is unchanged**: Qwen2.5-1.5B-Instruct-4bit remains the default for memory-constrained users.
+
+**Evidence**: `RAM_BUDGET_ANALYSIS_2026-02-26.md` §7.
+
