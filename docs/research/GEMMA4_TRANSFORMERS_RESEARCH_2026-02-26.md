@@ -306,3 +306,146 @@ The `lm` variants remove all audio/vision heads — **text-only, compact**. Idea
 | Structured extraction | Qwen2.5-1.5B via prompt | functiongemma-270m-it (~150MB) | **Potential win** — dedicated function-calling model at 1/10th the size |
 | Translation | Not planned | translategemma-4b-it | Optional future feature |
 | ASR | Qwen3-ASR-0.6B | Gemma 3n audio (NOT in mlx-audio-swift yet) | **Stay with Qwen3-ASR** |
+
+---
+
+## Section 2: TranslateGemma — Full Integration Analysis
+
+**Released:** January 12, 2026 by Google. Updated January 28, 2026.
+**Verified via:** HF API + web research (2026-02-26)
+
+### 2.1 What It Is
+
+TranslateGemma is a **dedicated machine translation** fine-tune of Gemma 3. Three sizes:
+
+| Model | Disk (4bit MLX) | Downloads | Best for |
+|-------|----------------|-----------|----------|
+| `translategemma-4b-it` | **2.18 GB** | 4,599 | On-device, 8GB Mac |
+| `translategemma-12b-it` | ~5.5 GB | 588 | 16GB Mac, higher quality |
+| `translategemma-27b-it` | ~12 GB | 525 | Cloud/server only |
+
+**Quality benchmarks (WMT24++, lower MetricX = better):**
+- 27B: MetricX 3.09, COMET22 84.4 ← near-SOTA
+- 12B: MetricX 3.60, COMET22 83.5 ← outperforms old 27B Gemma 3 baseline
+- 4B:  MetricX 5.32, COMET22 80.1 ← practical on-device sweet spot
+
+**Languages:** 55 core languages + ~500 experimental pairs. English, Spanish, French, German, Chinese, Hindi, Japanese, Arabic, Swahili, Estonian, Icelandic, and more.
+
+**Training:** Two-stage — supervised on human+synthetic data, then RL with MetricX-QE + AutoMQM reward models.
+
+**License:** Gemma Terms of Use (commercial use permitted for non-Google-competing apps ✅).
+
+### 2.2 Can EchoPanel Use It? YES — 3 Paths
+
+#### Path A: Python FastAPI server (fastest to implement)
+EchoPanel's existing FastAPI server (`server/services/`) already has `llm_providers.py` pattern.
+Add `translation.py` service using `mlx_lm`:
+
+```python
+# server/services/translation.py
+from mlx_lm import load, generate
+
+class TranslateGemmaProvider:
+    MODEL_ID = "mlx-community/translategemma-4b-it-4bit"  # 2.18 GB
+    
+    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        prompt = f"Translate the following from {source_lang} to {target_lang}:\n{text}"
+        return generate(self.model, self.tokenizer, prompt=prompt, max_tokens=2048)
+```
+
+Load on-demand, unload after use. Never hold simultaneously with ASR model on 8GB Mac.
+
+#### Path B: Native Swift via mlx-swift-lm (MLXLLM)
+TranslateGemma-4b uses `gemma3` model_type → **already supported** by `Gemma3TextModel` in mlx-swift-lm v2.30.6.
+Use `ModelConfiguration(id: "mlx-community/translategemma-4b-it-4bit")` — loads with zero extra code.
+
+```swift
+// Swift — loads exactly like any other MLXLLM model
+let config = ModelConfiguration(id: "mlx-community/translategemma-4b-it-4bit")
+let (model, tokenizer) = try await LLMModelFactory.shared.loadModel(configuration: config)
+let result = try await MLXLMCommon.generate(model: model, tokenizer: tokenizer, 
+    prompt: "Translate from English to Spanish: \(text)")
+```
+
+#### Path C: Transformers.js v4 (landing page / web demo)
+`@huggingface/transformers@next` supports `text2text-generation` pipeline in browser/Node.js.
+Useful for landing page live translation demo — runs entirely client-side via WebGPU.
+
+```js
+import { pipeline } from '@huggingface/transformers';
+const translator = await pipeline('translation', 'Xenova/translategemma-4b-it');
+const result = await translator('Meeting notes: action item assigned to John', 
+  { src_lang: 'en', tgt_lang: 'es' });
+```
+*(Requires ONNX export of TranslateGemma — not yet on HF as of 2026-02-26. Track: `Xenova/translategemma-4b-it`)*
+
+### 2.3 EchoPanel Use Cases
+
+1. **Live transcript translation** — multilingual teams (e.g., English meeting → Spanish subtitles)
+2. **Post-meeting translated summary export** — export meeting notes in user's preferred language
+3. **Multilingual search** — translate query before Brain Dump semantic search
+4. **Image-based meeting content** — translate text in shared slides/whiteboards (TranslateGemma handles image input)
+
+### 2.4 Recommendation
+
+**Path B (native Swift) is the cleanest** for EchoPanel — no new infrastructure, same MLXLLM runtime already planned. Deferred to post-launch as an optional "Translate" feature. When implemented: load on-demand, unload immediately after, never concurrent with ASR.
+
+---
+
+## Section 3: Transformers.js v4 for EchoPanel
+
+**Released:** February 10, 2026 (preview on NPM as `@huggingface/transformers@next`)
+**Source:** https://huggingface.co/blog/transformersjs-v4
+
+### 3.1 What's New in v4
+
+| Feature | v3 | v4 |
+|---------|----|----|
+| WebGPU runtime | Basic | C++ rewrite, 30× faster for some models |
+| Node.js WebGPU | ❌ | ✅ (Bun, Deno too) |
+| Bundle size | Larger | 53% smaller default export |
+| Model architectures | ~200 | 200+ incl. Mamba SSM, MoE, MLA |
+| Build system | Webpack | esbuild (10× faster build) |
+| Tokenizers | Bundled | Standalone `@huggingface/tokenizers` pkg |
+| WASM offline | Partial | Full offline (cached WASM files) |
+| New models | — | LFM2-MoE, Chatterbox, FalconH1, GPT-OSS |
+
+### 3.2 Relevance to EchoPanel
+
+EchoPanel's **macOS app** uses Swift + MLX — Transformers.js v4 is **NOT** used there.
+
+But EchoPanel has three JS contexts where v4 is relevant:
+
+| Context | File | Transformers.js v4 use |
+|---------|------|------------------------|
+| Landing page | `landing/index.html` + `app.js` | **Live browser demo**: stream mic → Whisper → transcript in browser. Zero server. Marketing win. |
+| FastAPI server alternative | `server/` | Replace Python server with Bun runtime + Transformers.js v4 for ultra-lightweight deployment (no Python dependency) |
+| Web companion (future) | — | Full web interface for meeting review, search, translation |
+
+### 3.3 Landing Page Live Demo (High Value)
+
+The current landing page (`landing/app.js`) only handles waitlist form submission.
+Adding a "Try it now" in-browser transcription demo using Transformers.js v4 + Whisper tiny would:
+- Let visitors transcribe ~30s of speech, no signup required
+- Show EchoPanel's value prop instantly
+- Run 100% client-side (privacy story built in)
+- Use ~40MB model (Whisper tiny ONNX)
+
+```js
+// landing/demo.js  (future)
+import { pipeline } from '@huggingface/transformers';
+const asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
+// Stream mic → chunks → asr() → display transcript
+```
+
+### 3.4 Bun Server Alternative (Future Fallback)
+
+Current FastAPI fallback (`PythonBackend`) requires Python 3.11 + pip packages.
+A Bun-based server using Transformers.js v4 would be:
+- Single binary (`bun run server.ts`)
+- No Python/pip dependency
+- WebGPU-accelerated on Mac (same Metal backend)
+- Supports: Whisper ASR, NER, embeddings, translation
+
+**Not urgent** — Python FastAPI is battle-tested. Evaluate post-launch.
+

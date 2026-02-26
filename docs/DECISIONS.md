@@ -443,3 +443,29 @@ let result = try diarizer.performCompleteDiarization(audioSamples)
 **Decision**: `mlx-community/translategemma-4b-it-8bit` is available and viable for an optional "Translate Transcript" feature (multilingual meeting support). Not in current sprint scope. Load on-demand only — never simultaneously with ASR model on 8GB Mac.
 
 **Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §6.5; HF model `google/translategemma-4b-it` (121K downloads, released 2026-01-28).
+
+---
+
+### DEC-044: TranslateGemma-4b integration path — native Swift via MLXLLM (decided 2026-02-26)
+
+**Decision**: When implementing the multilingual translation feature (post-launch), use **Path B — native Swift** via `mlx-swift-lm`'s `Gemma3TextModel`. `ModelConfiguration(id: "mlx-community/translategemma-4b-it-4bit")` (2.18 GB) loads with zero extra code since `gemma3` model_type is already registered in `LLMModelFactory`.
+
+**Never loaded simultaneously** with ASR model on 8GB Mac. Load on-demand, unload after job completes.
+
+**Use cases**: live transcript translation (multilingual teams), translated summary export, multilingual Brain Dump search queries.
+
+**Fallback**: Python FastAPI `mlx_lm`-based `translation.py` service (Path A) — same model, same runtime, 10 lines of Python.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §2; HF API verification; mlx-swift-lm `LLMModelFactory.swift` line 33 (`"gemma3"` → `Gemma3TextModel`).
+
+---
+
+### DEC-045: Transformers.js v4 for landing page live demo (decided 2026-02-26)
+
+**Decision**: Evaluate adding a client-side "Try it now" transcription demo to `landing/index.html` using `@huggingface/transformers@next` + `Xenova/whisper-tiny` (~40 MB ONNX). Runs 100% in browser, no server, no signup required.
+
+**Why**: Visitors experience EchoPanel's value prop (speech → text) instantly. Privacy story is built in (data never leaves browser). WebGPU acceleration in Chrome/Safari makes it fast enough on modern Macs.
+
+**Not a blocker**: Landing page currently has waitlist form only. This is a conversion-rate enhancement for post-launch.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §3; https://huggingface.co/blog/transformersjs-v4.
