@@ -399,3 +399,47 @@ let result = try diarizer.performCompleteDiarization(audioSamples)
 **Why**: Drop-in upgrade, same API via `MLXEmbedders.NomicBert`, better multilingual coverage, same ~140 MB footprint. Since we haven't shipped yet, no migration cost.
 
 **Evidence**: `HF_PRO_MODELS_SWEEP_2026-02-26.md` §4.
+
+---
+
+### DEC-040: Gemma 4 does not exist — Gemma 3n is the current frontier (verified 2026-02-26)
+
+**Decision**: No action on "Gemma 4." The latest Gemma release is **Gemma 3n** (E2B/E4B, May-June 2025) and specialized Jan 2026 variants. Watch for actual Gemma 4 announcement (expected Q1–Q2 2026).
+
+**What Gemma 3n is**: New "next-gen" architecture with MatMul-free selective state spaces, Effective 2B/4B params, supports ASR/audio/video natively. The `-lm` (language model only) variants strip multimodal heads and are **already supported natively in mlx-swift-lm v2.30.6** via `Gemma3nTextModel` with pre-registered `ModelConfiguration` entries.
+
+**Not actionable for ASR**: `mlx-audio-swift` has no `Gemma3nModel` audio class. Stay with Qwen3-ASR.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md`; local checkout `Libraries/MLXLLM/Models/Gemma3nText.swift`.
+
+---
+
+### DEC-041: Evaluate Gemma 3n-E2B-lm-4bit vs Qwen2.5-1.5B for meeting analysis (decided 2026-02-26)
+
+**Decision**: A/B benchmark `mlx-community/gemma-3n-E2B-it-lm-4bit` (~1.1GB) against `Qwen2.5-1.5B-Instruct-4bit` as the 8GB Mac meeting analysis LLM. Both are pre-registered in mlx-swift-lm v2.30.6 and ready to use via `MLXLLM` with zero additional code.
+
+**Why**: Gemma 3n uses QAT-like techniques at training time and may outperform Qwen2.5-1.5B on instruction following for structured meeting output. Both are under comparable memory budgets.
+
+**Decision gate**: Run both against 5 sample meeting transcripts for action item / summary quality. Whichever wins becomes the 8GB tier default.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §A1, §A4; `LLMModelFactory.swift` (Gemma 3n pre-registered).
+
+---
+
+### DEC-042: FunctionGemma-270M as structured extraction engine — evaluate post-launch (decided 2026-02-26)
+
+**Decision**: Evaluate `google/functiongemma-270m-it` (~150MB at 4bit) for structured JSON output (action items, decisions, follow-ups) as a replacement or complement to the full LLM analysis pass.
+
+**Why**: At 270M params it would be permanently resident in memory alongside ASR without hitting the 8GB budget. Function-calling architecture means reliable structured output without prompt engineering. However, no `mlx-community` quantized version exists yet — requires manual conversion.
+
+**Blocked on**: `mlx_lm.convert --model google/functiongemma-270m-it -q` + quality validation.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §A2; HF model card 47K downloads.
+
+---
+
+### DEC-043: TranslateGemma deferred — optional multilingual feature (decided 2026-02-26)
+
+**Decision**: `mlx-community/translategemma-4b-it-8bit` is available and viable for an optional "Translate Transcript" feature (multilingual meeting support). Not in current sprint scope. Load on-demand only — never simultaneously with ASR model on 8GB Mac.
+
+**Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §6.5; HF model `google/translategemma-4b-it` (121K downloads, released 2026-01-28).
