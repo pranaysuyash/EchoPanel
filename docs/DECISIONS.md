@@ -469,3 +469,81 @@ let result = try diarizer.performCompleteDiarization(audioSamples)
 **Not a blocker**: Landing page currently has waitlist form only. This is a conversion-rate enhancement for post-launch.
 
 **Evidence**: `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` §3; https://huggingface.co/blog/transformersjs-v4.
+
+---
+
+### DEC-046: Apple NLLanguageRecognizer replaces fasttext for language detection (decided 2026-02-26)
+
+**Decision**: Use `Apple NaturalLanguage.NLLanguageRecognizer` (built-in, zero model size, 59 languages, sub-millisecond) for language detection. `facebook/fasttext-language-identification` is **rejected** — CC-BY-NC-4.0 (non-commercial only).
+
+**Why**: Free, no download, no license risk, already available in Swift. Qwen3-ASR handles the rest via its multilingual decoder when a language hint is provided.
+
+**Evidence**: `NLP_NER_PIPELINE_RESEARCH_2026-02-26.md` §4; HF model card `facebook/fasttext-language-identification` license field.
+
+---
+
+### DEC-047: GLiNER NER via ONNX Runtime Swift — no MLX port exists (decided 2026-02-26)
+
+**Decision**: No `mlx-community` NER models exist. For open-label NER beyond Apple NaturalLanguage.framework, use `fastino/gliner2-base-v1` (Apache 2.0, ~130MB) via **ONNX Runtime Swift** SPM package, not MLX. Current `EntityHighlighter.swift` using Apple NLP is sufficient for v1.0 — GLiNER is a P2 enhancement.
+
+**Why**: GLiNER (Generalist and Lightweight NER) supports arbitrary entity types via text prompting at inference — perfect for meeting-specific entities (project names, custom acronyms, action verbs). ONNX Runtime Swift is `0.0.1-rc.1` on SPM, viable for non-critical path.
+
+**Evidence**: `NLP_NER_PIPELINE_RESEARCH_2026-02-26.md` §1; HF API search for `ner` + `mlx-community` returned zero results.
+
+---
+
+### DEC-048: Qwen3-ForcedAligner wiring is P0 for word timestamps (decided 2026-02-26)
+
+**Decision**: `Qwen3ForcedAlignerModel` is **already implemented** in mlx-audio-swift checkout. `mlx-community/Qwen3-ForcedAligner-0.6B-bf16` is live on HF (Apache 2.0). The only missing piece is: (1) add `words: [WordTimestamp]?` field to `TranscriptSegment`, (2) call the aligner after each ASR segment. Estimated: ~2 days.
+
+**This supersedes DEC-038** which called it an "evaluation" — it's now confirmed available and the implementation path is clear.
+
+**Evidence**: `AUDIO_PIPELINE_GAPS_2026-02-26.md` §1; `NLP_NER_PIPELINE_RESEARCH_2026-02-26.md` §2; local checkout `Sources/MLXAudioSTT/` contains `Qwen3ForcedAlignerModel.swift`.
+
+---
+
+### DEC-049: Qwen3-ASR and VoxtralRealtime self-punctuate — no extra model needed (decided 2026-02-26)
+
+**Decision**: No dedicated punctuation restoration model needed. Qwen3-ASR and VoxtralRealtime are autoregressive decoders that self-punctuate natively. Only Parakeet (CTC-based) needs post-processing — handle via regex capitalisation + simple punctuation rules, not a separate model.
+
+**Evidence**: `NLP_NER_PIPELINE_RESEARCH_2026-02-26.md` §3; mlx-audio-swift source inspection.
+
+---
+
+### DEC-050: AUVoiceIO for acoustic echo cancellation — zero model cost (decided 2026-02-26)
+
+**Decision**: Use Apple's `AUVoiceIO` Audio Unit for echo cancellation (AEC) instead of any ML model. It's OS-provided, always available, zero memory cost, and Apple-optimised for Mac microphones. Add to `AudioCaptureManager` audio graph.
+
+**Why**: No MLX AEC model exists in mlx-audio-swift. ML-based AEC would cost ~200MB+ and significant latency. `AUVoiceIO` is production-grade and handles speaker feedback in meetings.
+
+**Evidence**: `AUDIO_PIPELINE_GAPS_2026-02-26.md` §4; Apple AVFoundation docs.
+
+---
+
+### DEC-051: Regex ITN processor covers 85% of meeting vocabulary (decided 2026-02-26)
+
+**Decision**: Implement a Swift `ITNProcessor` (Inverse Text Normalisation) using regex patterns — numbers, dates, currency, percentages, ordinals, acronyms. This covers ~85% of meeting vocabulary with ~1 day effort. NeMo ITN (Python/OpenFST) is rejected as a dependency.
+
+**Why**: Qwen3-ASR does ITN inconsistently. A deterministic regex processor is predictable, testable, zero-latency, and zero model cost. Edge cases (complex financial notation, etc.) deferred to post-launch.
+
+**Evidence**: `AUDIO_PIPELINE_GAPS_2026-02-26.md` §5.
+
+---
+
+### DEC-052: Overlap-add streaming already implemented — min chunk floor is 1 second (decided 2026-02-26)
+
+**Decision**: No streaming architecture changes needed. `encoderWindowOverlapSeconds: 1.0` overlap-add is already in mlx-audio-swift. `.realtime` preset = 200ms latency target, `.agent` = 480ms. The 1-second minimum chunk floor is hard-coded in `STTGenerateParameters` — do not reduce below this without testing WER degradation.
+
+**Gap identified**: Silero VAD runs client-side but does not signal early-flush to the encoder. Add VAD-gated early flush as a P2 optimisation (reduces perceived latency on speech boundaries).
+
+**Evidence**: `AUDIO_PIPELINE_GAPS_2026-02-26.md` §2; mlx-audio-swift source `STTGenerateParameters`.
+
+---
+
+### DEC-053: Sortformer speaker probability flags overlap regions — no source separation (decided 2026-02-26)
+
+**Decision**: For simultaneous speech (cocktail party problem), use Sortformer's `speakerProbs` output to **detect and flag** overlap regions in the transcript UI (e.g., "⚡ overlapping speech detected"). No source separation model is available in mlx-audio-swift. MossFormer2 is mono-in / mono-out enhancement, not separation.
+
+**What this means in the UI**: Overlap regions get a visual flag; attribution is best-effort from Sortformer. True per-speaker audio separation is a post-launch research item.
+
+**Evidence**: `AUDIO_PIPELINE_GAPS_2026-02-26.md` §3; `MOSSFORMER2_SORTFORMER_RESEARCH_2026-02-26.md` §3.

@@ -9655,3 +9655,57 @@ See `docs/NATIVE_SWIFT_MIGRATION_OPEN_QUESTIONS.md` for detailed analysis of 10 
 - Decisions: `docs/DECISIONS.md`
 - Open Questions: `docs/NATIVE_SWIFT_MIGRATION_OPEN_QUESTIONS.md`
 
+
+---
+
+## TCK-20260226-001 :: Research - Wave 3 Multi-Agent Research Sprint (14 agents)
+**Type:** RESEARCH  
+**Status:** **DONE** ✅  
+**Priority:** P1  
+**Created:** 2026-02-26  
+**Closed:** 2026-02-26  
+
+### Scope
+14-agent parallel research sprint covering: audio models (VoxtralRealtime, MossFormer2, Sortformer), HF Pro model sweep, Gemma family (Gemma 3n, TranslateGemma, FunctionGemma), NLP/NER pipeline gaps, audio pipeline gaps, Transformers.js v4, and Swift 6.2 upgrade.
+
+### Agents Run
+| Agent | Model | Task | Output |
+|-------|-------|------|--------|
+| agent-2 | Opus | FluidAudio API verification | `FLUIDAUDIO_API_VERIFICATION_2026-02-26.md` |
+| agent-3 | Sonnet | RAM budget 8GB Mac | `RAM_BUDGET_ANALYSIS_2026-02-26.md` |
+| agent-4 | Haiku | ASR benchmarks | `ASR_BENCHMARK_COMPARISON_2026-02-26.md` |
+| agent-5 | Sonnet | mlx-audio-swift v0.1.0 delta | `MLX_SWIFT_LIBS_UPDATE_2026-02-26.md` |
+| agent-6 | Sonnet | Wave 2 synthesis | `RESEARCH_SPRINT_2026-02-26.md` |
+| agent-7 | Sonnet | VoxtralRealtime + LFM deep dive | `VOXTRAL_LFM_RESEARCH_2026-02-26.md` |
+| agent-8 | Sonnet | HF Pro models sweep | `HF_PRO_MODELS_SWEEP_2026-02-26.md` |
+| agent-9 | Haiku | MossFormer2 + Sortformer | `MOSSFORMER2_SORTFORMER_RESEARCH_2026-02-26.md` |
+| agent-10 | Sonnet | Gemma 4 / TranslateGemma | `GEMMA4_TRANSFORMERS_RESEARCH_2026-02-26.md` |
+| agent-11 | Opus | Gemma 3n audio + Transformers versioning | Addendum to above |
+| agent-12 | Sonnet | NLP/NER pipeline gaps | `NLP_NER_PIPELINE_RESEARCH_2026-02-26.md` |
+| agent-13 | Sonnet | Audio pipeline gaps | `AUDIO_PIPELINE_GAPS_2026-02-26.md` |
+
+### Key Findings
+1. **mlx-audio-swift v0.1.0** (Feb 23 2026): Parakeet, VoxtralRealtime, Sortformer, MossFormer2 all in Swift
+2. **ASR fallback chain**: Qwen3-0.6B → Qwen3-1.7B → VoxtralRealtime-4bit (opt-in ≥8GB) → Parakeet → Python
+3. **RAM budget confirmed**: 2.3–2.6GB peak on 8GB Mac. Sequential phase scheduling mandatory.
+4. **Sortformer > pyannote**: 1–3% better DER, streaming-ready, already in our dep tree
+5. **MossFormer2**: 120MB, pre-ASR denoising, 20–30% WER improvement
+6. **Gemma 4 doesn't exist**: Latest is Gemma 3n (E2B/E4B), TranslateGemma, FunctionGemma 270M
+7. **Gemma 3n native in mlx-swift-lm v2.30.6**: `Gemma3nTextModel`, zero new code
+8. **TranslateGemma-4b-it-4bit** (2.18GB): 55 languages, `gemma3` type → loads via existing `Gemma3TextModel`
+9. **Transformers.js v4**: C++ WebGPU runtime, 30× faster, browser + Node/Bun/Deno. Landing page demo opportunity.
+10. **Word timestamps already implemented**: `Qwen3ForcedAlignerModel` in checkout, just needs wiring
+11. **AUVoiceIO for AEC**: OS-provided, zero cost — no ML model needed
+12. **Regex ITN covers 85%** of meeting vocab with ~1 day effort
+
+### Decisions Produced
+DEC-026 through DEC-053 (28 decisions). See `docs/DECISIONS.md`.
+
+### Research Index
+`docs/research/RESEARCH_MASTER_INDEX.md` — canonical index of all 20 research documents.
+
+### Evidence Log
+```
+git log --oneline | head -8
+# All commits from 2026-02-26 contain research docs + DECISIONS.md updates
+```
