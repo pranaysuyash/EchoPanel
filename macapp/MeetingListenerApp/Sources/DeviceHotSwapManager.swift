@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import Combine
 import SwiftUI
@@ -143,8 +143,15 @@ final class DeviceHotSwapManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in
-                self?.handleDeviceConnected(notification)
+            guard let device = notification.object as? AVCaptureDevice,
+                  device.hasMediaType(.audio) else { return }
+            let deviceName = device.localizedName
+            MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                NSLog("DeviceHotSwapManager: Audio device connected - \(deviceName)")
+                if self.deviceStatus == .disconnected || self.deviceStatus == .failed {
+                    self.attemptRecovery()
+                }
             }
         }
         
@@ -154,8 +161,18 @@ final class DeviceHotSwapManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in
-                self?.handleDeviceDisconnected(notification)
+            guard let device = notification.object as? AVCaptureDevice,
+                  device.hasMediaType(.audio) else { return }
+            let deviceUID = device.uniqueID
+            let deviceName = device.localizedName
+            MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                if deviceUID == self.lastDeviceID {
+                    NSLog("DeviceHotSwapManager: Active device disconnected - \(deviceName)")
+                    self.deviceStatus = .disconnected
+                    self.lastDeviceID = nil
+                    self.onDeviceDisconnected?()
+                }
             }
         }
     }

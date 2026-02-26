@@ -1,8 +1,8 @@
 import Foundation
 import MLXAudioSTT
 import MLXAudioCore
-import MLX
-import AVFoundation
+@preconcurrency import MLX
+@preconcurrency import AVFoundation
 import os
 
 // MARK: - Configuration
@@ -445,7 +445,7 @@ public actor NativeMLXBackend: ASRBackend {
         lastSegmentEndTime = 0
     }
     
-    public enum FeedAudioResult {
+    public enum FeedAudioResult: Sendable {
         case success
         case notStreaming
         case bufferOverflow

@@ -116,3 +116,97 @@ This is a lightweight decision log. Prefer short entries that explain why.
 
 **Details**: See `docs/VOXTRAL_RESEARCH_2026-02.md`
 
+### Native Swift Primary ASR — NativeMLXBackend (decided 2026-02-25) ⬅ supersedes "ASR Provider Strategy — Voxtral Transcribe 2"
+
+**Decision**: Use native Swift `mlx-audio-swift` (`NativeMLXBackend`) as the **primary** ASR path. Python FastAPI kept as **fallback only** (diarization hand-off, offline Python providers).
+
+**Why**: EchoPanel is macOS-only. Native MLX runs entirely in unified memory — no CPU↔GPU transfer, no process IPC overhead, lower latency, lower power draw. The macOS app already has `NativeMLXBackend.swift`, `HybridASRManager`, and `ASRBackendProtocol` and builds successfully.
+
+**Feature flags set**:
+- `nativeBackendRolloutPercentage = 100`
+- `isDevMode = true`
+
+**What changed**:
+- Primary ASR moves from Python faster-whisper/Voxtral → Swift mlx-audio-swift
+- Voxtral Realtime (Python self-host) is no longer the evaluation target
+- pyannote diarization is ALSO being replaced (see FluidAudio decision below)
+
+**What stays**:
+- Python FastAPI server remains for session HTTP API and complex LLM fallback until full Swift rewrite is complete
+
+**What would change this decision**:
+- If mlx-audio-swift develops a blocking bug on a required macOS release
+
+---
+
+### ASR Model Fallback Chain (decided 2026-02-25)
+
+**Decision**: Use the following ordered fallback chain inside `NativeMLXBackend` / `HybridASRManager`:
+
+1. `Qwen3-ASR-0.6B-4bit` (fastest, lowest RAM)
+2. `Qwen3-ASR-1.7B-4bit`
+3. `Qwen3-ASR-1.7B-8bit`
+4. `GLM-ASR-Nano-2512-4bit` (batch-only — no streaming)
+5. `PythonBackend` (FastAPI fallback)
+
+**Constraints**:
+- `StreamingInferenceSession` in mlx-audio-swift only works with `Qwen3ASRModel` — GLM is batch-only
+- `Parakeet-TDT-0.6b-v3` (best English ASR benchmark) is **not yet available** in the Swift API — revisit when mlx-audio-swift adds support
+
+**Fallback triggers**:
+- OOM on model load
+- RTF > 2.0 sustained for 3 consecutive chunks
+- 3 consecutive inference errors
+
+---
+
+### Diarization + VAD: FluidAudio replaces pyannote (decided 2026-02-25) ⬅ supersedes "pyannote stays" from Voxtral decision
+
+**Decision**: Replace `pyannote.audio` (Python / torch / GPU) with `FluidAudio` (Swift / CoreML / ANE) for both diarization and VAD.
+
+**Why**: ANE execution is lower-power than pyannote's GPU path. Removes the HuggingFace token requirement. Keeps the entire pipeline inside the macOS app with no Python dependency for these two components.
+
+**FluidAudio details**:
+- Repo: `github.com/FluidInference/FluidAudio`
+- Architecture: Sortformer-based diarization
+- Distribution: open-source
+- Used by: BoltAI, VoiceInk, Whisper Mate
+
+**VAD**:
+- Replaces Silero VAD Python with `FluidAudio VadManager` (same Silero model weights → CoreML)
+
+**What changes**:
+- `pyannote.audio` dependency removed from Python server once Swift migration complete
+- Silero VAD Python path becomes unreachable after FluidAudio VAD is stable
+
+**What would change this decision**:
+- If FluidAudio diarization accuracy degrades significantly vs pyannote on our test corpus
+
+---
+
+### Full FastAPI Replacement Stack (decided 2026-02-25)
+
+**Decision**: Replace each remaining Python service with a native Swift equivalent:
+
+| Service | Python (current) | Swift replacement | Model / library |
+|---------|-----------------|-------------------|-----------------|
+| Embeddings | sentence-transformers | `MLXEmbedders` (ml-explore/mlx-swift-lm) | Qwen3-Embedding-0.6B-4bit |
+| LLM analysis | Ollama / OpenAI | `MLXLLM ChatSession` (ml-explore/mlx-swift-lm) | Qwen3-4B-4bit or SmolLM2-1.7B |
+| OCR text | pytesseract / EasyOCR | Apple Vision `VNRecognizeTextRequest` (built-in) | — |
+| OCR VLM | — | `MLXVLM` (ml-explore/mlx-swift-lm) | SmolVLM2-256M |
+| Storage / RAG | SQLite + pgvector | `GRDB.swift` + vDSP brute-force cosine | — |
+
+**Why**: Eliminates Python process management overhead; keeps everything in unified memory; reduces app bundle complexity. vDSP brute-force cosine is adequate for EchoPanel's corpus size (no need for approximate nearest-neighbour index).
+
+**Transition**: Python FastAPI kept for session HTTP API and complex LLM fallback until full Swift rewrite is validated.
+
+**Details**: See `docs/research/NATIVE_SWIFT_STACK_RESEARCH_2026-02-25.md`
+
+---
+
+### Minimum Deployment Target: macOS 14.0 (confirmed 2026-02-25)
+
+**Decision**: macOS 14.0 (Sonoma) is the minimum deployment target. Do **not** lower it.
+
+**Why**: Required by mlx-audio-swift, FluidAudio, and SwiftData. Already set in `Package.swift`.
+

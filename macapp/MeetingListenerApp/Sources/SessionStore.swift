@@ -7,6 +7,7 @@ import Foundation
 /// - `sessions/<session_id>/transcript.jsonl`: Append-only transcript log
 /// - `sessions/<session_id>/metadata.json`: Session metadata (start time, source, etc.)
 /// - `sessions/recovery.json`: Reference to any unfinished session for crash recovery
+@MainActor
 final class SessionStore: ObservableObject {
     
     static let shared = SessionStore()

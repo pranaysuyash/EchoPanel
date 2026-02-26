@@ -201,7 +201,8 @@ final class RedundantAudioCaptureManager: ObservableObject {
         
         // Start primary (system audio)
         do {
-            try await primaryCapture.startCapture()
+            let cap = primaryCapture
+            try await cap.startCapture()
             NSLog("RedundantAudioCaptureManager: Primary started")
         } catch {
             NSLog("RedundantAudioCaptureManager: Primary failed to start: \(error)")
@@ -233,7 +234,8 @@ final class RedundantAudioCaptureManager: ObservableObject {
             try backupCapture.startCapture()
             activeSource = .backup
         } else {
-            try await primaryCapture.startCapture()
+            let cap = primaryCapture
+            try await cap.startCapture()
             activeSource = .primary
         }
         
@@ -245,7 +247,8 @@ final class RedundantAudioCaptureManager: ObservableObject {
     func stopCapture() async {
         stopQualityMonitoring()
         
-        await primaryCapture.stopCapture()
+        let cap = primaryCapture
+        await cap.stopCapture()
         backupCapture.stopCapture()
         
         isRedundancyActive = false

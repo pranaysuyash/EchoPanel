@@ -2,6 +2,7 @@ import Foundation
 
 /// BackendManager handles the Python server lifecycle.
 /// Starts the server as a subprocess when the app launches and manages health checks.
+@MainActor
 final class BackendManager: ObservableObject {
     
     static let shared = BackendManager()

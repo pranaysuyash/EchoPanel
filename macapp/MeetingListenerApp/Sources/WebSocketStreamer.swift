@@ -70,7 +70,7 @@ struct CorrelationIDs {
  * - Monitors dropped frames and processing times
  * - Provides connection health indicators
  */
-final class WebSocketStreamer: NSObject {
+final class WebSocketStreamer: NSObject, @unchecked Sendable {
     var onStatus: ((StreamStatus, String) -> Void)?
     var onASRPartial: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)? // + source
     var onASRFinal: ((String, TimeInterval, TimeInterval, Double, String?) -> Void)?   // + source
@@ -630,9 +630,10 @@ private let session: URLSession = {
         // If capture starts before the WS task exists (or after it is torn down),
         // do not enqueue sends that will never complete and will back up the send queue.
         guard task != nil else {
+            let payloadType = payload["type"] as? String ?? "unknown"
             DispatchQueue.main.async {
                 StructuredLogger.shared.warning("Dropping WebSocket send (not connected)", metadata: [
-                    "payload_type": payload["type"] as? String ?? "unknown"
+                    "payload_type": payloadType
                 ])
             }
             return

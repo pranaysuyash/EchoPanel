@@ -56,11 +56,11 @@ final class CrashReporter {
     /// Handle uncaught exception (called from exception handler)
     nonisolated func handleException(_ exception: NSException) {
         let crashLog = createCrashLog(from: exception)
-        
+        let exceptionName = exception.name.rawValue
         // Save on main actor
         Task { @MainActor in
             saveCrashLog(crashLog)
-            NSLog("CrashReporter: Crash logged - \(exception.name.rawValue)")
+            NSLog("CrashReporter: Crash logged - \(exceptionName)")
         }
     }
     

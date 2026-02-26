@@ -229,6 +229,7 @@ final class ProductionReadinessTests: XCTestCase {
         let segmentsToAdd = 200
 
         // When: Adding segments concurrently from multiple "threads"
+        let appState = self.appState!
         await withTaskGroup(of: Void.self) { group in
             for batch in 0..<4 {
                 group.addTask {
@@ -243,7 +244,7 @@ final class ProductionReadinessTests: XCTestCase {
                         )
 
                         await MainActor.run {
-                            self.appState.transcriptSegments.append(segment)
+                            appState.transcriptSegments.append(segment)
                         }
                     }
                 }

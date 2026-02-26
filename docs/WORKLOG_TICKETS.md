@@ -9599,3 +9599,59 @@ cd macapp_v3 && swift build                   # ✅ Build complete! (1.55s)
 - Apple Documentation: NSWindow.CollectionBehavior
 - External agent recommendations (reviewed and adapted)
 
+---
+
+### TCK-20260225-001 :: Native Swift ASR + Backend Migration
+
+**Type:** FEATURE / IMPROVEMENT  
+**Owner:** Pranay  
+**Created:** 2026-02-25  
+**Status:** **IN_PROGRESS** 🟡  
+**Priority:** P0
+
+**Description:**
+Migrate EchoPanel from Python FastAPI primary to native Swift MLX primary, with FastAPI as fallback. Work includes: (1) ASR fallback chain with 4 Qwen3/GLM models, (2) FluidAudio for diarization+VAD replacing pyannote, (3) MLXEmbedders for Brain Dump, (4) MLXLLM for analysis replacing OpenAI/Ollama, (5) Vision OCR replacing PaddleOCR, (6) GRDB+vDSP RAG storage.
+
+**Acceptance Criteria:**
+- NativeMLXBackend loads Qwen3-ASR-0.6B-4bit as default, falls back through chain on failure
+- FluidAudio diarization produces RTTM-format segments equivalent to pyannote output
+- Brain Dump indexing works with MLXEmbedders Qwen3-Embedding-0.6B-4bit
+- swift build passes with all new packages
+- 8GB Mac RAM stays under 6GB during active session (ASR + diarization + embeddings)
+
+**Key Technical Milestones:**
+1. NativeMLXBackend with mlx-audio-swift Qwen3-ASR fallback chain
+2. FluidAudio diarization model integration and RTTM output validation
+3. MLXEmbedders + GRDB Brain Dump indexing pipeline
+4. MLXLLM analysis engine replacing OpenAI/Ollama
+5. Vision OCR (MLX-based) model integration
+6. Memory profiling and optimization pass
+7. End-to-end integration testing (8GB Mac target)
+
+**Files Involved:**
+- `macapp_v3/Sources/Backend/NativeMLXBackend.swift` (new/modified)
+- `macapp_v3/Sources/Backend/ASRFallbackChain.swift` (new)
+- `macapp_v3/Sources/Backend/FluidAudioDiarization.swift` (new)
+- `macapp_v3/Sources/BrainDump/MLXEmbeddingsEngine.swift` (new)
+- `macapp_v3/Sources/Analysis/MLXLLMEngine.swift` (new)
+- `server/` (FastAPI fallback layer, maintaining compatibility)
+
+**Testing Checklist:**
+- [ ] Qwen3-ASR-0.6B-4bit loads and infers on M1/M2
+- [ ] ASR fallback chain (GLM → Qwen3 whisper → fallback to server)
+- [ ] FluidAudio diarization produces valid RTTM segments
+- [ ] Brain Dump embeddings index and search functional
+- [ ] MLXLLM analysis engine produces valid JSON outputs
+- [ ] Memory usage stays <6GB on 8GB Mac during active session
+- [ ] All tests pass: `swift test`
+- [ ] No regressions in existing ASR/transcription pipeline
+
+**Unresolved Questions:**
+See `docs/NATIVE_SWIFT_MIGRATION_OPEN_QUESTIONS.md` for detailed analysis of 10 critical unknowns.
+
+**References:**
+- Research: `docs/research/NATIVE_SWIFT_STACK_RESEARCH_2026-02-25.md`
+- Architecture: `docs/NATIVE_SWIFT_ASR_ARCHITECTURE_2026-02-25.md`
+- Decisions: `docs/DECISIONS.md`
+- Open Questions: `docs/NATIVE_SWIFT_MIGRATION_OPEN_QUESTIONS.md`
+

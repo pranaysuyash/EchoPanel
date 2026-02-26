@@ -36,7 +36,7 @@ public protocol ASRBackend: Actor {
 
 // MARK: - Backend Selection Context
 
-public struct BackendSelectionContext {
+public struct BackendSelectionContext: Sendable {
     public let isOffline: Bool
     public let networkQuality: NetworkQuality
     public let requiresDiarization: Bool
@@ -66,7 +66,7 @@ public struct BackendSelectionContext {
     public static let `default` = BackendSelectionContext()
 }
 
-public enum NetworkQuality {
+public enum NetworkQuality: Sendable {
     case excellent  // WiFi, strong signal
     case good       // WiFi, normal signal
     case poor       // Cellular, weak signal
@@ -80,7 +80,7 @@ public enum NetworkQuality {
     }
 }
 
-public enum PrivacyRequirement {
+public enum PrivacyRequirement: Sendable {
     case strict     // Must be on-device (sensitive data)
     case standard   // Prefer on-device but cloud OK
     case none       // No restrictions
@@ -96,7 +96,7 @@ public enum PrivacyRequirement {
 
 // MARK: - Backend Selection Strategy
 
-public protocol BackendSelectionStrategy {
+public protocol BackendSelectionStrategy: Sendable {
     func selectBackend(
         native: ASRBackend,
         python: ASRBackend,
@@ -104,7 +104,7 @@ public protocol BackendSelectionStrategy {
     ) async -> ASRBackend
 }
 
-public struct SmartBackendSelection: BackendSelectionStrategy {
+public struct SmartBackendSelection: BackendSelectionStrategy, Sendable {
     
     public init() {}
     

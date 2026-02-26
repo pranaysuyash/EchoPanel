@@ -3,7 +3,7 @@ import Combine
 import Foundation
 
 /// Captures microphone audio using AVAudioEngine and emits PCM16 frames.
-final class MicrophoneCaptureManager: NSObject, ObservableObject {
+final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sendable {
     var onPCMFrame: ((Data, String) -> Void)? // (frame, source="mic")
     var onAudioLevelUpdate: ((Float) -> Void)?
     var onError: ((Error) -> Void)?
@@ -17,9 +17,9 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
     
     // MARK: - Metrics (AUD-002 Improvement)
     private var metricsLock = NSLock()
-    nonisolated private(set) var framesProcessed: UInt64 = 0
-    nonisolated private(set) var framesDropped: UInt64 = 0
-    nonisolated private(set) var bufferUnderruns: UInt64 = 0
+    private var framesProcessed: UInt64 = 0
+    private var framesDropped: UInt64 = 0
+    private var bufferUnderruns: UInt64 = 0
     private var lastProcessTime: TimeInterval = 0
     
     // MARK: - Limiter State (P0-2 Fix)
@@ -184,10 +184,12 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
         
         NSLog("MicrophoneCaptureManager: Audio device connected - \(device.localizedName)")
         
+        let deviceName = device.localizedName
+        let deviceID = device.uniqueID
         Task { @MainActor in
             StructuredLogger.shared.info("Audio device connected", metadata: [
-                "deviceName": device.localizedName,
-                "deviceID": device.uniqueID
+                "deviceName": deviceName,
+                "deviceID": deviceID
             ])
         }
     }
@@ -200,10 +202,12 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject {
         if device.uniqueID == lastDeviceID {
             NSLog("MicrophoneCaptureManager: Active device disconnected - \(device.localizedName)")
             
+            let deviceName = device.localizedName
+            let deviceID = device.uniqueID
             Task { @MainActor in
                 StructuredLogger.shared.error("Active microphone disconnected", metadata: [
-                    "deviceName": device.localizedName,
-                    "deviceID": device.uniqueID
+                    "deviceName": deviceName,
+                    "deviceID": deviceID
                 ])
             }
             

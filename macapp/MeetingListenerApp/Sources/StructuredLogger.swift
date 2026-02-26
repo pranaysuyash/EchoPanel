@@ -118,7 +118,7 @@ final class StructuredLogger {
     
     // MARK: - Singleton
     
-    static let shared = StructuredLogger()
+    nonisolated(unsafe) static let shared = StructuredLogger()
     
     // MARK: - Properties
     

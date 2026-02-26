@@ -16,7 +16,7 @@ final class ResourceMonitor: ObservableObject {
     private let warningThreshold: Double = 0.7 // 70% of limits
 
     // MARK: - Monitoring
-    private var monitoringTimer: Timer?
+    nonisolated(unsafe) var monitoringTimer: Timer?
     private let monitorInterval: TimeInterval = 10.0 // Check every 10 seconds
 
     // MARK: - Callbacks

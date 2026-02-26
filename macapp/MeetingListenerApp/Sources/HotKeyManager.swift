@@ -1,4 +1,4 @@
-import Cocoa
+@preconcurrency import Cocoa
 import Combine
 import Foundation
 import SwiftUI
@@ -171,13 +171,15 @@ final class HotKeyManager: ObservableObject {
     
     /// Check if accessibility permission is granted
     func checkAccessibilityPermission() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: false]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
     /// Request accessibility permission
     func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true]
         AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     

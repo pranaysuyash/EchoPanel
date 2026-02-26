@@ -271,22 +271,22 @@ final class AppState: ObservableObject {
 
     private lazy var audioCapture: AudioCaptureManager = {
         let manager = AudioCaptureManager()
-        manager.onSampleCount = { [weak self] sampleCount in
+        manager.onSampleCount = { @Sendable [weak self] sampleCount in
             Task { @MainActor in
                 self?.debugSamples = sampleCount
                 self?.updateDebugLine()
             }
         }
-        manager.onScreenFrameCount = { [weak self] frameCount in
+        manager.onScreenFrameCount = { @Sendable [weak self] frameCount in
             Task { @MainActor in
                 self?.debugScreenFrames = frameCount
                 self?.updateDebugLine()
             }
         }
-        manager.onAudioQualityUpdate = { [weak self] quality in
+        manager.onAudioQualityUpdate = { @Sendable [weak self] quality in
             Task { @MainActor in self?.audioQuality = quality }
         }
-        manager.onAudioLevelUpdate = { [weak self] level in
+        manager.onAudioLevelUpdate = { @Sendable [weak self] level in
             Task { @MainActor in self?.systemAudioLevel = level }
         }
         manager.onPCMFrame = { [weak self] frame, source in
@@ -326,7 +326,7 @@ final class AppState: ObservableObject {
             }
             self.streamer.sendPCMFrame(frame, source: source)
         }
-        manager.onAudioLevelUpdate = { [weak self] level in
+        manager.onAudioLevelUpdate = { @Sendable [weak self] level in
             Task { @MainActor in self?.microphoneAudioLevel = level }
         }
         return manager
@@ -339,13 +339,13 @@ final class AppState: ObservableObject {
             // Send voice note audio to backend for transcription
             self.streamer.sendVoiceNoteAudio(data: data)
         }
-        manager.onRecordingStarted = { [weak self] in
+        manager.onRecordingStarted = { @Sendable [weak self] in
             Task { @MainActor in
                 self?.isRecordingVoiceNote = true
                 self?.voiceNoteError = nil
             }
         }
-        manager.onRecordingStopped = { [weak self] duration in
+        manager.onRecordingStopped = { @Sendable [weak self] duration in
             Task { @MainActor in
                 self?.isRecordingVoiceNote = false
                 self?.voiceNoteAudioLevel = 0
@@ -692,7 +692,9 @@ final class AppState: ObservableObject {
             "session_id": id
         ])
 
-        Task {
+        Task { @MainActor in
+            let capture = audioCapture
+            let micCap = micCapture
             refreshPermissionStatuses()
 
             // Screen Recording is required only if capturing system audio.
@@ -702,7 +704,7 @@ final class AppState: ObservableObject {
                 if preflightGranted {
                     granted = true
                 } else {
-                    granted = await audioCapture.requestPermission()
+                    granted = await capture.requestPermission()
                 }
                 // On macOS, Screen Recording permission often requires an app restart to take effect.
                 let effective = granted && CGPreflightScreenCaptureAccess()
@@ -719,7 +721,7 @@ final class AppState: ObservableObject {
 
             // Microphone permission is required only if capturing microphone audio.
             if audioSource == .microphone || audioSource == .both {
-                let micGranted = await micCapture.requestPermission()
+                let micGranted = await micCap.requestPermission()
                 microphonePermission = micGranted ? .authorized : .denied
                 guard micGranted else {
                     setSessionError(.microphonePermissionRequired)
@@ -756,7 +758,7 @@ final class AppState: ObservableObject {
                 // Start System Audio capture if needed
                 if audioSource == .system || audioSource == .both {
                     do {
-                        try await audioCapture.startCapture()
+                        try await capture.startCapture()
                     } catch {
                         setSessionError(.systemCaptureFailed(detail: error.localizedDescription))
                         return
@@ -766,12 +768,12 @@ final class AppState: ObservableObject {
                 // Start Mic capture if needed
                 if audioSource == .microphone || audioSource == .both {
                     do {
-                        try micCapture.startCapture()
+                        try micCap.startCapture()
                     } catch {
                         setSessionError(.microphoneCaptureFailed(detail: error.localizedDescription))
                         // Stop system capture if it was started
                         if audioSource == .both {
-                            await audioCapture.stopCapture()
+                            await capture.stopCapture()
                         }
                         return
                     }
@@ -847,12 +849,13 @@ final class AppState: ObservableObject {
         }
 
         // Stop capture + disconnect on a background task.
-        Task {
+        Task { @MainActor in
+            let capture = audioCapture
             if BroadcastFeatureManager.shared.useRedundantAudio {
                 await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
             } else {
                 if audioSource == .system || audioSource == .both {
-                    await audioCapture.stopCapture()
+                    await capture.stopCapture()
                 }
                 if audioSource == .microphone || audioSource == .both {
                     micCapture.stopCapture()
@@ -874,13 +877,14 @@ final class AppState: ObservableObject {
             "duration_seconds": effectiveElapsedSeconds
         ])
 
-        Task {
+        Task { @MainActor in
+            let capture = audioCapture
             // Stop audio capture (redundant or legacy)
             if BroadcastFeatureManager.shared.useRedundantAudio {
                 await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
             } else {
                 if audioSource == .system || audioSource == .both {
-                    await audioCapture.stopCapture()
+                    await capture.stopCapture()
                 }
                 if audioSource == .microphone || audioSource == .both {
                     micCapture.stopCapture()

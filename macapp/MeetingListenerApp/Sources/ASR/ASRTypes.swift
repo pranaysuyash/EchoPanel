@@ -35,7 +35,7 @@ public enum BackendMode: String, CaseIterable, Identifiable {
 
 // MARK: - Backend Status
 
-public enum BackendState: String {
+public enum BackendState: String, Sendable {
     case unknown = "unknown"
     case initializing = "initializing"
     case ready = "ready"
@@ -66,7 +66,7 @@ public enum BackendState: String {
     }
 }
 
-public struct BackendStatus {
+public struct BackendStatus: Sendable {
     public let backendName: String
     public var state: BackendState
     public var message: String?
@@ -91,7 +91,7 @@ public struct BackendStatus {
 
 // MARK: - Capabilities
 
-public struct BackendCapabilities {
+public struct BackendCapabilities: Sendable {
     public let supportsStreaming: Bool
     public let supportsBatch: Bool
     public let supportsDiarization: Bool
@@ -144,7 +144,7 @@ public struct BackendCapabilities {
 
 // MARK: - Language
 
-public enum Language: String, CaseIterable, Identifiable {
+public enum Language: String, CaseIterable, Identifiable, Sendable {
     case english = "en"
     case chinese = "zh"
     case spanish = "es"
@@ -182,7 +182,7 @@ public enum Language: String, CaseIterable, Identifiable {
 
 // MARK: - Transcription Types
 
-public struct TranscriptionConfig {
+public struct TranscriptionConfig: Sendable {
     public let language: Language
     public let enableDiarization: Bool
     public let enablePunctuation: Bool
@@ -207,7 +207,7 @@ public struct TranscriptionConfig {
     }
 }
 
-public struct TranscriptionSegment: Identifiable, Equatable {
+public struct TranscriptionSegment: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let text: String
     public let startTime: TimeInterval
@@ -235,7 +235,7 @@ public struct TranscriptionSegment: Identifiable, Equatable {
     }
 }
 
-public struct TranscriptionResult {
+public struct TranscriptionResult: Sendable {
     public let segments: [TranscriptionSegment]
     public let fullText: String
     public let duration: TimeInterval
@@ -265,7 +265,7 @@ public struct TranscriptionResult {
 
 // MARK: - Performance Metrics
 
-public struct PerformanceMetrics {
+public struct PerformanceMetrics: Sendable {
     public var totalRequests: Int = 0
     public var totalAudioDuration: TimeInterval = 0
     public var totalProcessingTime: TimeInterval = 0
@@ -328,7 +328,7 @@ public struct BackendComparisonResult {
 
 // MARK: - Errors
 
-public enum ASRError: Error, LocalizedError {
+public enum ASRError: Error, LocalizedError, @unchecked Sendable {
     case backendNotAvailable(backend: String)
     case transcriptionFailed(reason: String)
     case networkError(Error)
@@ -362,7 +362,7 @@ public enum ASRError: Error, LocalizedError {
 
 // MARK: - Events
 
-public enum TranscriptionEvent {
+public enum TranscriptionEvent: Sendable {
     case started
     case partial(text: String, confidence: Double)
     case final(segment: TranscriptionSegment)

@@ -1,6 +1,7 @@
 import XCTest
 @testable import MeetingListenerApp
 
+@MainActor
 final class NativeMLXBackendTests: XCTestCase {
     
     // MARK: - Configuration Tests
@@ -559,12 +560,13 @@ final class NativeMLXBackendTests: XCTestCase {
 
 // MARK: - Helper Extensions
 
+@MainActor
 extension XCTestCase {
     func wait<T>(for task: Task<T, Never>, timeout: TimeInterval) -> Bool {
         let expectation = expectation(description: "Task completion")
         var completed = false
         
-        Task {
+        Task { @MainActor in
             _ = await task.value
             completed = true
             expectation.fulfill()

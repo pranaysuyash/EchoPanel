@@ -1,6 +1,7 @@
 import Foundation
 
 /// BetaGatingManager manages beta access control including invite codes, session limits, and upgrade prompts.
+@MainActor
 final class BetaGatingManager: ObservableObject {
     
     static let shared = BetaGatingManager()

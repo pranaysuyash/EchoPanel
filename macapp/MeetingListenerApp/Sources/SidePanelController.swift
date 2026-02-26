@@ -13,6 +13,7 @@ final class DraggablePanel: NSPanel {
     }
 }
 
+@MainActor
 final class SidePanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var hostingController: NSHostingController<SidePanelView>?

@@ -5,7 +5,7 @@ import Combine
 
 /// Central manager for feature flags - enables gradual rollout and dev testing
 public final class FeatureFlagManager: ObservableObject {
-    public static let shared = FeatureFlagManager()
+    nonisolated(unsafe) public static let shared = FeatureFlagManager()
     
     // MARK: - Published Flags
     

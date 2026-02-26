@@ -3,6 +3,7 @@ import Foundation
 
 /// Voice note capture manager for recording short voice notes during meetings.
 /// Reuses AVAudioEngine patterns from MicrophoneCaptureManager but optimized for short recordings.
+@MainActor
 final class VoiceNoteCaptureManager: NSObject, ObservableObject {
     
     // MARK: - Published State
@@ -69,11 +70,7 @@ final class VoiceNoteCaptureManager: NSObject, ObservableObject {
         super.init()
     }
     
-    deinit {
-        Task { @MainActor in
-            await stopRecording()
-        }
-    }
+    // Note: AVAudioEngine cleans up on deallocation. Callers should call stopRecording() before release.
     
     // MARK: - Permission
     

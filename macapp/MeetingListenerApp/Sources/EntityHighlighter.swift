@@ -19,7 +19,7 @@ enum EntityHighlighter {
         var isEnabled: Bool { self != .off }
     }
 
-    private static var nlpCache: [String: [EntityMatch]] = [:]
+    nonisolated(unsafe) private static var nlpCache: [String: [EntityMatch]] = [:]
     private static let nlpCacheLimit = 400
 
     static func matches(in text: String, entities: [EntityItem]) -> [EntityMatch] {

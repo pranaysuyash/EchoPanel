@@ -342,7 +342,7 @@ public final class HybridASRManager: ObservableObject, Sendable {
             accuracyMatch: wer < 0.1  // Within 10% WER considered matching
         )
         
-        await MainActor.run {
+        await MainActor.run { [comparison] in
             lastComparison = comparison
         }
         

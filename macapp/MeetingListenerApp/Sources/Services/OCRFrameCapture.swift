@@ -1,6 +1,7 @@
 import Foundation
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 import AppKit
+import CoreImage
 import Vision
 import OSLog
 
@@ -116,7 +117,7 @@ public final class OCRFrameCapture: NSObject, ObservableObject {
         }
     }
     
-    private var timer: Timer?
+    nonisolated(unsafe) private var timer: Timer?
     private var isProcessing = false
     private let minCaptureInterval: TimeInterval = 5.0
     private let resourceMonitor = ResourceMonitor.shared
@@ -325,8 +326,28 @@ public final class OCRFrameCapture: NSObject, ObservableObject {
         sessionId: String?
     ) async -> Result<(text: String, imageSize: CGSize), OCRError> {
         
-        // Capture screen using CoreGraphics
-        guard let screenImage = CGDisplayCreateImage(CGMainDisplayID()) else {
+        // Capture screen using ScreenCaptureKit (CGDisplayCreateImage unavailable in macOS 15+)
+        let screenImage: CGImage
+        do {
+            let content = try await SCShareableContent.current
+            guard let display = content.displays.first else {
+                return .failure(.noFrameReceived)
+            }
+            let config = SCStreamConfiguration()
+            config.width = display.width
+            config.height = display.height
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let sampleBuffer = try await SCScreenshotManager.captureSampleBuffer(contentFilter: filter, configuration: config)
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                return .failure(.noFrameReceived)
+            }
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let context = CIContext()
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+                return .failure(.compressionFailed)
+            }
+            screenImage = cgImage
+        } catch {
             return .failure(.noFrameReceived)
         }
         

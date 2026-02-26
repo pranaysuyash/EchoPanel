@@ -7,7 +7,7 @@ import Foundation
 import QuartzCore
 import ScreenCaptureKit
 
-final class AudioCaptureManager: NSObject {
+final class AudioCaptureManager: NSObject, @unchecked Sendable {
     var onPCMFrame: ((Data, String) -> Void)? // (frame, source="system")
     var onAudioQualityUpdate: ((AudioQuality) -> Void)?
     var onAudioLevelUpdate: ((Float) -> Void)?
