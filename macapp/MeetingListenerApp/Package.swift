@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -12,7 +12,9 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.17.4"),
         // MLX Audio Swift - Native ASR on Apple Silicon
-        .package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", branch: "main")
+        .package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", from: "0.1.0"),
+        // MLX Swift LM - LLM + Embeddings for meeting analysis
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.30.6")
     ],
     targets: [
         .executableTarget(

@@ -343,3 +343,59 @@ let result = try diarizer.performCompleteDiarization(audioSamples)
 
 **Evidence**: `RAM_BUDGET_ANALYSIS_2026-02-26.md` §7.
 
+
+---
+
+### DEC-035: VoxtralRealtime-4bit as opt-in Premium ASR tier (decided 2026-02-26)
+
+**Decision**: Add `mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit` as an opt-in Premium tier gated on ≥ 8 GB RAM + explicit user opt-in. It does NOT replace Qwen3-ASR-0.6B-4bit as the default primary.
+
+**Why**: VoxtralRealtime (Mistral's streaming ASR LLM) achieves 4.90% WER on English and 15.05% on AMI meeting audio — competitive with Whisper large-v3 offline. However at 3.15 GB it can only coexist on ≥ 8 GB Macs and requires a custom `VoxtralRealtimeStreamingAdapter` since `StreamingInferenceSession` is hardcoded to `Qwen3ASRModel`. The 0.6B model keeps default experience fast and lightweight.
+
+**Updated fallback chain**: Qwen3-0.6B (P1) → Qwen3-1.7B-4bit (P2) → VoxtralRealtime-4bit [opt-in, 8GB+] (P3) → Parakeet-TDT (P4) → PythonBackend (P5).
+
+**What would change this**: If a future mlx-audio-swift release makes `StreamingInferenceSession` model-agnostic (open protocol).
+
+**Evidence**: `VOXTRAL_LFM_RESEARCH_2026-02-26.md` §2, §5; PR #52 source.
+
+---
+
+### DEC-036: Replace MossFormer2 + FluidAudio with Sortformer (mlx-audio-swift) for diarization (decided 2026-02-26)
+
+**Decision**: Use `SortformerModel` from `mlx-audio-swift` (`MLXAudioVAD`) as the primary diarization engine. FluidAudio (`SortformerDiarizer`) is secondary fallback. `MossFormer2Model` is used for speech enhancement (denoising) not diarization.
+
+**Why**: Sortformer v2.1 achieves 11–15% DER on AMI corpus — 1–3% better than pyannote 3.1, 2× faster, streaming-ready, and ships in the same mlx-audio-swift package we already depend on. No separate Python/FluidAudio dependency needed. `MossFormer2Model` (120 MB) is a noise-suppressor that improves ASR WER by 20–30% relative, running asynchronously before ASR in the pipeline.
+
+**Pipeline**: `Audio → MossFormer2 (150–300ms) → ASR → Sortformer (post-meeting batch) → Transcript`.
+
+**Evidence**: `MOSSFORMER2_SORTFORMER_RESEARCH_2026-02-26.md` §3, §6; `RESEARCH_SUMMARY_MOSSFORMER2_SORTFORMER.md`.
+
+---
+
+### DEC-037: LFM-2.5-Audio (Liquid AI) rejected — proprietary license (decided 2026-02-26)
+
+**Decision**: `mlx-community/LFM2.5-Audio-1.5B-4bit` will not be used in EchoPanel.
+
+**Why**: Liquid Foundation Model uses a proprietary "LFM Open License" (not Apache 2.0 or MIT). Commercial use requires explicit authorization from Liquid AI. EchoPanel is a commercial product.
+
+**Evidence**: `VOXTRAL_LFM_RESEARCH_2026-02-26.md` §3; `HF_PRO_MODELS_SWEEP_2026-02-26.md` §3.
+
+---
+
+### DEC-038: Add Qwen3-ForcedAligner for word-level timestamps (decided 2026-02-26)
+
+**Decision**: Evaluate `mlx-community/Qwen3-ForcedAligner-0.6B-bf16` for word-level timestamp alignment in transcript-to-audio sync feature. Does not block current sprint.
+
+**Why**: Same Qwen3 family as our primary ASR, tiny model (~340 MB), enables clickable word-level sync in the transcript UI — a differentiated UX feature not available in any competing tool. Discovered as underexplored gem in HF Pro sweep.
+
+**Evidence**: `HF_PRO_MODELS_SWEEP_2026-02-26.md` §5.
+
+---
+
+### DEC-039: Nomic-embed-text-v2-moe replaces v1.5 as embedding model (decided 2026-02-26)
+
+**Decision**: Use `nomic-ai/nomic-embed-text-v2-moe` (MoE architecture, 100+ languages) instead of `nomic-embed-text-v1.5` for the Brain Dump semantic search feature.
+
+**Why**: Drop-in upgrade, same API via `MLXEmbedders.NomicBert`, better multilingual coverage, same ~140 MB footprint. Since we haven't shipped yet, no migration cost.
+
+**Evidence**: `HF_PRO_MODELS_SWEEP_2026-02-26.md` §4.
