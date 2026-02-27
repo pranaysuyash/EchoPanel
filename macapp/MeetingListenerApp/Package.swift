@@ -14,14 +14,19 @@ let package = Package(
         // MLX Audio Swift - Native ASR on Apple Silicon
         .package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", from: "0.1.0"),
         // MLX Swift LM - LLM + Embeddings for meeting analysis
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.30.6")
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.30.6"),
+        // FluidAudio - Native CoreML/ANE diarization + VAD
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", branch: "main")
     ],
     targets: [
         .executableTarget(
             name: "MeetingListenerApp",
             dependencies: [
                 .product(name: "MLXAudioSTT", package: "mlx-audio-swift"),
-                .product(name: "MLXAudioVAD", package: "mlx-audio-swift")
+                .product(name: "MLXAudioVAD", package: "mlx-audio-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXEmbedders", package: "mlx-swift-lm"),
+                .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Sources",
             exclude: ["ASR/README.md"]
