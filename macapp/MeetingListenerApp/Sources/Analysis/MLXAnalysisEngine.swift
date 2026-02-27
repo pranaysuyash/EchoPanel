@@ -62,6 +62,7 @@ public actor MLXAnalysisEngine {
     // MARK: - Lifecycle
 
     public func load(progressHandler: @Sendable @escaping (Progress) -> Void = { _ in }) async throws {
+        guard !isLoaded else { return }
         logger.info("MLXAnalysisEngine: loading \(self.config.modelId)")
         let mc = try await loadModelContainer(id: config.modelId, progressHandler: progressHandler)
         container = mc

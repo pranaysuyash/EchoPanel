@@ -302,6 +302,8 @@ final class AppState: ObservableObject {
                     self.noAudioDetected = false
                     self.silenceMessage = ""
                 }
+                // Accumulate 16kHz Float32 mono audio for post-session diarization
+                self.accumulateAudioFrame(frame)
             }
             self.streamer.sendPCMFrame(frame, source: source)
         }
@@ -367,8 +369,25 @@ final class AppState: ObservableObject {
     private var userNoticeClearTask: Task<Void, Never>?
     private var userNoticeClearTimer: Timer?
 
+    // MARK: - Native Pipeline
+    /// Sequential phase enforcer (DEC-030: recording → analysis → brainDump, never simultaneous).
+    let phaseScheduler = PhaseScheduler()
+    /// MLX analysis engine — loaded lazily before each analysis phase.
+    let analysisEngine = MLXAnalysisEngine()
+    /// MLX embeddings engine — loaded lazily before each brain-dump phase.
+    let embeddingsEngine = MLXEmbeddingsEngine()
+    /// FluidAudio diarization — shared instance, models downloaded on first use.
+    @available(macOS 14.0, *)
+    lazy var diarization: FluidAudioDiarization = FluidAudioDiarization()
+
+    /// Rolling audio buffer (16kHz Float32 mono) accumulated during recording for post-session diarization.
+    /// Capped at 3 hours (~172M samples) to avoid unbounded growth.
+    private var recordingAudioBuffer: [Float] = []
+    private static let maxRecordingBufferSamples = 16000 * 60 * 180  // 3 hours @ 16kHz
+
     init() {
         streamer = WebSocketStreamer()
+        Task { await phaseScheduler.setup() }
         refreshPermissionStatuses()
         permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
@@ -666,6 +685,9 @@ final class AppState: ObservableObject {
         runtimeErrorState = nil
         finalizationOutcome = .none
         
+        // Transition phase scheduler to recording
+        Task { await phaseScheduler.transition(to: .recording) }
+        
         // PR1: Generate new attempt ID for this start
         startAttemptId = UUID()
         let currentAttemptId = startAttemptId
@@ -921,6 +943,13 @@ final class AppState: ObservableObject {
             self.runtimeErrorState = nil
             self.noAudioDetected = false
             
+            // Transition phase: recording → analysis → brainDump → idle
+            await self.phaseScheduler.transition(to: .analysis)
+            await self.runNativeDiarization()
+            await self.runNativeAnalysis()
+            await self.phaseScheduler.transition(to: .brainDump)
+            await self.phaseScheduler.transition(to: .idle)
+            
             // V1: Clear logging context
             StructuredLogger.shared.clearContext()
 
@@ -951,6 +980,85 @@ final class AppState: ObservableObject {
         asrEventCount = 0
         runtimeErrorState = nil
         archivedSegments = []
+        recordingAudioBuffer.removeAll(keepingCapacity: false)
+        Task { await phaseScheduler.reset() }
+    }
+
+    // MARK: - Native Analysis (called from stopSession after recording → analysis phase)
+
+    /// Run MLX-local meeting analysis. Falls back silently if model unavailable.
+    @MainActor
+    private func runNativeAnalysis() async {
+        let transcript = transcriptSegments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return }
+
+        // Only run if no Python-provided summary is present
+        guard finalSummaryMarkdown.isEmpty else { return }
+
+        do {
+            try await analysisEngine.load()
+            let summary = try await analysisEngine.analyze(.summarize(transcript: transcript))
+            finalSummaryMarkdown = summary
+            logger.info("AppState: native analysis complete (\(summary.count) chars)")
+        } catch {
+            logger.warning("AppState: native analysis failed — \(error.localizedDescription)")
+        }
+        await analysisEngine.unload()
+    }
+
+    // MARK: - Audio Accumulation + Diarization
+
+    /// Decode PCM Data (Float32 LE) → Float samples and append to recording buffer.
+    @MainActor
+    private func accumulateAudioFrame(_ data: Data) {
+        guard recordingAudioBuffer.count < AppState.maxRecordingBufferSamples else { return }
+        let floatCount = data.count / MemoryLayout<Float>.size
+        var samples = [Float](repeating: 0, count: floatCount)
+        _ = samples.withUnsafeMutableBytes { data.copyBytes(to: $0) }
+        recordingAudioBuffer.append(contentsOf: samples)
+    }
+
+    /// Run batch diarization over the accumulated recording buffer and apply speaker labels.
+    @MainActor
+    private func runNativeDiarization() async {
+        guard !recordingAudioBuffer.isEmpty else { return }
+
+        if #available(macOS 14.0, *) {
+            do {
+                if !diarization.isReady {
+                    try await diarization.prepareModels()
+                }
+                let segments = try await diarization.diarize(audio: recordingAudioBuffer)
+                applySpeakerLabels(from: segments)
+                logger.info("AppState: diarization complete — \(segments.count) segments, \(Set(segments.map(\.speakerId)).count) speaker(s)")
+            } catch {
+                logger.warning("AppState: diarization failed — \(error.localizedDescription)")
+            }
+        }
+        recordingAudioBuffer.removeAll(keepingCapacity: false)
+    }
+
+    /// Map diarization segments onto transcriptSegments by timestamp overlap.
+    @MainActor
+    private func applySpeakerLabels(from diarSegments: [SpeakerSegment]) {
+        guard !diarSegments.isEmpty else { return }
+        transcriptSegments = transcriptSegments.map { seg in
+            let midpoint = (seg.t0 + seg.t1) / 2
+            if let match = diarSegments.first(where: { $0.startTimeSeconds <= midpoint && midpoint < $0.endTimeSeconds }) {
+                var updated = seg
+                // TranscriptSegment.speaker is var; return mutated copy
+                return TranscriptSegment(
+                    text: updated.text,
+                    t0: updated.t0,
+                    t1: updated.t1,
+                    isFinal: updated.isFinal,
+                    confidence: updated.confidence,
+                    source: updated.source,
+                    speaker: match.speakerId
+                )
+            }
+            return seg
+        }
     }
     
     /// Save current session snapshot for auto-save (v0.2)

@@ -36,7 +36,6 @@ public struct MLXBackendConfiguration: Sendable {
         self.streamingDelayMs = streamingDelayMs
     }
 }
-
 // MARK: - Thread-Safe Audio Buffer
 
 final class ThreadSafeAudioBuffer: @unchecked Sendable {
@@ -120,9 +119,16 @@ public actor NativeMLXBackend: ASRBackend {
         estimatedRTF: 0.08
     )
     
-    // MARK: - MLX Model
+    // MARK: - ASR Model (via fallback chain)
     
-    private var model: Qwen3ASRModel?
+    /// Priority chain: Qwen3-0.6B → Qwen3-1.7B → Parakeet → Python
+    private var chain: ASRFallbackChain?
+    /// Fallback tiers derived from configuration — allows overriding default chain at init time.
+    private let chainTiers: [ASRTier]
+
+    /// Direct reference to the Qwen3 model within the chain (for StreamingInferenceSession).
+    /// Populated after initialize(); nil if chain loaded a non-Qwen3 primary.
+    private var qwen3Model: Qwen3ASRModel?
     private var isModelLoaded: Bool = false
     private var loadedModelId: String = ""
     
@@ -146,39 +152,53 @@ public actor NativeMLXBackend: ASRBackend {
     
     // MARK: - Initialization
     
-    public init(configuration: MLXBackendConfiguration = .default) {
+    /// - Parameter tiers: Override the ASR fallback chain. Defaults to Qwen3-0.6B → 1.7B → Parakeet.
+    public init(configuration: MLXBackendConfiguration = .default,
+                chainTiers: [ASRTier] = [.qwen3_0_6B, .qwen3_1_7B, .parakeet]) {
         self.configuration = configuration
+        self.chainTiers = chainTiers
     }
     
     // MARK: - ASRBackend Protocol
     
     public func initialize() async throws {
-        await updateStatus(.initializing, message: "Loading MLX model: \(configuration.modelId)...")
+        await updateStatus(.initializing, message: "Loading ASR model chain...")
         
+        let newChain = ASRFallbackChain(tiers: chainTiers)
         do {
-            model = try await Qwen3ASRModel.fromPretrained(configuration.modelId)
-            isModelLoaded = true
-            loadedModelId = configuration.modelId
-            modelSampleRate = model?.sampleRate ?? 16000
-            updateAvailabilityCache(true)
-            
-            await updateStatus(.ready, message: "Model loaded successfully")
-            
-            if FeatureFlagManager.shared.enableVerboseLogging {
-                print("Native MLX: Model loaded (\(configuration.modelId)), sample rate: \(self.modelSampleRate)Hz")
-            }
-            
+            try await newChain.initialize()
         } catch {
-            isModelLoaded = false
             updateAvailabilityCache(false)
-            await updateStatus(.error, message: "Failed to load model: \(error.localizedDescription)")
-            throw ASRError.initializationFailed(reason: "MLX model load failed: \(error)")
+            await updateStatus(.error, message: "All ASR tiers failed: \(error.localizedDescription)")
+            throw ASRError.initializationFailed(reason: "ASR chain exhausted: \(error)")
+        }
+        
+        chain = newChain
+        isModelLoaded = true
+        loadedModelId = await newChain.activeTier?.modelId ?? configuration.modelId
+        modelSampleRate = await newChain.modelSampleRate
+        updateAvailabilityCache(true)
+
+        // Cache Qwen3 model reference for StreamingInferenceSession (streaming path)
+        if case .qwen3_0_6B = await newChain.activeTier {
+            // Re-load Qwen3 directly for streaming — chain loaded it already, but
+            // StreamingInferenceSession needs a direct Qwen3ASRModel reference.
+            qwen3Model = try? await Qwen3ASRModel.fromPretrained(loadedModelId)
+        } else if case .qwen3_1_7B = await newChain.activeTier {
+            qwen3Model = try? await Qwen3ASRModel.fromPretrained(loadedModelId)
+        }
+
+        await updateStatus(.ready, message: "ASR ready (\(await newChain.activeTier?.displayName ?? "unknown"))")
+        
+        if FeatureFlagManager.shared.enableVerboseLogging {
+            print("NativeMLXBackend: chain loaded \(await newChain.activeTier?.displayName ?? "?"), sr=\(modelSampleRate)Hz")
         }
     }
     
     public func reloadModel(newConfiguration: MLXBackendConfiguration? = nil) async throws {
         await stopStreaming()
-        model = nil
+        chain = nil
+        qwen3Model = nil
         isModelLoaded = false
         loadedModelId = ""
         updateAvailabilityCache(false)
@@ -192,7 +212,7 @@ public actor NativeMLXBackend: ASRBackend {
     }
     
     public func transcribe(audio: Data, config: TranscriptionConfig) async throws -> TranscriptionResult {
-        guard isModelLoaded, let currentModel = model else {
+        guard isModelLoaded, let currentChain = chain else {
             throw ASRError.backendNotAvailable(backend: name)
         }
         
@@ -216,7 +236,7 @@ public actor NativeMLXBackend: ASRBackend {
             (sampleRate, audioData) = try loadAudioArray(from: tempURL)
         }
         
-        let targetRate = currentModel.sampleRate
+        let targetRate = await currentChain.modelSampleRate
         
         let resampled: MLXArray
         if sampleRate != targetRate {
@@ -225,29 +245,13 @@ public actor NativeMLXBackend: ASRBackend {
             resampled = audioData
         }
         
-        var fullText = ""
-        var tokenCount = 0
-        var finalTokensPerSecond: Double = 0
-        var finalPeakMemory: Double = 0
-        
-        for try await event in currentModel.generateStream(
+        let fullText = try await currentChain.transcribe(
             audio: resampled,
+            language: config.language.displayName,
             maxTokens: configuration.maxTokens,
             temperature: configuration.temperature,
-            language: config.language.displayName,
             chunkDuration: configuration.chunkDuration
-        ) {
-            switch event {
-            case .token(let token):
-                fullText += token
-                tokenCount += 1
-            case .info(let info):
-                finalTokensPerSecond = info.tokensPerSecond
-                finalPeakMemory = info.peakMemoryUsage
-            case .result:
-                break
-            }
-        }
+        )
         
         let processingTime = Date().timeIntervalSince(startTime)
         let sampleCount = Double(audioData.shape[0])
@@ -277,7 +281,9 @@ public actor NativeMLXBackend: ASRBackend {
     }
     
     public func startStreaming(config: TranscriptionConfig) -> AsyncThrowingStream<TranscriptionEvent, Error> {
-        guard isModelLoaded, let currentModel = model else {
+        guard isModelLoaded, let currentModel = qwen3Model else {
+            // Streaming requires Qwen3 (StreamingInferenceSession is Qwen3-only).
+            // Fall back to batch transcription error if chain loaded Parakeet.
             return AsyncThrowingStream { continuation in
                 continuation.finish(throwing: ASRError.backendNotAvailable(backend: name))
             }
@@ -482,7 +488,9 @@ public actor NativeMLXBackend: ASRBackend {
     
     public func unload() async {
         await stopStreaming()
-        model = nil
+        await chain?.unload()
+        chain = nil
+        qwen3Model = nil
         isModelLoaded = false
         loadedModelId = ""
         updateAvailabilityCache(false)
