@@ -554,6 +554,24 @@ extension SidePanelView {
                         }
                     }
                 }
+
+                if !appState.ragSearchResults.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Session Matches (local)")
+                            .font(Typography.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+
+                        ForEach(appState.ragSearchResults) { result in
+                            surfaceItemCard(
+                                tag: String(format: "Score %.2f", result.score),
+                                title: result.title,
+                                subtitle: result.snippet
+                            )
+                            .id(result.id)
+                        }
+                    }
+                }
             }
         }
         .accessibilityElement(children: .contain)

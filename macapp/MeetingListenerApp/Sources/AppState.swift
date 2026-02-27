@@ -379,15 +379,23 @@ final class AppState: ObservableObject {
     /// FluidAudio diarization — shared instance, models downloaded on first use.
     @available(macOS 14.0, *)
     lazy var diarization: FluidAudioDiarization = FluidAudioDiarization()
+    /// Local session transcript RAG store (GRDB + vDSP cosine).
+    let ragStore = SessionRAGStore()
 
     /// Rolling audio buffer (16kHz Float32 mono) accumulated during recording for post-session diarization.
     /// Capped at 3 hours (~172M samples) to avoid unbounded growth.
     private var recordingAudioBuffer: [Float] = []
     private static let maxRecordingBufferSamples = 16000 * 60 * 180  // 3 hours @ 16kHz
 
+    /// Published local RAG search results (session transcript semantic search).
+    @Published var ragSearchResults: [ContextQueryResult] = []
+
     init() {
         streamer = WebSocketStreamer()
-        Task { await phaseScheduler.setup() }
+        Task {
+            await phaseScheduler.setup()
+            try? await ragStore.setup()
+        }
         refreshPermissionStatuses()
         permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
@@ -948,6 +956,7 @@ final class AppState: ObservableObject {
             await self.runNativeDiarization()
             await self.runNativeAnalysis()
             await self.phaseScheduler.transition(to: .brainDump)
+            await self.runBrainDumpIndexing()
             await self.phaseScheduler.transition(to: .idle)
             
             // V1: Clear logging context
@@ -981,6 +990,7 @@ final class AppState: ObservableObject {
         runtimeErrorState = nil
         archivedSegments = []
         recordingAudioBuffer.removeAll(keepingCapacity: false)
+        ragSearchResults = []
         Task { await phaseScheduler.reset() }
     }
 
@@ -1061,6 +1071,56 @@ final class AppState: ObservableObject {
         }
     }
     
+    // MARK: - Brain Dump Indexing
+
+    /// Index current session transcript into local RAG store using MLX embeddings.
+    @MainActor
+    private func runBrainDumpIndexing() async {
+        guard let sessionId = sessionID else { return }
+        let transcript = transcriptSegments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        guard !transcript.isEmpty else { return }
+
+        do {
+            try await embeddingsEngine.load()
+            try await ragStore.indexTranscript(
+                sessionId: sessionId,
+                transcript: transcript,
+                engine: embeddingsEngine
+            )
+            logger.info("AppState: brain dump indexed for session \(sessionId)")
+        } catch {
+            logger.warning("AppState: brain dump indexing failed — \(error.localizedDescription)")
+        }
+        await embeddingsEngine.unload()
+    }
+
+    /// Search local session RAG store and populate ragSearchResults.
+    @MainActor
+    func searchLocalRAG(_ query: String) async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else {
+            ragSearchResults = []
+            return
+        }
+        do {
+            try await embeddingsEngine.load()
+            let hits = try await ragStore.search(query: q, engine: embeddingsEngine, topK: 8)
+            ragSearchResults = hits.map { hit in
+                ContextQueryResult(
+                    documentID: hit.sessionId,
+                    title: "Session \(hit.sessionId.prefix(8))…",
+                    source: "local",
+                    chunkIndex: hit.chunkIndex,
+                    snippet: hit.text,
+                    score: Double(hit.score)
+                )
+            }
+        } catch {
+            logger.warning("AppState: local RAG search failed — \(error.localizedDescription)")
+            ragSearchResults = []
+        }
+    }
+
     /// Save current session snapshot for auto-save (v0.2)
     func saveSnapshot() {
         sessionStore.saveSnapshot(data: exportPayload())
@@ -2057,6 +2117,7 @@ final class AppState: ObservableObject {
         contextQuery = query
         guard !query.isEmpty else {
             contextQueryResults = []
+            ragSearchResults = []
             contextStatusMessage = contextDocuments.isEmpty
                 ? "No context documents indexed yet."
                 : "Enter a query to search local context."
@@ -2066,21 +2127,34 @@ final class AppState: ObservableObject {
         contextBusy = true
         defer { contextBusy = false }
 
+        // Run Python backend search on MainActor and local RAG search concurrently
+        let payload: [String: Any] = ["query": query, "top_k": 8]
+        let body = (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+        let request = makeAuthorizedRequest(url: BackendConfig.documentsQueryURL, method: "POST", body: body)
+
+        async let localTask: Void = searchLocalRAG(query)
+
         do {
-            let payload: [String: Any] = ["query": query, "top_k": 8]
-            let body = try JSONSerialization.data(withJSONObject: payload, options: [])
-            let request = makeAuthorizedRequest(url: BackendConfig.documentsQueryURL, method: "POST", body: body)
             let (data, response) = try await URLSession.shared.data(for: request)
             try ensureHTTPStatus(response, data: data)
             let decoded = try JSONDecoder().decode(ContextQueryResponse.self, from: data)
             contextQueryResults = decoded.results.map { $0.asContextQueryResult() }
-            if contextQueryResults.isEmpty {
-                contextStatusMessage = "No matches for \"\(query)\"."
-            } else {
-                contextStatusMessage = "\(contextQueryResults.count) match(es) for \"\(query)\"."
-            }
         } catch {
-            contextStatusMessage = "Context query failed: \(error.localizedDescription)"
+            // Python backend unavailable — local RAG results still shown below
+            contextQueryResults = []
+        }
+
+        await localTask
+
+        let totalMatches = contextQueryResults.count + ragSearchResults.count
+        if totalMatches == 0 {
+            contextStatusMessage = "No matches for \"\(query)\"."
+        } else {
+            let parts = [
+                contextQueryResults.isEmpty ? nil : "\(contextQueryResults.count) doc",
+                ragSearchResults.isEmpty ? nil : "\(ragSearchResults.count) session"
+            ].compactMap { $0 }
+            contextStatusMessage = "\(parts.joined(separator: " + ")) match(es) for \"\(query)\"."
         }
     }
 
