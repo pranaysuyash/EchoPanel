@@ -80,7 +80,12 @@ class RateLimiter:
         async with self._lock:
             state = self._clients[client_id]
             now = time.time()
-            
+
+            # Seed buckets to full on first request for this client.
+            if state.requests_minute == 0 and state.requests_hour == 0:
+                state.minute_tokens = float(self.config.requests_per_minute)
+                state.hour_tokens = float(self.config.requests_per_hour)
+
             # Refill tokens based on elapsed time
             minute_elapsed = now - state.last_minute_update
             hour_elapsed = now - state.last_hour_update

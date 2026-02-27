@@ -136,12 +136,12 @@ async def test_storage_connection(request: Request, body: StorageTestRequest) ->
     """
     require_http_auth(request)
     try:
-        if request.backend == "sqlite":
-            return await _test_sqlite_connection(request.sqlite_path)
-        elif request.backend == "postgresql":
-            return await _test_postgresql_connection(request.postgres_url)
+        if body.backend == "sqlite":
+            return await _test_sqlite_connection(body.sqlite_path)
+        elif body.backend == "postgresql":
+            return await _test_postgresql_connection(body.postgres_url)
         else:
-            raise HTTPException(status_code=400, detail=f"Unknown backend: {request.backend}")
+            raise HTTPException(status_code=400, detail=f"Unknown backend: {body.backend}")
             
     except Exception as e:
         logger.error(f"Storage test failed: {e}")

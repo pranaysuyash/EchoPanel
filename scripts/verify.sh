@@ -10,4 +10,12 @@ swift build
 # Keep tests serialized to preserve deterministic local pre-commit behavior.
 swift test --parallel --num-workers 1
 
+echo "[verify] Running Python lint (ruff F821 — undefined names)..."
+cd "$ROOT_DIR"
+uv run ruff check server/
+
+echo "[verify] Running Python tests..."
+cd "$ROOT_DIR"
+uv run pytest tests/ -x -q --timeout=60
+
 echo "[verify] OK"

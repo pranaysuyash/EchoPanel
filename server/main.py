@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Request
 from server.api.documents import router as documents_router
 from server.api.ws_live_listener import router as ws_router
 from server.api.brain_dump_query import router as brain_dump_router
+from server.api.config import router as config_router
+from server.security import require_http_auth, extract_http_token
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
 
@@ -288,6 +290,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(ws_router)
 app.include_router(documents_router)
 app.include_router(brain_dump_router)
+app.include_router(config_router, prefix="/config", tags=["config"])
 
 
 @app.middleware("http")
@@ -307,7 +310,7 @@ async def rate_limit_middleware(request: Request, call_next):
     client_id = request.client.host if request.client else "unknown"
     
     # Use auth token as client ID if available (per-user rate limiting)
-    auth_token = _extract_token(request)
+    auth_token = extract_http_token(request)
     if auth_token:
         client_id = f"token:{auth_token[:16]}"
     
@@ -342,14 +345,14 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/")
 async def root(request: Request) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     logger.info("Root endpoint accessed.")
     return {"status": "ok", "service": "echopanel"}
 
 
 @app.get("/health")
 async def health_check(request: Request) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     """
     Health check that reflects ASR readiness.
 
@@ -409,7 +412,7 @@ async def health_check(request: Request) -> dict:
 
 @app.get("/capabilities")
 async def get_capabilities(request: Request) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     """
     Get machine capabilities and ASR recommendations.
     
@@ -428,7 +431,7 @@ async def get_capabilities(request: Request) -> dict:
 
 @app.get("/model-status")
 async def get_model_status(request: Request) -> dict:
-    _require_http_auth(request)
+    require_http_auth(request)
     """
     Get model preloader status and statistics.
     

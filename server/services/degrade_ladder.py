@@ -37,6 +37,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
+from pathlib import Path
 from typing import Optional, Dict, Any, Callable, List, Tuple
 
 from .asr_providers import ASRConfig, ASRProvider

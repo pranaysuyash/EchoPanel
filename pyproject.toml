@@ -61,7 +61,16 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+select = ["F821"]
+
+[tool.ruff.lint.per-file-ignores]
+# SessionState is an intentional forward reference to break circular imports
+"server/api/ws_caption_extension.py" = ["F821"]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.15.4",
 ]
