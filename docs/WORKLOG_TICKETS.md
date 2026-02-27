@@ -9668,8 +9668,18 @@ cd macapp_v3 && swift build                   # ✅ Build complete! (1.55s)
 **Type:** FEATURE / IMPROVEMENT  
 **Owner:** Pranay  
 **Created:** 2026-02-25  
-**Status:** **IN_PROGRESS** 🟡  
+**Status:** **IN_PROGRESS** 🟡 — Core Swift actors implemented; GRDB RAG + Vision OCR + integration wiring pending  
 **Priority:** P0
+
+**Evidence Log (2026-03-01):**
+- `swift build` ✅ — Package.swift updated with FluidAudio (main) + MLXLLM + MLXEmbedders
+- Created `Sources/ASR/FluidAudioVADProvider.swift` — Silero VAD streaming + batch
+- Created `Sources/ASR/ASRFallbackChain.swift` — Qwen3-0.6B → 1.7B → Parakeet TDT → Python fallback
+- Created `Sources/ASR/FluidAudioDiarization.swift` — OfflineDiarizerManager + RTTM export
+- Created `Sources/Services/PhaseScheduler.swift` — sequential phases + memory pressure monitoring
+- Created `Sources/Analysis/MLXAnalysisEngine.swift` — MLXLLM Qwen2.5-1.5B summarize/action-items
+- Created `Sources/BrainDump/MLXEmbeddingsEngine.swift` — NomicBert 768-dim cosine embeddings
+- 152 Python tests ✅, 0 regressions
 
 **Description:**
 Migrate EchoPanel from Python FastAPI primary to native Swift MLX primary, with FastAPI as fallback. Work includes: (1) ASR fallback chain with 4 Qwen3/GLM models, (2) FluidAudio for diarization+VAD replacing pyannote, (3) MLXEmbedders for Brain Dump, (4) MLXLLM for analysis replacing OpenAI/Ollama, (5) Vision OCR replacing PaddleOCR, (6) GRDB+vDSP RAG storage.
