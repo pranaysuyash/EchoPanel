@@ -56,6 +56,68 @@
 
 ---
 
+### TCK-20260226-001 :: AUDIT - Full Repo Review (Code + Docs) 2026-02-26
+
+**Type:** AUDIT
+**Owner:** Amp Agent
+**Created:** 2026-02-26
+**Status:** **DONE** ✅
+**Priority:** P0
+
+**Description:**
+Performed a full repository audit across docs, backend entrypoints, websocket streaming path, config APIs, rate limiting, persistence, and test coverage alignment. Produced evidence-backed findings with severity ranking, docs-vs-reality truth table, and PR-sliced remediation backlog.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Top-level docs and runbooks (`README.md`, `docs/README.md`, `docs/BUILD.md`, `docs/TESTING.md`, `docs/WS_CONTRACT.md`)
+  - Backend entrypoints and APIs (`server/main.py`, `server/security.py`, `server/api/*.py`)
+  - Streaming/backpressure and persistence paths (`server/api/ws_live_listener.py`, `server/services/rag_store.py`, `server/services/asr_providers.py`)
+  - Verification of code-vs-docs claims affecting developers/operators
+- **Out-of-scope:**
+  - Implementing fixes (audit-only)
+  - Large-scale historical archive revalidation of every old audit document
+- **Behavior change allowed:** NO (documentation-only audit)
+
+**Targets:**
+
+- Surfaces: repo-wide docs + server runtime + macOS test harness docs alignment
+- Files:
+  - `docs/audit/full-repo-review-20260226.md` (new)
+  - `docs/WORKLOG_TICKETS.md` (this entry)
+
+**Acceptance Criteria:**
+
+- [x] Ticket created in worklog
+- [x] New audit document in `docs/audit/` with required sections
+- [x] Repo map with evidence citations
+- [x] Docs-vs-reality truth table with TRUE/FALSE/PARTIAL/UNKNOWN
+- [x] Findings grouped by severity with path/snippet/line evidence
+- [x] Failure modes table (>=10 entries)
+- [x] PR-sliced backlog with acceptance criteria and rollback guidance
+- [x] Top 10 leveraged fixes ranked by impact*likelihood/effort
+
+**Evidence Log:**
+
+- [2026-02-26] Audited entrypoints and auth/rate-limit flow | Evidence:
+  - `server/main.py` references undefined `_extract_token` in middleware and `_require_http_auth` in handlers.
+  - `server/security.py` contains canonical auth helpers but they are not wired in `server/main.py`.
+- [2026-02-26] Audited config API wiring and handler correctness | Evidence:
+  - `server/api/config.py` has request/body mixups and is not included in app router list from `server/main.py`.
+- [2026-02-26] Audited docs-vs-reality link integrity and test claims | Evidence:
+  - Broken audit links in `README.md` and `docs/README.md`.
+  - Snapshot test claim mismatch vs `SidePanelVisualSnapshotTests` opt-in gate.
+- [2026-02-26] Published comprehensive audit report | Evidence:
+  - `docs/audit/full-repo-review-20260226.md`
+
+**Next Actions:**
+
+1. Land P0/P1 runtime fixes (auth helpers + rate limiter + config API correctness)
+2. Add regression tests for middleware/config wiring and startup smoke tests
+3. Reconcile docs index and claims after code fixes
+
+---
+
 ### TCK-20260218-001 :: Audit - NativeMLXBackend.swift Multi-AI Code Review
 
 **Type:** AUDIT
@@ -9708,4 +9770,53 @@ DEC-026 through DEC-053 (28 decisions). See `docs/DECISIONS.md`.
 ```
 git log --oneline | head -8
 # All commits from 2026-02-26 contain research docs + DECISIONS.md updates
+```
+
+---
+
+## TCK-20260226-002
+
+- **Type:** AUDIT
+- **Status:** 🟡 IN_PROGRESS
+- **Priority:** P0
+- **Created:** 2026-02-26
+- **Title:** Audit-Doc Work Planner — full-repo-review-20260226 Analysis + Backend Hardening PR Plan
+
+### Summary
+
+Completed the full Audit-Doc Work Planner (Steps 0–9) against `docs/audit/full-repo-review-20260226.md`.
+All 12 findings verified against live code. Two P0 NameErrors (F-001/F-002) confirmed by failing
+`test_main_auth_gate.py`. Root cause: `verify.sh` pre-commit gate runs only Swift — Python tests and
+Python static analysis are never run in CI/pre-commit.
+
+### Scope
+
+- Audit doc: `docs/audit/full-repo-review-20260226.md`
+- Deliverable: `docs/audit/WORKPLAN_full-repo-review-20260226.md`
+- 7 implementation PRs planned (P0→P3)
+- Root-cause implicit finding: Python test gate missing from pre-commit (IMP-01)
+
+### Acceptance Criteria
+
+- [ ] `test_main_auth_gate.py` passes (F-001/F-002 fixed)
+- [ ] Rate limiter first request allowed (F-003 fixed)
+- [ ] Config router mounted + body usage corrected (F-004/F-005 fixed)
+- [ ] WS shutdown non-blocking (F-006 fixed)
+- [ ] RAG store corruption safe (F-007 fixed)
+- [ ] Python tests + ruff added to `verify.sh` (IMP-01 fixed)
+
+### Evidence Log
+
+```
+python -m pytest tests/test_main_auth_gate.py -x -q
+# FAILED: NameError: name '_require_http_auth' is not defined at server/main.py:345
+# F-001, F-002: CONFIRMED LIVE
+
+grep -n "minute_tokens\|hour_tokens" server/api/rate_limiter.py
+# line 24-25: default=0.0 — F-003 CONFIRMED
+
+grep "include_router" server/main.py
+# ws_router, documents_router, brain_dump_router only — F-004 CONFIRMED
+
+# verify.sh: runs only swift build + swift test — NO Python — IMP-01 CONFIRMED
 ```
