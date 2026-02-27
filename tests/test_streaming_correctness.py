@@ -181,10 +181,11 @@ class TestASRProviderRegistry:
 
     def test_registry_thread_safe_instance_creation(self):
         """Verify concurrent get_provider calls don't create duplicates."""
+        from collections import OrderedDict
         from server.services.asr_providers import ASRProviderRegistry, ASRConfig
 
         # Reset instances for clean test
-        ASRProviderRegistry._instances = {}
+        ASRProviderRegistry._instances = OrderedDict()
 
         results = []
         errors = []

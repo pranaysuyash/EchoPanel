@@ -446,10 +446,12 @@ async def get_model_status(request: Request) -> dict:
         manager = get_model_manager()
         
         return {
-            "status": "ok",
-            "health": manager.health().to_dict(),
-            "stats": manager.get_stats(),
-        }
+                "status": "ok",
+                "health": manager.health().to_dict(),
+                "stats": manager.get_stats(),
+                "asr_provider_cache_entries": ASRProviderRegistry.cache_size(),
+                "asr_provider_cache_max": ASRProviderRegistry._MAX_INSTANCES,
+            }
     except Exception as e:
         logger.error(f"Failed to get model status: {e}")
         raise HTTPException(
