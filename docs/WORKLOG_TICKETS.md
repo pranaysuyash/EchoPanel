@@ -9820,3 +9820,13 @@ grep "include_router" server/main.py
 
 # verify.sh: runs only swift build + swift test — NO Python — IMP-01 CONFIRMED
 ```
+
+### EXP-06 Evidence (2026-02-27)
+```
+# All acceptance criteria met:
+# - Cache bounded via OrderedDict + popitem(last=False)  
+# - ECHOPANEL_ASR_CACHE_MAX env var (default 5)
+# - Evicted providers call unload() via asyncio.ensure_future
+# - /model-status exposes asr_provider_cache_entries + asr_provider_cache_max
+# - 152 pytest passed, ruff clean
+```
