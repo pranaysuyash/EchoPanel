@@ -1057,7 +1057,10 @@ async def _transcribe_voice_note(websocket: WebSocket, state: SessionState, audi
         
         # Put all audio data into queue in one chunk
         await queue.put(audio_data)
-        await queue.put(None)  # Signal EOF
+        try:
+            queue.put_nowait(None)  # Signal EOF; queue is local so this never blocks
+        except asyncio.QueueFull:
+            logger.warning("ws_live_listener: voice-note EOF sentinel dropped (queue full)")
         
         # Create a simple async iterator for the queue
         async def audio_stream():
@@ -1687,9 +1690,12 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             await websocket.close()
                             return
                         
-                        # Signal EOF to all queues
+                        # Signal EOF to all queues (non-blocking; shutdown must not hang on a full queue)
                         for q in state.queues.values():
-                            await q.put(None)
+                            try:
+                                q.put_nowait(None)
+                            except asyncio.QueueFull:
+                                logger.warning("ws_live_listener: stop EOF sentinel dropped (queue full)")
 
                         if DEBUG:
                             logger.debug("ws_live_listener: stop")
@@ -1862,7 +1868,10 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                 pass
         
         for q in state.queues.values():
-            await q.put(None)
+            try:
+                q.put_nowait(None)
+            except asyncio.QueueFull:
+                logger.warning("ws_live_listener: disconnect EOF sentinel dropped (queue full)")
         all_tasks = state.tasks + state.asr_tasks + state.analysis_tasks
         for task in all_tasks:
             task.cancel()

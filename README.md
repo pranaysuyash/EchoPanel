@@ -142,9 +142,7 @@ See [docs/BUILD.md](./docs/BUILD.md) for detailed build instructions.
 | 🚀 **Status & Roadmap** | [docs/STATUS_AND_ROADMAP.md](./docs/STATUS_AND_ROADMAP.md) |
 
 **Latest Audits:**
-- [Phase 0A: System Contracts](./docs/audit/PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md) - State machines, protocol truth
-- [Streaming Reliability](./docs/audit/streaming-reliability-dual-pipeline-20260210.md) - End-to-end streaming analysis
-- [UI/UX Audit](./docs/UI_UX_AUDIT_2026-02-10.md) - Interface design review
+- See [docs/audit/README.md](./docs/audit/README.md) for the current audit index.
 
 See [docs/DOCUMENTATION_STATUS.md](./docs/DOCUMENTATION_STATUS.md) for complete index.
 
@@ -154,4 +152,4 @@ See [docs/DOCUMENTATION_STATUS.md](./docs/DOCUMENTATION_STATUS.md) for complete 
 ./scripts/install-git-hooks.sh
 ```
 
-This enables a pre-commit hook that runs `./scripts/verify.sh` (`swift build` + `swift test`, including SidePanel visual snapshot tests).
+This enables a pre-commit hook that runs `./scripts/verify.sh` (`swift build` + `swift test` + `ruff` Python lint + `pytest` Python tests). SidePanel visual snapshot tests are opt-in via `RUN_VISUAL_SNAPSHOTS=1` and are not part of the default gate.

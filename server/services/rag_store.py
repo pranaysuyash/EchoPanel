@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import os
 import re
@@ -19,7 +20,7 @@ except ImportError:
 
 STORE_PATH_ENV = "ECHOPANEL_DOC_STORE_PATH"
 _TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
-
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ChunkResult:
@@ -42,6 +43,7 @@ class LocalRAGStore:
         self.overlap_words = max(0, min(overlap_words, self.chunk_words - 1))
         self._lock = threading.RLock()
         self._state: Dict[str, List[dict]] = {"documents": []}
+        self._degraded: bool = False
         self._embeddings_service = None
         self._load()
 
@@ -220,9 +222,27 @@ class LocalRAGStore:
                 docs = raw.get("documents", [])
                 if isinstance(docs, list):
                     self._state = {"documents": docs}
-            except Exception:
-                # Corrupt data should not crash app startup; start fresh.
+            except Exception as exc:
+                # Preserve the corrupt file for diagnostics; never silently reset to empty.
+                corrupt_path = self.store_path.with_suffix(
+                    f".CORRUPT.{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.json"
+                )
+                try:
+                    self.store_path.rename(corrupt_path)
+                    logger.error(
+                        "rag_store: corrupt store file preserved at %s — starting with empty state. Error: %s",
+                        corrupt_path,
+                        exc,
+                    )
+                except OSError as rename_err:
+                    logger.error(
+                        "rag_store: could not rename corrupt store %s: %s. Original error: %s",
+                        self.store_path,
+                        rename_err,
+                        exc,
+                    )
                 self._state = {"documents": []}
+                self._degraded = True
 
     @property
     def embeddings_service(self):

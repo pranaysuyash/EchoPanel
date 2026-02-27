@@ -54,9 +54,7 @@ Start here for understanding the core system.
 **30+ technical audits** in [`docs/audit/`](./audit/):
 
 ### Most Recent & Critical
-- **[Phase 0A: System Contracts](./audit/PHASE_0A_SYSTEM_CONTRACTS_AUDIT.md)** - State machines, protocol truth, race conditions
-- **[Streaming Reliability](./audit/streaming-reliability-dual-pipeline-20260210.md)** - End-to-end streaming analysis
-- **[UI/UX Audit](./audit/UI_UX_AUDIT_2026-02-09.md)** - Interface design review
+See [audit/README.md](./audit/README.md) for the current, prioritised audit index.
 
 ### All Audits
 See [audit/README.md](./audit/README.md) for complete index organized by:

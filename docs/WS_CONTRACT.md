@@ -16,10 +16,10 @@ This is the current source of truth for the live listener protocol implemented i
 - When unset/empty:
   - WebSocket and documents API are open (local-dev default).
 - When set:
-  - Accepted token inputs (priority order):
-    1) `?token=...` query parameter
+  - Accepted token inputs (priority order matching `server/security.py`):
+    1) `Authorization: Bearer ...` header
     2) `x-echopanel-token` header
-    3) `Authorization: Bearer ...` header
+    3) `?token=...` query parameter (server-side backward compat only)
   - Current client transport:
     - EchoPanel client sends `Authorization` + `x-echopanel-token` headers.
     - Query-token support remains server-side for backward compatibility.

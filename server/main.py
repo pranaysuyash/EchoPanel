@@ -373,6 +373,9 @@ async def health_check(request: Request) -> dict:
         
         # Deep health: provider must be available AND model warmed up
         if provider and provider.is_available and model_health.ready:
+            from server.services.rag_store import get_rag_store
+            rag_store = get_rag_store()
+            rag_status = "degraded" if rag_store._degraded else "ok"
             return {
                 "status": "ok",
                 "service": "echopanel",
@@ -383,6 +386,7 @@ async def health_check(request: Request) -> dict:
                 "load_time_ms": model_health.load_time_ms,
                 "warmup_time_ms": model_health.warmup_time_ms,
                 "process_rss_mb": model_health.process_rss_mb,
+                "rag_store": rag_status,
             }
         
         # Not ready - determine why
