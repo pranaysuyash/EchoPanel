@@ -143,8 +143,8 @@ WavLM unifies speaker verification and ASR within single pre-trained framework, 
 |-------|--------|---------------|---------------|-----------|----------|
 | tiny | 39M | ~75MB | ~15% | 99 | Fastest inference |
 | tiny.en | 39M | ~75MB | ~12% | English-only | Better English accuracy |
-| base | 74M | ~150MB | ~10% | 99 | **Current EchoPanel default** |
-| base.en | 74M | ~150MB | ~8% | English-only | Recommended for English |
+| base | 74M | ~150MB | ~10% | 99 | Multilingual, more languages |
+| base.en | 74M | ~150MB | ~8% | English-only | **Current EchoPanel default** |
 | small | 244M | ~500MB | ~6% | 99 | Good quality/speed balance |
 | small.en | 244M | ~500MB | ~5% | English-only | Best small model |
 | medium | 769M | ~1.5GB | ~4% | 99 | High accuracy |
@@ -203,6 +203,17 @@ WavLM unifies speaker verification and ASR within single pre-trained framework, 
 - **Voxtral-Mini-4B-Realtime** is the top candidate for v0.3 streaming upgrade
 - Apache 2.0 license means full commercial freedom
 - Sub-200ms latency is competitive with cloud APIs
+
+> **EchoPanel Platform Note**: vLLM (used for `voxtral_official` provider) does **not** support Apple Silicon / Metal GPU. On macOS, vLLM runs on CPU only (very slow). Use `voxtral_realtime` (voxtral.c binary, Metal-native) for macOS deployments instead.
+
+**EchoPanel Provider Mapping:**
+
+| Provider ID | Backend | Platform | GPU | How to enable |
+|-------------|---------|----------|-----|---------------|
+| `voxtral_official` | vLLM HTTP API | Linux + CUDA | NVIDIA | `ECHOPANEL_ASR_PROVIDER=voxtral_official` + vLLM server running |
+| `voxtral_realtime` | voxtral.c binary | macOS + Metal **and** Linux | Metal / CUDA | `ECHOPANEL_ASR_PROVIDER=voxtral_realtime` + `voxtral.c` binary in PATH |
+
+See [VOXTRAL_VLLM_SETUP_GUIDE.md](./VOXTRAL_VLLM_SETUP_GUIDE.md) for Linux/CUDA setup.
 
 ---
 
@@ -630,9 +641,157 @@ Provides open-source audio language capabilities with **Apache 2.0 licensing** e
 
 ## 8. VAD & Diarization (The Glue Layer)
 
+### 8.1 VAD Model Comparison (Updated March 2026)
+
+| Model | Size | License | RTF (CPU) | TPR @5%FPR | Latency | Python | Platforms |
+|-------|------|---------|-----------|------------|---------|--------|-----------|
+| **FireRedVAD** | ~few MB | Apache 2.0 | Low (DFSMN) | **F1 97.57%, AUC 99.60%** | 10ms frames | ✅ | Linux/macOS/Win (16kHz PCM) |
+| **TEN VAD** | 306KB lib | Apache 2.0 | **0.0008** (est.) | **>Silero** (PR curve) | 10–16ms frames | ✅ (Linux x64) | Linux/Win/macOS/Android/iOS/WASM |
+| **Silero VAD** | ~2MB | MIT | 0.004 | 87.7% TPR @5% FPR | 1ms/chunk (ONNX) | ✅ | All |
+| **Cobra VAD** | Tiny | Proprietary | **0.0005** | **98.9% TPR @5% FPR** | <1ms | ✅ (SDK) | All (SDK) |
+| **WebRTC VAD** | Minimal | BSD | 0.0001 | ~60–70% | <1ms | ✅ | All |
+| **pyannote segmentation-3.0** | ~17MB | MIT (gated HF) | Moderate | High (diarization-class) | ~100ms | ✅ | GPU recommended |
+
+---
+
+#### 8.1.1 TEN VAD (TEN-framework) — **NEW, Recommended Upgrade** ⭐
+
+> **Key Discovery (May 2025)**: TEN VAD is a fresh Apache 2.0 open-source VAD from the TEN Agent ecosystem that outperforms Silero VAD on precision-recall curves across LibriSpeech, GigaSpeech, and DNS Challenge data.
+
+| Attribute | Specification |
+|-----------|--------------|
+| Version | v2 (GitHub: `TEN-framework/ten-vad`, Releases Jul 2025) |
+| Model Size | 306KB (library) |
+| License | **Apache 2.0** |
+| Architecture | ONNX-based neural VAD |
+| Sample Rate | 16kHz input (hop: 10ms/160 samples or 16ms/256 samples) |
+| Bindings | Python, C/C++, Java (JNI), Go, JavaScript/WASM, Rust (Apache 2.0) |
+| Platforms | Linux x64, Windows, macOS, Android, iOS, Web (WASM) |
+
+**Performance Claims vs Silero (tested on open testset):**
+- **Higher precision-recall**: Beats Silero on PR curves across all thresholds (test set released in repo)
+- **Faster end-of-speech detection**: Silero suffers 200–500ms delay at speech-to-non-speech transitions; TEN VAD detects transitions immediately
+- **Short silence handling**: Silero misses short pauses (e.g., 6.5–7.0s intra-utterance silences); TEN VAD handles them correctly
+- **~48% faster CPU than Silero**: Lower RTF across 5 distinct CPU platforms tested by TEN team
+- **Smaller library**: 306KB vs. 2MB+ for Silero (+ torch dependency)
+
+
+**Real-World Validation (LiveCap CLI benchmark, March 2026)**:
+> "TEN VAD reaches the best final CER on 3/4 Japanese ASR engines, wins on EN qwen3asr (3.61% WER). Same ASR, same optimization pipeline — different VAD → different performance ceiling."
+> — Community benchmark comparing same-ASR-different-VAD configurations
+
+**Why Speed Matters for EchoPanel**: VAD runs on every chunk before ASR inference. A 48% faster VAD directly reduces the pre-filter overhead in `vad_asr_wrapper.py`, improving perceived latency especially at degrade ladder WARNING level.
+
+**Integration Notes:**
+```python
+# pip install ten-vad  (Linux x64 Python binding available)
+import ten_vad
+vad = ten_vad.TenVad(hop_size=160)  # 10ms @ 16kHz
+prob = vad.process(pcm_int16_chunk)
+is_speech = prob > 0.5  # threshold is tunable
+```
+
+**Limitations:**
+- Python binding officially supports Linux x64 only (macOS Python binding not yet released as of Mar 2026); C/ONNX model runs on macOS natively via C extension
+- WASM build available for browser deployment
+- Smaller community than Silero (12 contributors, 2 releases as of Mar 2026)
+
+**EchoPanel Verdict**: **Tier 1 — good primary VAD on Linux; fallback candidate on macOS.** The torch.hub dependency in current Silero integration (`vad_asr_wrapper.py:54`) is a heavyweight cold-start; TEN VAD's ONNX model loads in milliseconds. *See F-010 in review report.*
+
+---
+
+#### 8.1.2 Cobra VAD (Picovoice) — Benchmark Leader, Proprietary
+
+| Attribute | Specification |
+|-----------|--------------|
+| Version | V2.1 (September 26, 2025) |
+| License | **Proprietary** — Free for non-commercial; $6,000/yr (Foundation), $30,000+/yr (Enterprise) |
+| RTF | 0.0005 (1 hour of audio processed in 1.8 seconds, 0.05% CPU) |
+| TPR @5% FPR | **98.9%** (vs. Silero 87.7%) |
+| TPR @1% FPR | **95%** (vs. Silero 80.4%) |
+| V2.1 Delta | False alarms reduced by 1/5 at 95% TPR, no runtime cost increase |
+
+**EchoPanel Verdict**: ❌ **Ruled out for production use.** Commercial license starts at $6K/year, incompatible with EchoPanel's open-source/self-hosted philosophy. Useful only as an accuracy reference baseline in benchmarks. Document the 98.9% TPR as the target ceiling for open-source alternatives to aim for.
+
+---
+
+#### 8.1.3 Silero VAD (Current Implementation) — Retain as Fallback
+
+| Attribute | Specification |
+|-----------|--------------|
+| License | MIT |
+| RTF | 0.004 (Python); ~0.001 (ONNX) |
+| TPR @5% FPR | 87.7% |
+| Dependency | PyTorch (torch.hub download) |
+
+**EchoPanel Status**: Currently integrated in `vad_asr_wrapper.py` as the only VAD. Works well but has torch dependency overhead (~1–3s cold-start) and misses short intra-utterance pauses. Retain as fallback for macOS Python environments where TEN VAD / FireRedVAD Python bindings are not yet available.
+
+---
+
+#### 8.1.4 FireRedVAD (FireRedTeam) — **SOTA Multilingual, New Top Candidate** 🔥
+
+> **Key Discovery (March 2026)**: FireRedVAD is an industrial-grade SOTA VAD from FireRedTeam that claims to outperform Silero, TEN VAD, FunASR-VAD, and WebRTC-VAD on a 102-language benchmark. Uniquely, it also handles Audio Event Detection (speech, singing, music) — a superset of standard VAD.
+
+| Attribute | Specification |
+|-----------|--------------|
+| Repo | `FireRedTeam/FireRedVAD` (GitHub) |
+| HuggingFace | `FireRedTeam/FireRedVAD` |
+| License | **Apache 2.0** |
+| Architecture | DFSMN (Deep-FSMN) — a lightweight feedforward sequential memory network |
+| Sample Rate | 16kHz mono PCM (ffmpeg preprocessing step provided) |
+| Languages | **100+** (evaluated on FLEURS-VAD-102: 102 languages) |
+| Modes | Non-streaming VAD, **Streaming VAD**, Non-streaming AED |
+| AED events | Speech, Singing, Music (simultaneous detection) |
+| Python | ✅ Full Python API (`FireRedVad`, `FireRedStreamVad`, `FireRedAed`) |
+| Model hosting | HuggingFace + ModelScope |
+
+**FLEURS-VAD-102 Benchmark Results (102 languages, 9,443 audio files):**
+
+| Metric | FireRedVAD | TEN VAD | Silero VAD | FunASR VAD | WebRTC VAD |
+|--------|-----------|---------|------------|------------|------------|
+| **AUC-ROC** | **99.60%** | — | <99.60% | — | — |
+| **F1** | **97.57%** | — | <97.57% | — | — |
+| **False Alarm** | **2.69%** | — | Higher | 44.03% ⚠️ | — |
+| **Miss Rate** | **3.62%** | — | Higher | Low (at cost of FA) | — |
+
+*Note: FunASR-VAD achieves low Miss Rate at the cost of 44.03% false alarm rate — massively over-predicts speech.*
+
+**Streaming API (for EchoPanel integration):**
+```python
+from fireredvad import FireRedStreamVad, FireRedStreamVadConfig
+
+vad_config = FireRedStreamVadConfig(
+    use_gpu=False,
+    smooth_window_size=5,
+    speech_threshold=0.4,   # tunable
+    min_speech_frame=8,
+    min_silence_frame=20,
+)
+stream_vad = FireRedStreamVad.from_pretrained(
+    "pretrained_models/FireRedVAD/Stream-VAD", vad_config
+)
+frame_results, result = stream_vad.detect_full("audio.wav")
+```
+
+**Bonus — Audio Event Detection (AED):** FireRedVAD goes beyond VAD to detect speech, singing, and music simultaneously. Useful for EchoPanel's future music playing / background audio classification features.
+
+**Limitations:**
+- Heavier setup than TEN VAD (requires `git clone` + `pip install -r requirements.txt` + HF model download; not a single `pip install`)
+- No single-file pip package yet (as of Mar 2026, 166 stars — early community)
+- DFSMN model size not explicitly stated; likely larger than TEN VAD's 306KB
+- No WASM / mobile bindings yet
+
+**EchoPanel Verdict**: **Tier 1 — strongest open-source VAD candidate overall.** Multilingual coverage (100+), streaming support, and SOTA benchmark results make this the recommended primary VAD on both Linux *and* macOS (pure Python, no platform restriction). Integrate as `ECHOPANEL_VAD_BACKEND=firered`. Add TEN VAD as secondary option for ultra-low-resource scenarios (edge/IoT). Silero to remain fallback only.
+
+---
+
+### 8.2 Existing VAD & Diarization Models
+
 | Model | Category | Use Case | Notes |
 |-------|----------|----------|-------|
-| **Silero VAD** | Voice Activity Detection | Chunking for streaming | Widely used lightweight VAD |
+| **FireRedVAD** | Voice Activity Detection | **Primary VAD** (streaming + AED) | 🔥 SOTA — Apache 2.0, 100+ langs, beats Silero+TEN VAD+FunASR+WebRTC on FLEURS-102 |
+| **TEN VAD** | Voice Activity Detection | Secondary — ultra-low-resource / edge | Apache 2.0, 306KB, 48% faster than Silero, real-world validated |
+| **Silero VAD** | Voice Activity Detection | Fallback for macOS | MIT, torch dependency, current implementation |
 | **pyannote.audio** | Speaker Diarization | "Who said what" | Common baseline, used by WhisperX |
 | **WhisperX** | Integrated | ASR + timestamps + diarization | Convenience wrapper |
 
@@ -663,61 +822,25 @@ Provides open-source audio language capabilities with **Apache 2.0 licensing** e
 
 ## 10. February 2026 Twitter/X Discoveries
 
-### 10.1 Major Foundation Model Releases with Twitter/X Traction
+> **Scope note (updated 2026-03-06):** This section originally contained detailed coverage of general-purpose LLM releases (Grok 3, Qwen3-Coder, ByteDance Seed, DeepSeek). Those models have no direct audio/ASR relevance to EchoPanel. They have been condensed below; full details belong in a separate `LLM_LANDSCAPE_2026-02.md`.
 
-#### 10.1.1 xAI/Grok Ecosystem
+### 10.1 Audio-Relevant Community Signals
 
-**Grok 3 Core Model**:
-- Approximately 100,000 Nvidia H100 GPUs (Colossus supercomputing infrastructure)
-- 10× increase over predecessor's training compute
-- Multimodal processing: text, image, audio
-- Direct access to live X post streams for real-time analysis
-- Competitive claims against GPT-5 series and DeepSeek
+| Model | Audio Relevance | Community Signal |
+|-------|----------------|------------------|
+| Qwen2-Audio / Qwen3-ASR | ✅ Direct — audio-language model evaluated in LiveCap CLI | Strong demand for local Asian-language ASR |
+| Mistral Voxtral | ✅ Direct — EchoPanel provider implemented | Major ".ai with actual audio" community moment |
+| TEN VAD | ✅ Direct — new VAD candidate | Developer testimonials: beats Silero in real-world streaming |
+| FireRedVAD | ✅ Direct — SOTA VAD candidate | Community flagging as better-than-popular alternative |
+| gpt-audio (OpenAI) | ✅ Indirect — API cost baseline | Drives API vs local cost analysis |
 
-**Grok 3 Variants**:
+### 10.2 Non-Audio Releases (Summarised)
 
-| Variant | Primary Focus | Key Capability | Target Deployment |
-|---------|--------------|----------------|-------------------|
-| Grok 3 DeepSearch | Research and synthesis | Iterative multi-source retrieval with transparent reasoning chains | Academic research, competitive intelligence |
-| Grok 3 Think | Reasoning transparency | Extended analysis with explicit step-by-step methodology | Educational, complex problem-solving |
-| Grok-3 Mini | Efficiency optimization | Core capabilities with 70% computational reduction | Mobile, edge, high-throughput |
-
-**Pricing**: X Premium+ at $40/month, SuperGrok at $30/month, SuperGrok Heavy at $300/month.
-
----
-
-#### 10.1.2 Alibaba Qwen Family
-
-**Qwen3-Coder-Next (Released February 3-4, 2026)**:
-
-| Specification | Value | Competitive Significance |
-|--------------|-------|-------------------------|
-| Total Parameters | 80 billion | Comparable to GPT-3.5 scale |
-| Active Parameters (per forward pass) | 3 billion | Matches small specialized models |
-| Sparsity Ratio | 26.7:1 | Among highest in production models |
-| Context Window | 256,000 tokens | Industry-leading for coding models |
-| SWE-Bench Verified Performance | >70% | Matches models with 10-20× active parameters |
-| Training Tasks | 800,000+ verifiable coding scenarios | Environment-interactive learning |
-| Throughput Improvement | ~10× | Repository-scale task efficiency |
-
-**Twitter/X Community Response**: Emphatic enthusiasm for "perfect size" (尺寸完美) for local execution, strong demand for portable implementations.
-
-**Qwen3-Max-Thinking**: Flagship reasoning model achieving reported performance exceeding "Humanity's Last Exam". Benchmark claims: 92.8% GPQA Diamond, 91.5% IMO-AnswerBench, 98.0% HMMT February 2025.
-
----
-
-#### 10.1.3 ByteDance/Seed Team (February 2026 Wave)
-
-| Model | Scheduled Release | Primary Capability | Strategic Positioning |
-|-------|------------------|-------------------|----------------------|
-| Doubao 2.0 | Mid-February 2026 | Large language model refresh | Consumer AI assistant (163M MAU) |
-| Seedream 5.0 | February 2026 | 4K image generation, 14 reference images | Professional creative workflows |
-| Seeddance 2.0 | February 2026 | Video generation with temporal consistency | Short-form content creation |
-| Seedream 4.5 Edit | February 2026 | High-end image editing | Precise creative control |
-
-RMB 160 billion (~$23 billion) 2026 capital expenditure with approximately half allocated to AI semiconductors.
-
----
+The following general LLM releases had high Twitter/X traction in February 2026 but are **out of scope** for this audio AI research document:
+- **Grok 3** (xAI): 100K H100 GPU training, Grok-3 Mini efficient variant
+- **Qwen3-Coder-Next** (Alibaba): 80B total / 3B active MoE coding model, 256K context
+- **ByteDance Seed wave**: Doubao 2.0, Seedream 5.0, Seeddance 2.0
+- **DeepSeek V4** and related distillations
 
 #### 10.1.4 DeepSeek V4 (Anticipated Mid-February 2026)
 
@@ -872,7 +995,10 @@ You can offer:
 | Gemma 3n audio | Audio-LM | Local | Google | — | Moderate | Apache 2.0 | 2 |
 | SeamlessM4T v2 | Translation | Local | Meta | — | GPU | CC-BY-NC | 2 |
 | TranslateGemma | Translation | Local | Google | — | Moderate | Apache 2.0 | 2 |
-| Silero VAD | VAD | Local | GitHub | — | Minimal | MIT | 1 |
+| FireRedVAD | VAD + AED | Local | GitHub (FireRedTeam) / HuggingFace | — | Minimal CPU (DFSMN) | Apache 2.0 | 1 |
+| TEN VAD | VAD | Local | GitHub (TEN-framework) | 306KB | Minimal CPU | Apache 2.0 | 1 |
+| Cobra VAD | VAD | Local/API | Picovoice | Tiny | Minimal CPU | Proprietary ($6K/yr) | 3 |
+| Silero VAD | VAD | Local | GitHub | ~2MB | Minimal | MIT | 1 |
 | pyannote.audio | Diarization | Local | GitHub | — | Moderate | MIT | 1 |
 
 ---
@@ -894,21 +1020,21 @@ model_id,family,version,local_or_api,category,tasks_supported,languages,streamin
 
 ### Phase 1: Core ASR Infrastructure (Months 1-2)
 
-| Priority | Model | Capability | Success Criteria |
-|----------|-------|------------|------------------|
-| P0-1 | faster-whisper base.en | Baseline ASR | <10% WER clean, <15% noisy |
-| P0-2 | Silero VAD | Streaming chunking | Reliable voice detection |
-| P0-3 | WhisperX (optional) | Diarization glue | Speaker labels working |
-| P0-4 | pyannote.audio | Speaker diarization | "Who said what" annotations |
+| Status | Priority | Model | Capability | Success Criteria |
+|--------|----------|-------|------------|------------------|
+| ✅ **Done** | P0-1 | faster-whisper base.en | Baseline ASR | <10% WER clean, <15% noisy |
+| ✅ **Done** | P0-2 | Silero VAD → **FireRedVAD** (upgrade pending) | Streaming chunking | Reliable voice detection |
+| ❌ Not started | P0-3 | WhisperX (optional) | Diarization glue | Speaker labels working |
+| ⚠️ **Partial** | P0-4 | pyannote.audio | Speaker diarization | `diarization.py` exists but not wired into streaming pipeline |
 
 ### Phase 2: Streaming & Quality Upgrade (Months 3-4)
 
-| Priority | Model | Capability | Evaluation Criteria |
-|----------|-------|------------|-------------------|
-| P1-1 | Voxtral-Mini-4B-Realtime | Streaming ASR | <200ms latency, Apache 2.0 |
-| P1-2 | faster-whisper large-v3-turbo int8 | Quality upgrade | <5% WER |
-| P1-3 | Step-Audio 2 mini | End-to-end voice agent | Benchmark validation |
-| P1-4 | gpt-audio (API) | Comparison baseline | Latency, accuracy, cost analysis |
+| Status | Priority | Model | Capability | Evaluation Criteria |
+|--------|----------|-------|------------|-------------------|
+| ✅ **Implemented** — evaluation in progress | P1-1 | Voxtral-Mini-4B-Realtime | Streaming ASR | <200ms latency, Apache 2.0 |
+| ❌ Not started | P1-2 | faster-whisper large-v3-turbo int8 | Quality upgrade | <5% WER |
+| ❌ Not started | P1-3 | Step-Audio 2 mini | End-to-end voice agent | Benchmark validation |
+| ❌ Not started | P1-4 | gpt-audio (API) | Comparison baseline | Latency, accuracy, cost analysis |
 
 ### Phase 3: Full Audio Capabilities (Months 5-6)
 
@@ -936,7 +1062,7 @@ model_id,family,version,local_or_api,category,tasks_supported,languages,streamin
 
 | Use Case | API Cost/Month | Local Cost (One-Time) | Break-Even Point |
 |----------|---------------|----------------------|------------------|
-| 100 hours/month ASR | $36 (Whisper API) | $0 (base.en already bundled) | Immediate |
+| 100 hours/month ASR | $36 (Whisper API) | $0 (base.en auto-downloaded on first launch, ~150MB from HuggingFace; no pre-bundled weights) | Immediate |
 | 1,000 hours/month ASR | $360 (Whisper API) | ~$50 (faster-whisper large-v3) | <1 week |
 | 10,000 hours/month ASR | $3,600 (Whisper API) | ~$500 (GPU infra) | <5 days |
 

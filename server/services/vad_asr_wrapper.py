@@ -1,12 +1,14 @@
 """
-VAD ASR Wrapper (v0.1)
+VAD ASR Wrapper (v0.2)
 
 Wraps any ASR provider with Voice Activity Detection (VAD) pre-filtering.
 Silence is detected and skipped before being sent to the ASR model,
 saving compute and improving latency.
 
 Features:
-    - Silero VAD integration (lazy-loaded)
+    - Pluggable VAD backend: FireRedVAD (SOTA), TEN VAD (lightweight), Silero (fallback)
+    - Configurable backend via ECHOPANEL_VAD_BACKEND env var
+    - Automatic fallback chain: firered → ten_vad → silero
     - Configurable silence threshold and minimum speech duration
     - Statistics tracking (silence ratio, frames skipped)
     - Drop-in wrapper for any ASRProvider
@@ -14,18 +16,17 @@ Features:
 Usage:
     from server.services.vad_asr_wrapper import VADASRWrapper
     from server.services.provider_faster_whisper import FasterWhisperProvider
-    
-    # Wrap any provider
+
     base_provider = FasterWhisperProvider(config)
-    provider = VADASRWrapper(
-        base_provider,
-        threshold=0.5,
-        min_speech_duration_ms=250,
-    )
-    
-    # Use normally
+    provider = VADASRWrapper(base_provider, threshold=0.5, vad_backend="firered")
+
     async for segment in provider.transcribe_stream(pcm_stream):
         print(segment.text)
+
+VAD Backend Selection (ECHOPANEL_VAD_BACKEND):
+    firered  — FireRedVAD (SOTA, Apache 2.0, 100+ langs, streaming+AED) [DEFAULT]
+    ten_vad  — TEN VAD (306KB, 48% faster CPU, Apache 2.0, Linux x64 Python binding)
+    silero   — Silero VAD (MIT, PyTorch, current fallback)
 """
 
 from __future__ import annotations
@@ -41,15 +42,26 @@ from .asr_providers import ASRProvider, ASRConfig, ASRSegment, AudioSource
 
 logger = logging.getLogger(__name__)
 
-# Silero VAD lazy loading
-_vad_model = None
-_vad_utils = None
+# ---------------------------------------------------------------------------
+# VAD Backend Abstraction
+# ---------------------------------------------------------------------------
 
-def _load_vad_model():
-    """Lazy load Silero VAD model."""
-    global _vad_model, _vad_utils
-    if _vad_model is None:
-        try:
+class _VADBackend:
+    """Abstract base for VAD backends. Each backend implements has_speech()."""
+
+    def has_speech(self, audio_float: "np.ndarray", sample_rate: int,
+                   threshold: float, min_speech_ms: int, min_silence_ms: int) -> bool:
+        raise NotImplementedError
+
+
+class _SileroVADBackend(_VADBackend):
+    """Silero VAD backend (MIT, PyTorch dependency). Fallback backend."""
+
+    _model = None
+    _utils = None
+
+    def _load(self):
+        if self._model is None:
             import torch
             model, utils = torch.hub.load(
                 repo_or_dir="snakers4/silero-vad",
@@ -57,13 +69,216 @@ def _load_vad_model():
                 force_reload=False,
                 onnx=False,
             )
-            _vad_model = model
-            _vad_utils = utils
-            logger.info("Silero VAD model loaded")
+            _SileroVADBackend._model = model
+            _SileroVADBackend._utils = utils
+            logger.info("[VAD] Silero VAD model loaded")
+        return self._model, self._utils
+
+    def has_speech(self, audio_float, sample_rate, threshold,
+                   min_speech_ms, min_silence_ms) -> bool:
+        try:
+            model, utils = self._load()
+            (get_speech_timestamps, *_) = utils
+            import torch
+            audio_tensor = torch.from_numpy(audio_float)
+            timestamps = get_speech_timestamps(
+                audio_tensor, model,
+                sampling_rate=sample_rate,
+                threshold=threshold,
+                min_speech_duration_ms=min_speech_ms,
+                min_silence_duration_ms=min_silence_ms,
+            )
+            return len(timestamps) > 0
         except Exception as e:
-            logger.warning(f"Failed to load Silero VAD: {e}")
-            raise
-    return _vad_model, _vad_utils
+            logger.warning(f"[VAD] Silero detection failed: {e}")
+            return True  # fail-open
+
+
+class _FireRedVADBackend(_VADBackend):
+    """FireRedVAD backend (Apache 2.0, SOTA on FLEURS-VAD-102, 100+ languages).
+
+    Requires: pip install -r <FireRedVAD repo>/requirements.txt
+    + PYTHONPATH pointing to the FireRedVAD repo root.
+    See docs/ASR_MODEL_RESEARCH_2026-02.md §8.1.4 for setup.
+    """
+
+    _stream_vad = None
+    _loaded = False
+    _available = None  # None=unknown, True/False after first attempt
+
+    def _load(self):
+        if _FireRedVADBackend._loaded:
+            return _FireRedVADBackend._stream_vad
+        try:
+            from fireredvad import FireRedStreamVad, FireRedStreamVadConfig  # type: ignore
+            import os
+            model_dir = os.getenv(
+                "ECHOPANEL_FIRERED_MODEL_DIR",
+                "pretrained_models/FireRedVAD/Stream-VAD",
+            )
+            vad_config = FireRedStreamVadConfig(
+                use_gpu=False,
+                smooth_window_size=5,
+                speech_threshold=0.4,   # default; overridden per-call via threshold arg
+                min_speech_frame=8,
+                max_speech_frame=2000,
+                min_silence_frame=20,
+                chunk_max_frame=30000,
+            )
+            _FireRedVADBackend._stream_vad = FireRedStreamVad.from_pretrained(model_dir, vad_config)
+            _FireRedVADBackend._loaded = True
+            _FireRedVADBackend._available = True
+            logger.info("[VAD] FireRedVAD Stream-VAD loaded from %s", model_dir)
+        except Exception as e:
+            _FireRedVADBackend._loaded = True  # don't retry every call
+            _FireRedVADBackend._available = False
+            logger.warning("[VAD] FireRedVAD unavailable (%s) — will fall back", e)
+        return _FireRedVADBackend._stream_vad
+
+    def has_speech(self, audio_float, sample_rate, threshold,
+                   min_speech_ms, min_silence_ms) -> bool:
+        vad = self._load()
+        if vad is None:
+            return True  # fail-open if model not loaded
+        try:
+            import numpy as np
+            import io, wave, struct
+            # FireRedStreamVad.detect_full expects a wav path; use in-memory bytes via
+            # detect_frames for streaming. Fallback: convert float32 to PCM bytes and
+            # check if any timestamps returned.
+            pcm_int16 = (audio_float * 32768.0).astype(np.int16)
+            # Use frame-level detection on the chunk
+            frame_results, result = vad.detect_full_from_array(
+                pcm_int16, sample_rate=sample_rate
+            )
+            timestamps = result.get("timestamps", [])
+            return len(timestamps) > 0
+        except AttributeError:
+            # Older API: detect_full(wav_path) only. Use a temp file.
+            try:
+                import tempfile, soundfile as sf
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    sf.write(tmp.name, audio_float, sample_rate)
+                    _, result = vad.detect_full(tmp.name)
+                    return len(result.get("timestamps", [])) > 0
+            except Exception as e:
+                logger.warning("[VAD] FireRedVAD detect failed: %s", e)
+                return True
+        except Exception as e:
+            logger.warning("[VAD] FireRedVAD detect failed: %s", e)
+            return True
+
+
+class _TenVADBackend(_VADBackend):
+    """TEN VAD backend (Apache 2.0, 306KB, 48% faster CPU than Silero).
+
+    Python binding: Linux x64 only (pip install ten-vad).
+    C/ONNX binary works on macOS — use _SileroVADBackend on macOS until
+    Python binding is released.
+    """
+
+    _vad = None
+    _loaded = False
+    _available = None
+    _HOP_SIZE = 160  # 10ms @ 16kHz
+
+    def _load(self):
+        if _TenVADBackend._loaded:
+            return _TenVADBackend._vad
+        try:
+            import ten_vad  # type: ignore
+            _TenVADBackend._vad = ten_vad.TenVad(hop_size=self._HOP_SIZE)
+            _TenVADBackend._loaded = True
+            _TenVADBackend._available = True
+            logger.info("[VAD] TEN VAD loaded (hop_size=%d)", self._HOP_SIZE)
+        except Exception as e:
+            _TenVADBackend._loaded = True
+            _TenVADBackend._available = False
+            logger.warning("[VAD] TEN VAD unavailable (%s) — will fall back", e)
+        return _TenVADBackend._vad
+
+    def has_speech(self, audio_float, sample_rate, threshold,
+                   min_speech_ms, min_silence_ms) -> bool:
+        vad = self._load()
+        if vad is None:
+            return True  # fail-open
+        try:
+            import numpy as np
+            pcm_int16 = (audio_float * 32768.0).astype(np.int16)
+            results = []
+            for i in range(0, len(pcm_int16) - self._HOP_SIZE + 1, self._HOP_SIZE):
+                frame = pcm_int16[i:i + self._HOP_SIZE]
+                prob = vad.process(frame)
+                results.append(prob > threshold)
+            return any(results)
+        except Exception as e:
+            logger.warning("[VAD] TEN VAD detect failed: %s", e)
+            return True
+
+
+def _build_vad_backend(backend_name: str) -> _VADBackend:
+    """Resolve backend name to a VADBackend instance with cascading fallback.
+
+    Priority order when backend_name="firered":
+        FireRedVAD → TEN VAD → Silero
+    When backend_name="ten_vad":
+        TEN VAD → Silero
+    When backend_name="silero":
+        Silero (no fallback)
+    """
+    candidates: list
+    if backend_name == "firered":
+        candidates = [_FireRedVADBackend, _TenVADBackend, _SileroVADBackend]
+    elif backend_name == "ten_vad":
+        candidates = [_TenVADBackend, _SileroVADBackend]
+    else:  # "silero" or unknown
+        candidates = [_SileroVADBackend]
+
+    for cls in candidates:
+        backend = cls()
+        # Eagerly probe availability for firered/ten_vad so we log fallback now
+        if cls in (_FireRedVADBackend, _TenVADBackend):
+            backend._load()  # triggers availability detection
+            if backend.__class__._available:
+                logger.info("[VAD] Using %s backend", cls.__name__)
+                return backend
+            logger.info("[VAD] %s not available, trying next backend", cls.__name__)
+        else:
+            logger.info("[VAD] Using %s backend", cls.__name__)
+            return backend
+    return _SileroVADBackend()  # absolute fallback
+
+
+# Module-level default backend (lazy, set on first SmartVADRouter init)
+_default_backend: Optional[_VADBackend] = None
+
+
+def _get_default_backend() -> _VADBackend:
+    """Return the module-level backend, building it once from the env var."""
+    global _default_backend
+    if _default_backend is None:
+        import os
+        backend_name = os.getenv("ECHOPANEL_VAD_BACKEND", "firered")
+        _default_backend = _build_vad_backend(backend_name)
+    return _default_backend
+
+
+# ---------------------------------------------------------------------------
+# Legacy Silero helpers (kept for backward compat if anything calls them directly)
+# ---------------------------------------------------------------------------
+
+_vad_model = None  # legacy alias
+_vad_utils = None  # legacy alias
+
+
+def _load_vad_model():
+    """Lazy load Silero VAD model (legacy compat — use _SileroVADBackend directly)."""
+    backend = _SileroVADBackend()
+    model, utils = backend._load()
+    global _vad_model, _vad_utils
+    _vad_model, _vad_utils = model, utils
+    return model, utils
+
 
 
 @dataclass
@@ -104,9 +319,10 @@ class VADStats:
 
 class VADASRWrapper(ASRProvider):
     """Wraps an ASR provider with VAD pre-filtering.
-    
-    This wrapper intercepts the audio stream, detects silence using Silero VAD,
-    and only sends speech segments to the underlying ASR provider.
+
+    Intercepts the audio stream, detects silence using the configured VAD
+    backend (FireRedVAD / TEN VAD / Silero), and only sends speech segments
+    to the underlying ASR provider.
     """
 
     def __init__(
@@ -116,15 +332,17 @@ class VADASRWrapper(ASRProvider):
         min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 100,
         sample_rate: int = 16000,
+        vad_backend: Optional[str] = None,  # None → uses ECHOPANEL_VAD_BACKEND env var
     ):
         """Initialize VAD wrapper.
-        
+
         Args:
             provider: The underlying ASR provider to wrap
             threshold: VAD threshold (0.0-1.0), higher = more strict
             min_speech_duration_ms: Minimum speech duration to process
             min_silence_duration_ms: Minimum silence to split segments
             sample_rate: Expected sample rate (must be 8000 or 16000 for Silero)
+            vad_backend: "firered", "ten_vad", or "silero". None = env var default.
         """
         super().__init__(provider.config)
         self._provider = provider
@@ -134,11 +352,16 @@ class VADASRWrapper(ASRProvider):
         self._sample_rate = sample_rate
         self._stats = VADStats()
         self._vad_available = False
-        
+
+        if vad_backend is not None:
+            self._backend = _build_vad_backend(vad_backend)
+        else:
+            self._backend = _get_default_backend()
+
         # Validate sample rate
         if sample_rate not in (8000, 16000):
             logger.warning(f"VAD works best with 8kHz or 16kHz, got {sample_rate}")
-    
+
     @property
     def name(self) -> str:
         return f"vad_{self._provider.name}"
@@ -148,63 +371,42 @@ class VADASRWrapper(ASRProvider):
         return self._provider.is_available
     
     def _check_vad_available(self) -> bool:
-        """Check if VAD is available, try to load if not."""
+        """Check if VAD backend is available, try to load if not."""
         if self._vad_available:
             return True
-        
+        # For firered/ten_vad the _load() was already triggered in _build_vad_backend.
+        # For silero we probe here.
         try:
-            _load_vad_model()
-            self._vad_available = True
-            return True
+            if isinstance(self._backend, _SileroVADBackend):
+                self._backend._load()
+            available = getattr(self._backend.__class__, '_available', True)
+            self._vad_available = available if available is not None else True
+            return self._vad_available
         except Exception as e:
             logger.warning(f"VAD not available, falling back to passthrough: {e}")
             return False
-    
+
     def _pcm_to_float(self, pcm_bytes: bytes) -> np.ndarray:
         """Convert PCM16 bytes to float32 numpy array [-1.0, 1.0]."""
-        # Convert bytes to int16 array
         audio_int16 = np.frombuffer(pcm_bytes, dtype=np.int16)
-        # Normalize to float32 [-1.0, 1.0]
         return audio_int16.astype(np.float32) / 32768.0
-    
+
     def _has_speech(self, audio_float: np.ndarray) -> bool:
-        """Check if audio contains speech using Silero VAD.
-        
-        Args:
-            audio_float: Float32 audio samples in [-1.0, 1.0]
-        
-        Returns:
-            True if speech detected, False otherwise
-        """
+        """Check if audio contains speech using the configured VAD backend."""
         if not self._check_vad_available():
-            # VAD not available, assume speech
-            return True
-        
+            return True  # fail-open
         try:
-            model, utils = _load_vad_model()
-            (get_speech_timestamps, _, _, _, _) = utils
-            
-            # Convert to torch tensor
-            import torch
-            audio_tensor = torch.from_numpy(audio_float)
-            
-            # Get speech timestamps
-            speech_timestamps = get_speech_timestamps(
-                audio_tensor,
-                model,
-                sampling_rate=self._sample_rate,
-                threshold=self._threshold,
-                min_speech_duration_ms=self._min_speech_duration_ms,
-                min_silence_duration_ms=self._min_silence_duration_ms,
+            return self._backend.has_speech(
+                audio_float,
+                self._sample_rate,
+                self._threshold,
+                self._min_speech_duration_ms,
+                self._min_silence_duration_ms,
             )
-            
-            return len(speech_timestamps) > 0
-            
         except Exception as e:
             logger.warning(f"VAD detection failed: {e}")
-            # Fall back to processing (don't drop on error)
-            return True
-    
+            return True  # fail-open
+
     async def transcribe_stream(
         self,
         pcm_stream: AsyncIterator[bytes],
@@ -371,18 +573,21 @@ class SmartVADRouter:
         provider: ASRProvider,
         vad_enabled: bool = True,
         vad_threshold: float = 0.5,
+        vad_backend: Optional[str] = None,  # None → uses ECHOPANEL_VAD_BACKEND env var
     ):
         self._provider = provider
         self._vad_enabled = vad_enabled
         self._vad_threshold = vad_threshold
+        self._vad_backend = vad_backend
         self._wrapper: Optional[VADASRWrapper] = None
-        
+
         if vad_enabled:
             self._wrapper = VADASRWrapper(
                 provider,
                 threshold=vad_threshold,
+                vad_backend=vad_backend,
             )
-    
+
     @property
     def name(self) -> str:
         return self._provider.name
@@ -401,10 +606,12 @@ class SmartVADRouter:
             self._wrapper = VADASRWrapper(
                 self._provider,
                 threshold=self._vad_threshold,
+                vad_backend=self._vad_backend,
             )
         elif not enabled:
             self._wrapper = None
-        
+
+
         logger.info(f"VAD {'enabled' if enabled else 'disabled'}")
     
     async def transcribe_stream(

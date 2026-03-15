@@ -66,9 +66,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     private let probabilityLock = NSLock()
     private var speechProbability: Float = 0.0
     private var vadThreshold: Float = 0.5  // Probability threshold for speech detection
-    private var cpuUsage: Double = 0.0
     private var cpuMonitorTimer: Timer?
-    private let cpuBudgetLimit: Double = 10.0  // Max 10% CPU usage
     private var speechChunksEmitted = 0
     private var totalChunksProcessed = 0
     private var sampleBuffersProcessed = 0
@@ -215,7 +213,8 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         cpuMonitorTimer?.invalidate()
         cpuMonitorTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.updateCPUUsage()
+            // TCK-20260303-005: Removed broken CPU usage calculation
+            // The previous implementation used uptime modulo which didn't measure actual CPU
             self.reportVADStats()
         }
     }
@@ -235,15 +234,6 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         }
     }
 
-    private func updateCPUUsage() {
-        let processInfo = ProcessInfo.processInfo
-        cpuUsage = (processInfo.systemUptime.truncatingRemainder(dividingBy: 60)) / 60.0 * 100.0 // Approximate CPU usage percent over the last minute
-        if cpuUsage > cpuBudgetLimit {
-            NSLog("⚠️ AudioCaptureManager: CPU usage (%.1f%%) exceeds budget, disabling VAD", cpuUsage)
-            vadEnabled = false
-            // Note: No model to clean up for energy-based VAD
-        }
-    }
 
     private func runVAD(on samples: [Float]) -> Bool {
         guard vadEnabled else { return true }

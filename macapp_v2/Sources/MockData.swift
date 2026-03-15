@@ -1,5 +1,13 @@
 import Foundation
 
+struct MockFlowPayload {
+    let summary: String
+    let transcript: [TranscriptItem]
+    let highlights: [Highlight]
+    let people: [Person]
+    let sessions: [Session]
+}
+
 enum MockData {
     static let sampleSessions: [Session] = [
         Session(
@@ -197,4 +205,131 @@ enum MockData {
 
     Next steps involve coordination with the DevOps team for the database migration planning.
     """
+
+    static func payload(for flow: MockFlowTrack) -> MockFlowPayload {
+        switch flow {
+        case .teamStandup:
+            return MockFlowPayload(
+                summary: sampleSummary,
+                transcript: sampleTranscript,
+                highlights: sampleHighlights,
+                people: samplePeople,
+                sessions: sampleSessions
+            )
+        case .customerEscalation:
+            let transcript = [
+                TranscriptItem(id: UUID(), speaker: "Maya (Support Lead)", text: "Escalation from Orion Labs: sync failures after yesterday's patch.", timestamp: Date().addingTimeInterval(-3400), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Ravi (Backend)", text: "Root cause looks like stale token refresh in the websocket gateway.", timestamp: Date().addingTimeInterval(-3340)),
+                TranscriptItem(id: UUID(), speaker: "Iris (Product)", text: "We need a customer update in 30 minutes with mitigation and ETA.", timestamp: Date().addingTimeInterval(-3290), actionItem: ActionItem(id: UUID(), assignee: "Iris", task: "Send customer mitigation note in 30 minutes")),
+                TranscriptItem(id: UUID(), speaker: "Ravi (Backend)", text: "Hotfix proposal: invalidate old refresh window and force re-auth once.", timestamp: Date().addingTimeInterval(-3210), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Maya (Support Lead)", text: "I'll track the top 10 affected accounts and monitor recovery trend.", timestamp: Date().addingTimeInterval(-3140), actionItem: ActionItem(id: UUID(), assignee: "Maya", task: "Monitor top 10 affected accounts"))
+            ]
+            let highlights = [
+                Highlight(id: UUID(), type: .decision, content: "Ship websocket token hotfix with forced one-time re-auth", timestamp: Date().addingTimeInterval(-3210)),
+                Highlight(id: UUID(), type: .action, content: "Iris to send mitigation and ETA update to Orion Labs", timestamp: Date().addingTimeInterval(-3290)),
+                Highlight(id: UUID(), type: .keyPoint, content: "Incident scope narrowed to stale refresh window", timestamp: Date().addingTimeInterval(-3340))
+            ]
+            let summary = """
+            Customer escalation triage focused on websocket sync failures linked to token refresh behavior.
+            The team agreed on a hotfix with forced re-auth and set immediate customer communication.
+            Monitoring ownership and a short recovery window were assigned.
+            """
+            return payloadFrom(flowTitle: flow.title, summary: summary, transcript: transcript, highlights: highlights)
+        case .hiringLoop:
+            let transcript = [
+                TranscriptItem(id: UUID(), speaker: "Anya (Hiring Manager)", text: "Candidate showed strong systems design and clear trade-off reasoning.", timestamp: Date().addingTimeInterval(-5200), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Leo (Engineering)", text: "Coding round had one bug, but debugging approach was calm and methodical.", timestamp: Date().addingTimeInterval(-5140)),
+                TranscriptItem(id: UUID(), speaker: "Nina (Product)", text: "Product sense was practical. I'd like one follow-up on stakeholder communication.", timestamp: Date().addingTimeInterval(-5060), actionItem: ActionItem(id: UUID(), assignee: "Nina", task: "Run 20-min stakeholder communication follow-up")),
+                TranscriptItem(id: UUID(), speaker: "Anya (Hiring Manager)", text: "Tentative signal is strong hire pending follow-up panel outcome.", timestamp: Date().addingTimeInterval(-4980), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Leo (Engineering)", text: "I'll draft final rubric notes before EOD.", timestamp: Date().addingTimeInterval(-4920), actionItem: ActionItem(id: UUID(), assignee: "Leo", task: "Submit final rubric notes by EOD"))
+            ]
+            let highlights = [
+                Highlight(id: UUID(), type: .decision, content: "Provisional strong-hire decision pending communication follow-up", timestamp: Date().addingTimeInterval(-4980)),
+                Highlight(id: UUID(), type: .action, content: "Nina to run communication follow-up panel", timestamp: Date().addingTimeInterval(-5060)),
+                Highlight(id: UUID(), type: .question, content: "Can candidate align executives without over-indexing on technical detail?", timestamp: Date().addingTimeInterval(-5030))
+            ]
+            let summary = """
+            Debrief converged on a strong technical signal with one communication gap to validate.
+            Team selected a focused follow-up interview rather than extending the loop.
+            """
+            return payloadFrom(flowTitle: flow.title, summary: summary, transcript: transcript, highlights: highlights)
+        case .launchWarRoom:
+            let transcript = [
+                TranscriptItem(id: UUID(), speaker: "Priya (Launch Lead)", text: "Traffic is 2.2x forecast; checkout latency is breaching p95 target.", timestamp: Date().addingTimeInterval(-1800), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Noah (Infra)", text: "Autoscaling is active, but warmup lag is causing spikes during bursts.", timestamp: Date().addingTimeInterval(-1740)),
+                TranscriptItem(id: UUID(), speaker: "Evan (Frontend)", text: "We'll temporarily disable heavy personalization module to reduce render cost.", timestamp: Date().addingTimeInterval(-1680), actionItem: ActionItem(id: UUID(), assignee: "Evan", task: "Toggle lightweight checkout experience")),
+                TranscriptItem(id: UUID(), speaker: "Priya (Launch Lead)", text: "Decision: prioritize conversion stability over personalization for this window.", timestamp: Date().addingTimeInterval(-1600), isPinned: true),
+                TranscriptItem(id: UUID(), speaker: "Noah (Infra)", text: "Infra patch ready in 12 minutes with pre-warm strategy.", timestamp: Date().addingTimeInterval(-1530), actionItem: ActionItem(id: UUID(), assignee: "Noah", task: "Deploy infra pre-warm patch"))
+            ]
+            let highlights = [
+                Highlight(id: UUID(), type: .decision, content: "Temporarily disable heavy personalization to protect conversion", timestamp: Date().addingTimeInterval(-1600)),
+                Highlight(id: UUID(), type: .action, content: "Noah to deploy pre-warm infra patch in 12 minutes", timestamp: Date().addingTimeInterval(-1530)),
+                Highlight(id: UUID(), type: .keyPoint, content: "Traffic 2.2x forecast causing checkout latency spikes", timestamp: Date().addingTimeInterval(-1800))
+            ]
+            let summary = """
+            Launch war room optimized for stability under elevated traffic.
+            Team aligned on a temporary UX trade-off while infrastructure catches up.
+            """
+            return payloadFrom(flowTitle: flow.title, summary: summary, transcript: transcript, highlights: highlights)
+        }
+    }
+
+    static func people(from transcript: [TranscriptItem], fallback: [Person] = samplePeople) -> [Person] {
+        guard !transcript.isEmpty else { return fallback }
+
+        var counts: [String: Int] = [:]
+        for item in transcript {
+            counts[item.speaker, default: 0] += 1
+        }
+
+        return counts
+            .sorted { $0.value > $1.value }
+            .map { speaker, mentions in
+                Person(id: UUID(), name: speaker, mentionCount: mentions, topics: ["Flow rehearsal", "Mock scenario"])
+            }
+    }
+
+    private static func payloadFrom(
+        flowTitle: String,
+        summary: String,
+        transcript: [TranscriptItem],
+        highlights: [Highlight]
+    ) -> MockFlowPayload {
+        let derivedPeople = people(from: transcript)
+
+        let primary = Session(
+            id: UUID(),
+            title: flowTitle,
+            startTime: Date().addingTimeInterval(-5400),
+            duration: max(900, transcript.count * 180),
+            transcript: transcript,
+            highlights: highlights
+        )
+
+        let recent = Session(
+            id: UUID(),
+            title: "\(flowTitle) Follow-up",
+            startTime: Date().addingTimeInterval(-86400),
+            duration: max(600, transcript.count * 120),
+            transcript: Array(transcript.prefix(max(2, transcript.count / 2))),
+            highlights: Array(highlights.prefix(2))
+        )
+
+        let archive = Session(
+            id: UUID(),
+            title: "\(flowTitle) Archive",
+            startTime: Date().addingTimeInterval(-172800),
+            duration: max(480, transcript.count * 100),
+            transcript: [],
+            highlights: []
+        )
+
+        return MockFlowPayload(
+            summary: summary,
+            transcript: transcript,
+            highlights: highlights,
+            people: derivedPeople,
+            sessions: [primary, recent, archive]
+        )
+    }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ReviewView: View {
+    @EnvironmentObject private var appState: AppState
     let session: Session
     @State private var selectedSection: ReviewSection = .summary
     
@@ -23,7 +24,7 @@ struct ReviewView: View {
                 }
                 
                 Section("Other Sessions") {
-                    ForEach(MockData.sampleSessions.dropFirst()) { session in
+                    ForEach(appState.sessions.filter { $0.id != session.id }) { session in
                         Label(session.title, systemImage: "clock.arrow.circlepath")
                     }
                 }
@@ -70,13 +71,13 @@ struct ReviewView: View {
                 ScrollView {
                     switch selectedSection {
                     case .summary:
-                        SummaryContent()
+                        SummaryContent(session: session, summaryText: appState.reviewSummary, people: appState.livePeople)
                     case .highlights:
-                        HighlightsContent()
+                        HighlightsContent(highlights: session.highlights)
                     case .transcript:
-                        TranscriptContent()
+                        TranscriptContent(transcript: session.transcript)
                     case .people:
-                        PeopleContent()
+                        PeopleContent(people: appState.livePeople)
                     }
                 }
             }
@@ -94,6 +95,10 @@ struct ReviewView: View {
 }
 
 struct SummaryContent: View {
+    let session: Session
+    let summaryText: String
+    let people: [Person]
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             // AI Summary
@@ -101,7 +106,7 @@ struct SummaryContent: View {
                 Label("AI Summary", systemImage: "brain")
                     .font(.headline)
                 
-                Text(MockData.sampleSummary)
+                Text(summaryText)
                     .font(.body)
                     .lineSpacing(4)
             }
@@ -113,25 +118,25 @@ struct SummaryContent: View {
             HStack(spacing: Spacing.lg) {
                 StatCard(
                     icon: "checkmark.circle",
-                    value: "4",
+                    value: "\(session.transcript.compactMap { $0.actionItem }.count)",
                     label: "Action Items"
                 )
                 
                 StatCard(
                     icon: "star",
-                    value: "3",
+                    value: "\(session.highlights.filter { $0.type == .decision }.count)",
                     label: "Key Decisions"
                 )
                 
                 StatCard(
                     icon: "person.3",
-                    value: "3",
+                    value: "\(people.count)",
                     label: "Participants"
                 )
                 
                 StatCard(
                     icon: "text.bubble",
-                    value: "12",
+                    value: "\(session.transcript.count)",
                     label: "Messages"
                 )
             }
@@ -142,7 +147,7 @@ struct SummaryContent: View {
                     .font(.headline)
                 
                 VStack(spacing: Spacing.sm) {
-                    ForEach(MockData.sampleHighlights.filter { $0.type == .action }) { action in
+                    ForEach(session.highlights.filter { $0.type == .action }) { action in
                         HStack {
                             Image(systemName: "checkmark.circle")
                                 .foregroundStyle(.blue)
@@ -188,9 +193,11 @@ struct StatCard: View {
 }
 
 struct HighlightsContent: View {
+    let highlights: [Highlight]
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(MockData.sampleHighlights) { highlight in
+            ForEach(highlights) { highlight in
                 HighlightCard(highlight: highlight)
             }
         }
@@ -199,9 +206,11 @@ struct HighlightsContent: View {
 }
 
 struct TranscriptContent: View {
+    let transcript: [TranscriptItem]
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(MockData.sampleTranscript) { item in
+            ForEach(transcript) { item in
                 TranscriptCard(item: item)
             }
         }
@@ -210,9 +219,11 @@ struct TranscriptContent: View {
 }
 
 struct PeopleContent: View {
+    let people: [Person]
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(MockData.samplePeople) { person in
+            ForEach(people) { person in
                 PersonCard(person: person)
             }
         }

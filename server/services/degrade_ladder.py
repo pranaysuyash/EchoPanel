@@ -226,6 +226,11 @@ class DegradeLadder:
                 # Recovering — check if sustained below threshold
                 return await self._maybe_recover(target_level)
             
+            # TCK-20260303-006: Check for recovery even when target_level == current_level
+            # If RTF has been sustained below recovery threshold, step up one level
+            elif self.state.level > DegradeLevel.NORMAL and target_level == self.state.level:
+                return await self._maybe_recover_at_current_level()
+            
             return self.state.level, None
 
     def _rtf_to_level(self, rtf: float) -> DegradeLevel:
@@ -276,10 +281,6 @@ class DegradeLadder:
         """Check if we can recover to a higher performance level."""
         now = time.time()
         
-        # Check if RTF has been below recovery threshold for long enough
-        if now - self.state.last_recovery_check < self.RECOVERY_WINDOW_S:
-            return self.state.level, None
-        
         # Check average RTF over recovery window
         recent_rtfs = [
             rtf for ts, rtf in self.state.rtf_history
@@ -295,8 +296,42 @@ class DegradeLadder:
             logger.debug(f"RTF avg {avg_rtf:.2f} above recovery threshold {self.thresholds.recovery}")
             return self.state.level, None
         
-        # Can recover — step up one level at a time
+        # Can recover — step up to target_level (may be multiple levels)
+        return await self._do_recover(target_level)
+    
+    async def _maybe_recover_at_current_level(self) -> Tuple[DegradeLevel, Optional[DegradeAction]]:
+        """Check if we can recover even when at target level (TCK-20260303-006).
+        
+        This handles the case where RTF is sustained good at the current level,
+        allowing step-by-step recovery even when not crossing level thresholds.
+        """
+        now = time.time()
+        
+        # Check average RTF over recovery window
+        recent_rtfs = [
+            rtf for ts, rtf in self.state.rtf_history
+            if now - ts < self.RECOVERY_WINDOW_S
+        ]
+        
+        if not recent_rtfs:
+            return self.state.level, None
+        
+        avg_rtf = sum(recent_rtfs) / len(recent_rtfs)
+        
+        # Only recover if avg RTF is comfortably below recovery threshold
+        # Use a margin to avoid flapping (e.g., 0.6 vs 0.7 threshold)
+        recovery_margin = self.thresholds.recovery * 0.85
+        if avg_rtf >= recovery_margin:
+            logger.debug(f"RTF avg {avg_rtf:.2f} not sufficiently below recovery threshold {self.thresholds.recovery} (margin: {recovery_margin:.2f})")
+            return self.state.level, None
+        
+        # Step up one level
         new_level = DegradeLevel(self.state.level - 1)
+        return await self._do_recover(new_level)
+    
+    async def _do_recover(self, new_level: DegradeLevel) -> Tuple[DegradeLevel, Optional[DegradeAction]]:
+        """Execute recovery to a new level."""
+        now = time.time()
         old_level = self.state.level
         
         self.state.level = new_level

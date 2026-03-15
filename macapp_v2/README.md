@@ -10,6 +10,7 @@ This is a visual prototype built with SwiftUI to test the new UI design before i
 - **Live recording panel** with highlights, transcript, and people tabs
 - **Review mode** for post-meeting analysis
 - **Session history** with search and management
+- **Flow Studio** for scenario-driven UX experimentation (standup, escalation, hiring, launch)
 - **Settings** with all configuration options
 - **Mock data** for realistic visual testing
 
@@ -43,6 +44,12 @@ open Package.swift
 Then press Cmd+R to run.
 
 ## Features to Test
+
+### Flow Studio
+- [ ] Switch between scenarios and verify visual tone/story changes
+- [ ] Load selected flow into Dashboard session list
+- [ ] Start live mock and validate transcript/highlights stream in over time
+- [ ] Confirm people/summary panels update per scenario
 
 ### Menu Bar
 - [ ] Icon changes based on recording state (idle/recording/paused/error)

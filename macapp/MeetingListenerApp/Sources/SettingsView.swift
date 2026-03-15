@@ -27,6 +27,8 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var lastCleanupDate: Date?
     @StateObject private var subscriptionManager = SubscriptionManager.shared
+    @StateObject private var licenseManager = LicenseManager.shared
+    @State private var showLicenseSheet = false
     
     var body: some View {
         TabView {
@@ -58,6 +60,11 @@ struct SettingsView: View {
             legalTab
                 .tabItem {
                     Label("Legal", systemImage: "doc.text")
+                }
+            
+            licenseTab
+                .tabItem {
+                    Label("License", systemImage: "key.fill")
                 }
         }
         .frame(width: 500, height: 380)
@@ -716,6 +723,80 @@ struct SettingsView: View {
     private func openSupportEmail() {
         if let url = URL(string: "mailto:support@echopanel.app") {
             NSWorkspace.shared.open(url)
+        }
+    }
+    
+    // MARK: - License Tab
+    
+    private var licenseTab: some View {
+        Form {
+            Section(header: Text("License Status")) {
+                HStack {
+                    Circle()
+                        .fill(licenseStatusColor)
+                        .frame(width: 10, height: 10)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(licenseManager.statusMessage)
+                            .font(.body)
+                        
+                        if let maskedKey = licenseManager.maskedLicenseKey {
+                            Text("Key: \(maskedKey)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let lastValidated = licenseManager.lastValidated {
+                            Text("Last validated: \(lastValidated, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+            
+            Section {
+                Button("Manage License") {
+                    showLicenseSheet = true
+                }
+                .sheet(isPresented: $showLicenseSheet) {
+                    LicenseView {
+                        showLicenseSheet = false
+                    }
+                    .frame(minWidth: 450, minHeight: 500)
+                }
+            }
+            
+            Section(header: Text("About Licensing"), footer: Text("Each license is valid for one user. If you need to transfer your license to a different Mac, clear the license here and re-enter it on the new device.")) {
+                Link("Purchase a License", destination: URL(string: "https://gumroad.com")!)
+                    .font(.caption)
+                
+                if licenseManager.state.isValid {
+                    Button("Clear License") {
+                        licenseManager.clearLicense()
+                    }
+                    .foregroundColor(.red)
+                    .font(.caption)
+                }
+            }
+        }
+        .padding()
+        .frame(height: 320)
+    }
+    
+    private var licenseStatusColor: Color {
+        switch licenseManager.state {
+        case .valid:
+            return .green
+        case .invalid:
+            return .red
+        case .validating:
+            return .yellow
+        case .noLicense, .unknown:
+            return .gray
         }
     }
 }

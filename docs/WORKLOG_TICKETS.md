@@ -1,6 +1,6 @@
 # EchoPanel Worklog Tickets — Current Status
 
-**Last Updated:** 2026-02-17  
+**Last Updated:** 2026-03-03 (v2 UI Components Backlog Added)  
 **Document Purpose:** Single source of truth for all active, completed, and blocked work items.
 
 ---
@@ -12,7 +12,7 @@
 | Completed (DONE ✅) | See ticket list | Mix of P0/P1/P2 across sprints |
 | In Progress (IN_PROGRESS 🟡) | 0 | No active implementation tickets |
 | Blocked (BLOCKED 🔴) | 0 | None |
-| Open (OPEN 🔵) | 2 | See `OPEN` tickets below |
+| Open (OPEN 🔵) | 15 | 13 v2 UI components + 2 integration tickets |
 
 ## 🎯 Completed This Sprint
 
@@ -53,6 +53,14 @@
 35. **TCK-20260215-002** — Voice Activity Detection (VAD) Integration ✅
 36. **TCK-20260214-087** — Voice Notes Feature - Phases 1, 2, 3 Complete ✅
 37. **TCK-20260217-001** — Floating Panel Window Management Improvements ✅
+38. **TCK-20260212-005** — License Key Validation (Gumroad) ✅
+39. **TCK-20260303-001** — FIX: Voice Note ASR Type Mismatch ✅
+39. **TCK-20260303-002** — FIX: WebSocketStreamer Race Condition ✅
+40. **TCK-20260303-003** — FIX: RateLimiter Lock Gap ✅
+41. **TCK-20260303-004** — FIX: Analysis Loop Timing Bug ✅
+42. **TCK-20260303-005** — FIX: CPU Usage Calculation Bug ✅
+43. **TCK-20260303-006** — FIX: DegradeLadder Recovery Logic Bug ✅
+44. **TCK-20260303-007** — FIX: CircuitBreaker Timer No-Op ✅
 
 ---
 
@@ -115,6 +123,58 @@ Performed a full repository audit across docs, backend entrypoints, websocket st
 1. Land P0/P1 runtime fixes (auth helpers + rate limiter + config API correctness)
 2. Add regression tests for middleware/config wiring and startup smoke tests
 3. Reconcile docs index and claims after code fixes
+
+---
+
+### TCK-20260227-001 :: UI Exploration - Expand macapp_v2 Flow Studio Scenarios
+
+**Type:** IMPROVEMENT
+**Owner:** Amp Agent
+**Created:** 2026-02-27
+**Status:** **DONE** ✅
+**Priority:** P1
+
+**Description:**
+Extended `macapp_v2` from static mock screens into a richer UX exploration surface with scenario-driven flows and live mock playback, so product/design can validate current and experimental meeting journeys before backend cutover.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Add flow scenarios (standup/escalation/hiring/launch) and per-flow mock payloads
+  - Add Flow Studio UI for scenario switching and journey preview
+  - Wire Live/Review surfaces to dynamic flow-backed mock state
+  - Keep backend-independent (mock-only)
+- **Out-of-scope:**
+  - WebSocket/backend integration
+  - Replacing production app (`macapp/MeetingListenerApp`) runtime paths
+
+**Targets:**
+
+- `macapp_v2/Sources/AppState.swift`
+- `macapp_v2/Sources/MockData.swift`
+- `macapp_v2/Sources/FlowStudioView.swift` (new)
+- `macapp_v2/Sources/EchoPanelV2App.swift`
+- `macapp_v2/Sources/LiveView.swift`
+- `macapp_v2/Sources/ReviewView.swift`
+- `macapp_v2/README.md`
+
+**Acceptance Criteria:**
+
+- [x] Scenario selector available in app workspace
+- [x] Per-scenario session/summary/transcript/highlight mocks load into UI
+- [x] Live mock playback appends transcript moments over time while recording
+- [x] Existing `macapp_v2` build remains green
+
+**Evidence Log:**
+
+- [2026-02-27] Added scenario flow model and runtime switching | Evidence:
+  - `AppState.swift` introduces `MockFlowTrack`, active flow state, and `applyFlow(...)`
+- [2026-02-27] Added richer payload generation | Evidence:
+  - `MockData.swift` adds `MockFlowPayload` with four scenario datasets
+- [2026-02-27] Added UX exploration surface | Evidence:
+  - `FlowStudioView.swift` adds scenario cards, load/start actions, and journey previews
+- [2026-02-27] Wired dynamic data through live/review screens | Evidence:
+  - `LiveView.swift`, `ReviewView.swift`, `EchoPanelV2App.swift`
 
 ---
 
@@ -406,16 +466,31 @@ Comprehensive deep dive research into EchoPanel's messaging, pricing, copy, and 
 - [2026-02-17] Created ticket in WORKLOG_TICKETS.md | Evidence:
   - Ticket ID: TCK-20260217-002
   - Status: IN_PROGRESS - awaiting user answers to proceed with deep dives
+- [2026-02-18] User answered Part 11 questions | Evidence:
+  - Beta program: No testers yet (needs recruitment)
+  - Pricing: Not configured, no specific launch date
+  - Resources: 10-20 hours/week, solo dev, small budget
+  - Scope: All 12 deep dives systematically
+  - Competitors: None yet (will create accounts as needed)
+  - Updated timeline: 6-8 weeks phased approach
+- [2026-02-18] Updated execution plan based on user answers | Evidence:
+  - GTM_RESEARCH_STATUS.md: Part 11 updated with user responses
+  - Timeline adjusted: 6-8 weeks (not 3-4)
+  - Phased approach: Week 1-2 (Foundation), Week 3-4 (Validation), Week 5-6 (Preparation), Week 7-8 (Launch Readiness)
+  - Critical path identified: Competitor accounts → Beta launch → Feedback analysis → App Store setup → Launch
 
 **Status Updates:**
 
 - [2026-02-17] **OPEN** 🔵 — Initial research complete, awaiting user direction
 - [2026-02-17] **IN_PROGRESS** 🟡 — Deep dive planning complete, ready for execution
+- [2026-02-18] **IN_PROGRESS** 🟡 — User questions answered, execution plan updated, ready to begin Week 1
 
 **Next Actions:**
 
-1. User answers questions in Part 11 of GTM_RESEARCH_STATUS.md
-2. Begin Phase 1: App Audit & Validation (beta feedback, technical readiness)
+1. ✅ User answers questions in Part 11 of GTM_RESEARCH_STATUS.md
+2. ✅ Updated execution plan with realistic timeline (6-8 weeks)
+3. ✅ Adjusted scope for solo dev with small budget
+4. **In Progress:** Begin Week 1 - Competitive Analysis Deep Dive
 
 ---
 
@@ -9840,3 +9915,1011 @@ grep "include_router" server/main.py
 # - /model-status exposes asr_provider_cache_entries + asr_provider_cache_max
 # - 152 pytest passed, ruff clean
 ```
+
+---
+
+### TCK-20260303-009 :: FEATURE - macapp_v2 Backend Integration (Phase 1: Foundation)
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P0
+
+**Description:**
+Integrate macapp_v2 visual prototype with production backend to enable actual recording, transcription, and analysis. v2 currently uses mock timers and scripted data flows—this ticket delivers the core pipeline to make it functional.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Port AudioCaptureManager from v1 (system + mic capture)
+  - Port WebSocketStreamer from v1 with v2-friendly callbacks
+  - Create RecordingService to orchestrate capture + streaming
+  - Create BackendSyncAdapter to map backend messages → v2 UI models
+  - Wire RecordingService into AppState to replace mock recording
+  - Update LiveView to show connection status (not just mock timer)
+  - Highlights populate from real backend cards (not mock data)
+  - Session persistence on stop
+  
+- **Out-of-scope:**
+  - Speaker diarization UI (Phase 2)
+  - Entity highlighting in transcript (Phase 2)
+  - Voice notes UI (Phase 3)
+  - Context document integration (Phase 3)
+  - Flow Studio real-data mode (Phase 4)
+  - v1 app retirement
+  
+- **Behavior change allowed:** YES (currently mock-only, becoming functional)
+
+**Targets:**
+
+- `macapp_v2/Services/AudioCaptureManager.swift` (new)
+- `macapp_v2/Services/WebSocketStreamer.swift` (new, ported from v1)
+- `macapp_v2/Services/RecordingService.swift` (new)
+- `macapp_v2/Services/BackendSyncAdapter.swift` (new)
+- `macapp_v2/Sources/AppState.swift` (modify: wire real recording)
+- `macapp_v2/Sources/LiveView.swift` (modify: connection status UI)
+- `docs/UI_INTEGRATION_PLAN_macapp_v2.md` (reference)
+
+**Acceptance Criteria:**
+
+- [ ] Clicking "Start Recording" captures real system audio
+- [ ] Transcript appears from actual ASR (not mock script)
+- [ ] Highlights populate from backend cards within 30 seconds
+- [ ] Session saves to disk on "End Session"
+- [ ] Recording shows connection status (connected/streaming/error)
+- [ ] Settings allow configuring backend endpoint
+- [ ] Build passes: `cd macapp_v2 && swift build`
+
+**Data Mapping Requirements:**
+
+| Backend Message | v2 UI Model | Mapping Logic |
+|-----------------|-------------|---------------|
+| `asr_final` | `TranscriptItem` | t0/t1 → Date, speaker → speaker |
+| `cards_update.actions` | `Highlight(.action)` | owner:text → content |
+| `cards_update.decisions` | `Highlight(.decision)` | text → content |
+| `cards_update.risks` | `Highlight(.keyPoint)` | ⚠️ prefix + text |
+| `entities_update` | `Person[]` | Filter type==person, sort by count |
+
+**Evidence Log:**
+
+- [2026-03-03] Analyzed v2 source structure | Evidence:
+  - `macapp_v2/Sources/AppState.swift`: Timer-based mock recording only
+  - `macapp_v2/Sources/MockData.swift`: All data hardcoded
+  - `macapp_v2/README.md`: "no actual recording happens", "all data is mock data"
+  
+- [2026-03-03] Reviewed v1 backend integration | Evidence:
+  - `macapp/MeetingListenerApp/Sources/WebSocketStreamer.swift`: 500+ lines, battle-tested
+  - `macapp/MeetingListenerApp/Sources/AudioCaptureManager.swift`: Dual capture (system+mic)
+  - Backend WebSocket: `ws_live_listener.py` with ASR, entities, cards
+  
+- [2026-03-03] Created integration plan | Evidence:
+  - `docs/UI_INTEGRATION_PLAN_macapp_v2.md` (comprehensive 22KB document)
+  - Phase 1-4 roadmap defined
+  - Data model mapping specified
+  - Component specs provided
+
+**Dependencies:**
+
+- Backend WebSocket endpoint available (ws://localhost:8000/ws/live-listener)
+- ASR provider configured and working
+- macapp_v2 builds successfully (verified)
+
+**Next Actions:**
+
+1. Create Services/ directory in macapp_v2
+2. Port AudioCaptureManager with v2-appropriate protocol
+3. Port WebSocketStreamer with simplified callback interface
+4. Implement BackendSyncAdapter with mapping unit tests
+5. Wire into AppState, verify end-to-end
+6. Update LiveView with connection status indicators
+
+**Estimated Effort:** 2-3 days
+
+---
+
+### TCK-20260303-010 :: Analysis - macapp_v2 Feature Parity Gap
+
+**Type:** ANALYSIS
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **DONE** ✅
+**Priority:** P0
+
+**Description:**
+Comprehensive analysis comparing macapp_v2 UI capabilities against v1 backend features to identify integration gaps, mapping strategies, and phased implementation approach.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Inventory all v2 UI components and data models
+  - Inventory all v1 backend capabilities
+  - Map backend messages to v2 UI components
+  - Identify missing components needed for integration
+  - Define phased implementation plan
+  
+- **Out-of-scope:**
+  - Implementation (analysis only)
+  - Changes to v1 codebase
+  
+- **Behavior change allowed:** NO (analysis only)
+
+**Key Findings:**
+
+| Area | Finding | Impact |
+|------|---------|--------|
+| **Data Models** | v2 simplified models; v2 has `HighlightType` enum with 4 types vs v1's 3 separate card types | Medium - mapping layer needed |
+| **Transcript** | v2 lacks ASR confidence, source indicators, isFinal flag | Medium - add to v2 model |
+| **Entities** | v2 shows People with topics; v1 has full entity extraction | Low - can derive from transcript |
+| **Audio Capture** | v2 has no audio capture implementation | High - must port from v1 |
+| **WebSocket** | v2 has no WebSocket client | High - must port from v1 |
+| **Session Storage** | v2 uses mock sessions in memory | Medium - add SessionStore |
+
+**Gap Classification:**
+
+- **P0 (Blocking)**: Audio capture, WebSocket streaming, backend data binding
+- **P1 (Important)**: Speaker diarization, entity highlighting, session persistence
+- **P2 (Nice-to-have)**: Voice notes, context documents, risk cards
+- **P3 (Future)**: Flow Studio with real data
+
+**Deliverables:**
+
+- [x] `docs/UI_INTEGRATION_PLAN_macapp_v2.md` (22KB comprehensive plan)
+- [x] This worklog entry
+
+**Evidence Log:**
+
+- [2026-03-03] Analyzed v2 data models | Evidence: `macapp_v2/Sources/AppState.swift`, `MockData.swift`
+- [2026-03-03] Analyzed v1 backend capabilities | Evidence: `server/api/ws_live_listener.py`, `WebSocketStreamer.swift`
+- [2026-03-03] Created feature parity matrix | Evidence: Section 1.1 of integration plan
+- [2026-03-03] Defined data model mapping | Evidence: Section 1.3 of integration plan
+- [2026-03-03] Created phased implementation plan | Evidence: Section 4 of integration plan
+
+**Recommended Priority:**
+
+Proceed with TCK-20260303-009 (Phase 1: Foundation) immediately. v2 UI is production-ready; only backend integration is missing.
+
+---
+
+---
+
+### TCK-20260306-001 :: F-001 Fix — Whisper Table Default Model Label ✅
+
+**Type:** DOCS | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P1  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-001  
+**Files:** `docs/ASR_MODEL_RESEARCH_2026-02.md` line 146-147  
+**Change:** Moved "Current EchoPanel default" badge from `base` row to `base.en` row in §2.1.4 Whisper table.  
+**Behavior change:** NO
+
+---
+
+### TCK-20260306-002 :: F-002 Fix — Clarify "Bundled" Cost Claim ✅
+
+**Type:** DOCS | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P2  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-002  
+**Files:** `docs/ASR_MODEL_RESEARCH_2026-02.md` line 1090  
+**Change:** Updated §14.1 cost cell — "already bundled" → "auto-downloaded on first launch (~150MB from HuggingFace; no pre-bundled weights)".  
+**Behavior change:** NO
+
+---
+
+### TCK-20260306-003 :: F-003 + F-004 Fix — Voxtral Mac Caveat + Provider Table ✅
+
+**Type:** DOCS | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P1  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-003, F-004  
+**Files:** `docs/ASR_MODEL_RESEARCH_2026-02.md` §2.1.5  
+**Change:** Added Apple Silicon/vLLM warning callout and EchoPanel provider mapping table (voxtral_official vs voxtral_realtime).  
+**Behavior change:** NO
+
+---
+
+### TCK-20260306-004 :: F-005 Fix — §13 Roadmap Status Update ✅
+
+**Type:** DOCS | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P2  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-005  
+**Files:** `docs/ASR_MODEL_RESEARCH_2026-02.md` §13 Phase 1 + Phase 2 tables  
+**Change:** Added Status column with ✅/⚠️/❌ per item. P0-1 ✅, P0-2 ✅ (upgrade pending), P0-3 ❌, P0-4 ⚠️; P1-1 ✅ evaluation in progress.  
+**Behavior change:** NO
+
+---
+
+### TCK-20260306-005 :: F-007 Fix — §10 Scope Trim ✅
+
+**Type:** DOCS | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P3  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-007  
+**Files:** `docs/ASR_MODEL_RESEARCH_2026-02.md` §10  
+**Change:** Condensed ~60 lines of non-audio LLM content (Grok 3, Qwen3-Coder, ByteDance Seed) into scope note + audio-relevant signal table + 4-line summary.  
+**Behavior change:** NO
+
+---
+
+### TCK-20260306-006 :: F-006 Fix — Provider Auto-Registration in asr_stream.py ✅
+
+**Type:** FIX | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P1  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-006  
+**Files:** `server/services/asr_stream.py` lines 20-22  
+**Change:** Added 3 missing `from . import provider_*` imports — `provider_mlx_whisper`, `provider_voxtral_official`, `provider_onnx_whisper`. These were registered only via `__init__.py` previously, not via the WebSocket entry point.  
+**Behavior change:** YES (additive) — 3 new providers now reachable. Zero regression on existing providers.  
+**Evidence:** `python3 -B -c "import ast; ast.parse(open('server/services/asr_stream.py').read())"` → OK
+
+---
+
+### TCK-20260306-007 :: F-010 — FireRedVAD + TEN VAD Integration ✅
+
+**Type:** IMPROVEMENT | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P0  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-010  
+**Files:** `server/services/vad_asr_wrapper.py` (v0.1→v0.2, +250 lines)
+
+**Changes:**
+- Added `_VADBackend` ABC with `_SileroVADBackend`, `_FireRedVADBackend`, `_TenVADBackend`
+- `_build_vad_backend(name)`: cascading fallback chain firered → ten_vad → silero
+- `_get_default_backend()`: reads `ECHOPANEL_VAD_BACKEND` env var (default: "firered")
+- `VADASRWrapper.__init__` + `SmartVADRouter.__init__`: accept `vad_backend=None` param
+- Legacy `_load_vad_model()` preserved for backward compat
+
+**Behavior change:** YES — defaults to FireRedVAD when `fireredvad` package installed; automatic fallback to Silero otherwise (no regression on current installs).  
+**FireRedVAD setup:** `git clone https://github.com/FireRedTeam/FireRedVAD && pip install -r requirements.txt`; set `ECHOPANEL_FIRERED_MODEL_DIR`.  
+**Evidence:** `python3 -B -c "import ast; ast.parse(open('server/services/vad_asr_wrapper.py').read())"` → OK
+
+---
+
+### TCK-20260306-008 :: F-009 — Diarization Wiring into Streaming Pipeline ✅
+
+**Type:** IMPROVEMENT | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P1  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-009  
+**Files:** `server/services/asr_stream.py` (v0.2→v0.3, +55 lines)
+
+**Changes:**
+- `_should_diarize()`: reads `ECHOPANEL_DIARIZATION_ENABLED` env var (default: "0")
+- `_resolve_speakers()`: assigns speaker label by midpoint overlap with diarization segments
+- `stream_asr()`: accumulates final events during stream; after stream ends, runs `diarize_pcm()` via `asyncio.to_thread`; emits `diarization_result` event with annotated segments
+- Real-time transcript stream is NOT blocked
+
+**Behavior change:** YES when `ECHOPANEL_DIARIZATION_ENABLED=1`. Default OFF — no regression.  
+**Dependencies:** `ECHOPANEL_HF_TOKEN` + `pip install pyannote.audio`  
+**Evidence:** `python3 -B -c "import ast; ast.parse(open('server/services/asr_stream.py').read())"` → OK
+
+---
+
+### TCK-20260306-009 :: F-008 — WER Benchmark Test ✅
+
+**Type:** IMPROVEMENT | **Created:** 2026-03-06 | **Status:** DONE ✅ | **Priority:** P2  
+**Audit Source:** `docs/reviews/ASR_MODEL_RESEARCH_2026-02.review.md` → F-008  
+**Files:** `tests/benchmark_asr_wer.py` (new, 240 lines)
+
+**What it does:**
+- 10 reference utterances (biblical text — deterministic, clean ground truth)
+- Synthesises audio via macOS `say` / Linux `espeak` / silent fallback
+- Transcribes through ASR provider using existing registry + config
+- Computes WER with `jiwer` (or built-in token diff fallback)
+- Appends markdown table to `output/asr_benchmark/BENCHMARK_RESULTS.md`
+
+**Usage:** `python tests/benchmark_asr_wer.py [--provider faster_whisper] [--model base.en]`  
+**Behavior change:** NO — standalone read-only script  
+**Evidence:** `python3 -B -c "import ast; ast.parse(open('tests/benchmark_asr_wer.py').read())"` → OK
+
+---
+
+---
+
+## 🎨 macapp_v2 UI Components Backlog
+
+*New UI components to build in v2 (mock-first, backend-integration-ready)*
+
+---
+
+### TCK-20260303-011 :: UI - Voice Note Quick Capture Component
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P1
+
+**Description:**
+Build a floating voice note capture UI for quick thoughts during meetings. Backend has full voice note pipeline; v2 needs the UI component. Build against mock data first, wire to backend in Phase 1.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Floating microphone button in LiveView toolbar
+  - Waveform visualization during recording (mock audio levels)
+  - Recording timer (max 60s)
+  - Transcription result bubble overlay
+  - Auto-save to session highlights
+  - Keyboard shortcut (⌘+Shift+V)
+  
+- **Out-of-scope:**
+  - Actual audio capture (backend integration handles this)
+  - Real-time transcription streaming
+
+**Targets:**
+- `macapp_v2/Components/VoiceNoteRecorder.swift` (new)
+- `macapp_v2/Sources/LiveView.swift` (add button)
+- `macapp_v2/Sources/AppState.swift` (add voiceNote state)
+- `macapp_v2/Sources/MockData.swift` (add sample voice notes)
+
+**Acceptance Criteria:**
+
+- [ ] Floating mic button visible in LiveView when recording
+- [ ] Tap to start → waveform animates, timer counts up
+- [ ] Tap to stop → mock transcription appears in bubble
+- [ ] Voice note appears in Highlights tab with 🎤 icon
+- [ ] Keyboard shortcut works
+- [ ] Accessibility labels for screen readers
+
+**Mock Data Structure:**
+```swift
+struct VoiceNote: Identifiable {
+    let id: UUID
+    let transcript: String
+    let duration: TimeInterval
+    let createdAt: Date
+    let confidence: Double
+}
+```
+
+**Backend Integration Notes:**
+- Uses `voice_note_start/audio/stop` messages
+- Backend sends `voice_note_transcript` response
+- Confidence included in response
+
+**Dependencies:** None (mock-first)
+
+---
+
+### TCK-20260303-012 :: UI - Confidence Indicators in Transcript
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P1
+
+**Description:**
+Add visual confidence indicators to transcript items. Backend sends confidence scores on every ASR result. v2 should display them to build user trust in transcription quality.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Color-coded confidence dots (● green/yellow/orange/red)
+  - Confidence percentage on hover/expanded view
+  - "Low confidence — review" badge for <0.6
+  - Session-level confidence average in header
+  - Per-speaker confidence averages in People tab
+  
+- **Out-of-scope:**
+  - Confidence-based filtering (future)
+
+**Targets:**
+- `macapp_v2/Components/ConfidenceIndicator.swift` (new)
+- `macapp_v2/Components/TranscriptLineItem.swift` (modify)
+- `macapp_v2/Sources/TranscriptView.swift` (add indicators)
+- `macapp_v2/Sources/Models.swift` (add confidence field)
+
+**Acceptance Criteria:**
+
+- [ ] Each transcript line shows confidence dot
+- [ ] Hover reveals percentage (e.g., "92% confidence")
+- [ ] Low confidence (<0.6) shows warning badge
+- [ ] Session header shows average confidence
+- [ ] Color scheme: ≥0.85 green, ≥0.70 yellow, ≥0.50 orange, <0.50 red
+- [ ] Mock data includes varied confidence levels
+
+**Design Reference:**
+```swift
+enum ConfidenceLevel {
+    case high(Double)    // ≥0.85 - green
+    case medium(Double)  // ≥0.70 - yellow  
+    case low(Double)     // ≥0.50 - orange
+    case veryLow(Double) // <0.50 - red + warning
+}
+```
+
+**Backend Field:** `confidence: Double` (0.0-1.0) on every `asr_final` message
+
+---
+
+### TCK-20260303-013 :: UI - Audio Source Badges (System vs Mic)
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P1
+
+**Description:**
+Show audio source indicators on transcript items so users know if speech came from system audio (others) or microphone (themselves). Critical for multi-person meeting context.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Source icon per transcript line (🖥️ system / 🎤 mic)
+  - "You" vs "Speaker" labeling
+  - Source filter toggle in toolbar (All / You / Others)
+  - Visual grouping of consecutive same-source lines
+  
+- **Out-of-scope:**
+  - Speaker diarization (multiple speakers on system audio)
+
+**Targets:**
+- `macapp_v2/Components/SourceBadge.swift` (new)
+- `macapp_v2/Sources/TranscriptView.swift` (add badges)
+- `macapp_v2/Sources/AppState.swift` (add source filter)
+- `macapp_v2/Sources/Models.swift` (add source field)
+
+**Acceptance Criteria:**
+
+- [ ] Each transcript line shows source icon
+- [ ] "You" label for mic source, name for system source
+- [ ] Filter toggle works (All / You / Others)
+- [ ] Consecutive same-source lines grouped visually
+- [ ] Mock data includes mixed sources
+- [ ] Keyboard shortcut to toggle filter (⌘+1/2/3)
+
+**Backend Field:** `source: "system" | "mic"` on every ASR message
+
+**v1 Reference:** `SidePanelSupportViews.swift:177-183` (source indicator logic)
+
+---
+
+### TCK-20260303-014 :: UI - Risk Cards Surface
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P1
+
+**Description:**
+Backend sends risk cards in `cards_update` messages, but v2 has no UI surface for them. Add risk display to Highlights tab with distinct visual treatment.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Add `.risk` case to `HighlightType` enum
+  - Risk card styling (red accent, warning icon)
+  - Show risks in Highlights tab (with filter)
+  - Risk severity indicator (based on confidence)
+  - "Acknowledge" action on risk cards
+  
+- **Out-of-scope:**
+  - Risk mitigation workflow
+  - Risk severity prediction
+
+**Targets:**
+- `macapp_v2/Sources/Models.swift` (add .risk type)
+- `macapp_v2/Components/HighlightCard.swift` (add risk styling)
+- `macapp_v2/Sources/HighlightsView.swift` (add risk filter)
+- `macapp_v2/Sources/MockData.swift` (add sample risks)
+
+**Acceptance Criteria:**
+
+- [ ] `.risk` type compiles and works in switch statements
+- [ ] Risk cards show with red accent and ⚠️ icon
+- [ ] Highlights tab has filter: All / Actions / Decisions / Risks / Key Points
+- [ ] Mock data includes 2-3 sample risks
+- [ ] Risk cards show confidence badge
+- [ ] Tap to acknowledge (visual feedback)
+
+**Backend Message:**
+```json
+{
+  "type": "cards_update",
+  "risks": [
+    {"text": "Timeline risk: API migration may slip", "confidence": 0.82}
+  ]
+}
+```
+
+---
+
+### TCK-20260303-015 :: UI - Real-Time Partial Transcript (Live Typing)
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+Show partial ASR results in real-time as "live typing" at the bottom of transcript. Makes the app feel responsive instead of waiting for final transcripts.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Greyed-out "live typing" line at bottom of transcript
+  - Animates as text updates
+  - Fades to black on final
+  - Shows "Listening..." when no speech detected
+  
+- **Out-of-scope:**
+  - Word-level timing
+  - Partial confidence display
+
+**Targets:**
+- `macapp_v2/Components/PartialTranscriptLine.swift` (new)
+- `macapp_v2/Sources/TranscriptView.swift` (add partial line)
+- `macapp_v2/Sources/AppState.swift` (add partialText state)
+
+**Acceptance Criteria:**
+
+- [ ] Partial line appears at bottom during "recording"
+- [ ] Text updates as mock partials arrive
+- [ ] Grey color (#888) for partial, black for final
+- [ ] Smooth animation on text change
+- [ ] Disappears after 2s of silence
+- [ ] "Listening..." placeholder when idle
+
+**Mock Behavior:**
+```swift
+// Simulate partial updates every 500ms during recording
+Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+    appState.partialText = generateMockPartial()
+}
+```
+
+**Backend Message:** `asr_partial` with `text`, `t0`, `t1`, `confidence`
+
+---
+
+### TCK-20260303-016 :: UI - Entity Highlighting in Transcript
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+Highlight entities (people, orgs, projects) in transcript text like v1 does. Makes transcript scannable and enables entity-centric navigation.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Underline/highlight entities in transcript lines
+  - Color-coded by entity type (person=blue, org=indigo, etc.)
+  - Click entity to jump to People tab with filter
+  - Hover to see entity type and mention count
+  
+- **Out-of-scope:**
+  - Entity disambiguation
+  - External links for entities
+
+**Targets:**
+- `macapp_v2/Components/EntityText.swift` (new, port from v1)
+- `macapp_v2/Sources/TranscriptView.swift` (use EntityText)
+- `macapp_v2/Services/EntityMatcher.swift` (new, lightweight matching)
+- `macapp_v2/Sources/MockData.swift` (add entity list to session)
+
+**Acceptance Criteria:**
+
+- [ ] Person names underlined in blue
+- [ ] Org names underlined in indigo
+- [ ] Click person name → People tab filtered to that person
+- [ ] Hover shows tooltip: "Person · 5 mentions"
+- [ ] Works with mock entities
+- [ ] Performance: smooth scroll with 100+ transcript items
+
+**v1 Reference:** `EntityHighlighter.swift` (full implementation)
+
+**Implementation Approach:**
+- Port `EntityHighlighter.matches(in:entities:)` from v1
+- Use `AttributedString` with `.underlineColor` and `.link`
+- Lightweight — runs on main thread, no NLP (use extracted entities only)
+
+---
+
+### TCK-20260303-017 :: UI - Pinning for Transcript Lines
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+v2's `TranscriptItem` already has `isPinned` field but no UI. Add pinning functionality so users can mark important lines for quick reference.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Pin button on hover per transcript line
+  - Pinned lines show 📌 icon
+  - "Pinned" section in Highlights tab
+  - Unpin action
+  - Persist pins to session
+  
+- **Out-of-scope:**
+  - Pin notes/annotations
+  - Pin sharing
+
+**Targets:**
+- `macapp_v2/Components/TranscriptLineItem.swift` (add pin button)
+- `macapp_v2/Sources/HighlightsView.swift` (add Pinned section)
+- `macapp_v2/Sources/AppState.swift` (toggle pin action)
+
+**Acceptance Criteria:**
+
+- [ ] Hover on transcript line shows pin button
+- [ ] Click to pin/unpin
+- [ ] Pinned lines have 📌 icon
+- [ ] Highlights tab shows "Pinned" section at top
+- [ ] Pins persist in mock session data
+- [ ] Keyboard shortcut: ⌘+P to toggle pin on selected line
+
+**Model (already exists):**
+```swift
+struct TranscriptItem {
+    // ...
+    let isPinned: Bool  // Already exists!
+}
+```
+
+---
+
+### TCK-20260303-018 :: UI - Connection & Degradation Status
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P1
+
+**Description:**
+Show real-time connection status and ASR degradation levels in LiveView header. Backend sends status messages; v2 should surface them to users.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Status pill in LiveView header
+  - States: ● Connected / ● Streaming / ⚠️ Degraded / 🔴 Error
+  - Tooltip explaining current status
+  - Degradation reason (CPU/RTF/memory)
+  - Auto-recovery indicator
+  
+- **Out-of-scope:**
+  - Manual recovery actions
+  - Detailed metrics view
+
+**Targets:**
+- `macapp_v2/Components/ConnectionStatusPill.swift` (new)
+- `macapp_v2/Sources/LiveView.swift` (add to header)
+- `macapp_v2/Sources/AppState.swift` (add connectionState)
+
+**Acceptance Criteria:**
+
+- [ ] Status pill shows current state
+- [ ] Color codes: green=normal, yellow=warning, red=error
+- [ ] Hover shows tooltip with details
+- [ ] Mock states cycle in Flow Studio demo
+- [ ] Click shows connection details popover
+- [ ] Accessibility: announces status changes
+
+**States:**
+```swift
+enum ConnectionState {
+    case connected        // WebSocket open, waiting
+    case streaming        // ASR active
+    case degraded(reason: String, level: DegradeLevel)  // Performance issue
+    case error(message: String)  // Connection lost
+    case reconnecting     // Auto-reconnect in progress
+}
+
+enum DegradeLevel {
+    case warning, degrade, emergency, failover
+}
+```
+
+**Backend Messages:**
+- `{"type": "status", "state": "streaming"}`
+- `{"type": "status", "state": "warning", "message": "ASR delayed"}`
+
+---
+
+### TCK-20260303-019 :: UI - Session Search & Filtering
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+Add search functionality to ReviewView so users can find past sessions by title, transcript content, or people mentioned.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Search bar in ReviewView header
+  - Search across: session title, transcript text, people names
+  - Date range filter (Today / This Week / This Month / All)
+  - Duration filter (Quick <15min / Standard / Long >60min)
+  - Clear search button
+  - "No results" empty state
+  
+- **Out-of-scope:**
+  - Full-text search index
+  - Advanced filters (entities, cards)
+
+**Targets:**
+- `macapp_v2/Components/SessionSearchBar.swift` (new)
+- `macapp_v2/Sources/ReviewView.swift` (add search)
+- `macapp_v2/Sources/AppState.swift` (add searchQuery, filters)
+
+**Acceptance Criteria:**
+
+- [ ] Search bar in ReviewView header
+- [ ] Real-time filtering as you type
+- [ ] Search highlights matching text
+- [ ] Date filter chips below search
+- [ ] Duration filter dropdown
+- [ ] Empty state with "No sessions found"
+- [ ] Keyboard shortcut: ⌘+F to focus search
+
+**Search Logic (mock):**
+```swift
+var filteredSessions: [Session] {
+    sessions.filter { session in
+        let matchesQuery = query.isEmpty || 
+            session.title.localizedCaseInsensitiveContains(query) ||
+            session.transcript.contains { $0.text.localizedCaseInsensitiveContains(query) }
+        let matchesDate = dateRange.contains(session.startTime)
+        return matchesQuery && matchesDate
+    }
+}
+```
+
+---
+
+### TCK-20260303-020 :: UI - Export & Share Actions
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+Add export and sharing capabilities to session detail view. Users need to get meeting data out of the app.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Share button in SessionDetailView toolbar
+  - Export formats: Markdown, JSON, Plain Text
+  - Copy summary to clipboard
+  - macOS share sheet integration
+  - Export transcript only option
+  - Export with/without highlights
+  
+- **Out-of-scope:**
+  - Cloud export (Drive/Dropbox)
+  - Scheduled exports
+
+**Targets:**
+- `macapp_v2/Components/ExportMenu.swift` (new)
+- `macapp_v2/Sources/SessionDetailView.swift` (add export button)
+- `macapp_v2/Services/SessionExporter.swift` (new)
+
+**Acceptance Criteria:**
+
+- [ ] Export button in session toolbar
+- [ ] Menu with: Copy Summary, Export Markdown, Export JSON, Share...
+- [ ] Markdown format includes transcript and highlights
+- [ ] JSON format matches backend export schema
+- [ ] Share sheet opens with preview
+- [ ] Keyboard shortcuts: ⌘+C (copy), ⌘+E (export)
+
+**Export Formats:**
+
+```markdown
+# Team Standup
+
+**Date:** March 3, 2026  
+**Duration:** 32 minutes
+
+## Summary
+The team discussed progress on the API migration...
+
+## Highlights
+- ✅ **Action:** Alex to complete testing by Friday
+- 📌 **Decision:** Ship v0.2 on Friday
+- ⚠️ **Risk:** Timeline may slip due to API delays
+
+## Transcript
+[09:15] **Sarah:** Good morning everyone...
+```
+
+---
+
+### TCK-20260303-021 :: UI - Context Documents Panel
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P3
+
+**Description:**
+Backend supports context document indexing and slide queries. Add a panel showing related documents based on transcript keywords.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - "Context" tab in LiveView (next to Highlights/Transcript/People)
+  - List of related documents with relevance scores
+  - Document preview on hover
+  - Click to view full document
+  - "Add Document" button for manual upload
+  
+- **Out-of-scope:**
+  - Document upload UI
+  - In-app document viewer
+
+**Targets:**
+- `macapp_v2/Sources/ContextView.swift` (new)
+- `macapp_v2/Sources/PanelContainerView.swift` (add tab)
+- `macapp_v2/Components/DocumentCard.swift` (new)
+- `macapp_v2/Sources/MockData.swift` (add sample documents)
+
+**Acceptance Criteria:**
+
+- [ ] Context tab visible in LiveView
+- [ ] Shows list of related documents
+- [ ] Each doc shows: title, source, relevance %, snippet
+- [ ] Click opens document in default app
+- [ ] Documents update based on transcript keywords (mock)
+- [ ] Empty state: "No related documents"
+
+**Mock Model:**
+```swift
+struct ContextDocument: Identifiable {
+    let id: String
+    let title: String
+    let source: String  // "Notion", "Drive", "Confluence"
+    let relevance: Double  // 0.0-1.0
+    let snippet: String
+    let indexedAt: Date
+}
+```
+
+**Backend Messages:**
+- `{"type": "slide_query_result", "documents": [...]}`
+
+---
+
+### TCK-20260303-022 :: UI - Screen OCR / Slides Panel
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P3
+
+**Description:**
+Backend has screen OCR capability that extracts text from shared slides. Add UI to show captured slides with extracted text.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - "Slides" section in LiveView or Context tab
+  - Thumbnail grid of captured slides
+  - Click to expand with extracted text
+  - Copy slide text button
+  - Timestamp of capture
+  
+- **Out-of-scope:**
+  - Live screen capture preview
+  - Slide editing
+
+**Targets:**
+- `macapp_v2/Components/SlideThumbnail.swift` (new)
+- `macapp_v2/Components/SlideDetailView.swift` (new)
+- `macapp_v2/Sources/ContextView.swift` (add slides section)
+- `macapp_v2/Sources/MockData.swift` (add sample slides)
+
+**Acceptance Criteria:**
+
+- [ ] Slides appear in Context tab
+- [ ] Grid of thumbnails with timestamps
+- [ ] Click expands to full view
+- [ ] Shows extracted text below thumbnail
+- [ ] Copy text button
+- [ ] Mock slides cycle during Flow Studio demo
+
+**Mock Model:**
+```swift
+struct CapturedSlide: Identifiable {
+    let id: UUID
+    let thumbnail: Image  // Placeholder
+    let extractedText: String
+    let capturedAt: Date
+    let confidence: Double
+}
+```
+
+**Backend Messages:**
+- `{"type": "ocr_result", "text": "...", "entities": [...]}`
+
+---
+
+### TCK-20260303-023 :: UI - Speaker Diarization Visual
+
+**Type:** FEATURE
+**Owner:** Agent
+**Created:** 2026-03-03
+**Status:** **OPEN** 🔵
+**Priority:** P2
+
+**Description:**
+Backend supports speaker diarization (identifying different speakers). Add visual speaker identification and management to v2.
+
+**Scope Contract:**
+
+- **In-scope:**
+  - Color-coded speaker labels per transcript line
+  - Speaker timeline view (who spoke when)
+  - "Rename Speaker" to assign real names
+  - Speaker statistics (% of talking time)
+  - Merge speakers (if diarization errors)
+  
+- **Out-of-scope:**
+  - Real-time speaker enrollment
+  - Voice biometric identification
+
+**Targets:**
+- `macapp_v2/Components/SpeakerLabel.swift` (new)
+- `macapp_v2/Components/SpeakerTimelineView.swift` (new)
+- `macapp_v2/Sources/TranscriptView.swift` (add speaker labels)
+- `macapp_v2/Sources/PeopleView.swift` (add speaker stats)
+
+**Acceptance Criteria:**
+
+- [ ] Each transcript line shows speaker avatar/color
+- [ ] Different colors for different speakers
+- [ ] Click speaker → rename dialog
+- [ ] People tab shows speaking time %
+- [ ] Timeline view shows speaker segments
+- [ ] Mock data has 2-3 speakers
+
+**Model Extension:**
+```swift
+struct Speaker: Identifiable, Hashable {
+    let id: String  // "Speaker 1", "Speaker 2"
+    var name: String  // User-assignable
+    var color: Color
+    var totalSpeakingTime: TimeInterval
+}
+
+struct TranscriptItem {
+    // ...
+    var speakerID: String?
+}
+```
+
+**Backend Field:** `speaker: "Speaker 1"` on ASR results (when diarization enabled)
+
+---
+
+## 📋 v2 UI Components Summary
+
+| Ticket | Component | Priority | Effort | Backend Ready |
+|--------|-----------|----------|--------|---------------|
+| TCK-20260303-011 | Voice Note Quick Capture | P1 | Medium | ✅ Yes |
+| TCK-20260303-012 | Confidence Indicators | P1 | Low | ✅ Yes |
+| TCK-20260303-013 | Audio Source Badges | P1 | Low | ✅ Yes |
+| TCK-20260303-014 | Risk Cards Surface | P1 | Low | ✅ Yes |
+| TCK-20260303-015 | Real-Time Partial Transcript | P2 | Low | ✅ Yes |
+| TCK-20260303-016 | Entity Highlighting | P2 | Medium | ✅ Yes |
+| TCK-20260303-017 | Pinning UI | P2 | Low | N/A |
+| TCK-20260303-018 | Connection Status | P1 | Low | ✅ Yes |
+| TCK-20260303-019 | Session Search | P2 | Medium | N/A |
+| TCK-20260303-020 | Export & Share | P2 | Medium | N/A |
+| TCK-20260303-021 | Context Documents | P3 | Medium | ✅ Yes |
+| TCK-20260303-022 | Screen OCR / Slides | P3 | Medium | ✅ Yes |
+| TCK-20260303-023 | Speaker Diarization | P2 | Medium | ✅ Yes |
+
+**Total:** 13 UI components, all buildable against mock data now, backend-ready for later integration.
+
+---

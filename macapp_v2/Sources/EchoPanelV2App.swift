@@ -30,16 +30,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct MainView: View {
     @EnvironmentObject private var appState: AppState
-    
+    @State private var workspaceMode: WorkspaceMode = .dashboard
+
+    enum WorkspaceMode: String, CaseIterable, Identifiable {
+        case dashboard = "Dashboard"
+        case flowStudio = "Flow Studio"
+            
+        var id: String { rawValue }
+        }
+
     var body: some View {
         NavigationView {
             Sidebar()
                 .frame(minWidth: 250)
-            
-            ContentArea()
+
+            ContentArea(mode: workspaceMode)
+                .environmentObject(appState)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Picker("Workspace", selection: $workspaceMode) {
+                    ForEach(WorkspaceMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
                 RecordButton()
                 Spacer()
                 ExportButton()
@@ -151,28 +167,36 @@ struct SessionListRow: View {
 }
 
 struct ContentArea: View {
+    let mode: MainView.WorkspaceMode
+
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        Group {
+            if mode == .flowStudio {
+                FlowStudioView()
+            } else {
+                VStack(spacing: 20) {
+                    Spacer()
+
+                    Image(systemName: "waveform")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.secondary)
+
+                    Text("Welcome to EchoPanel")
+                        .font(.title)
+                        .fontWeight(.semibold)
             
-            Image(systemName: "waveform")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            
-            Text("Welcome to EchoPanel")
-                .font(.title)
-                .fontWeight(.semibold)
-            
-            Text("Select a session from the sidebar to view details, or start a new recording")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
-            
-            Spacer()
+                    Text("Select a session from the sidebar, or open Flow Studio to explore experimental UX journeys")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 460)
+
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.windowBackgroundColor))
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
@@ -218,6 +242,7 @@ struct SettingsButton: View {
 }
 
 struct SessionDetailView: View {
+    @EnvironmentObject private var appState: AppState
     let session: Session
     @State private var selectedTab = 0
     
@@ -263,13 +288,13 @@ struct SessionDetailView: View {
             Group {
                 switch selectedTab {
                 case 0:
-                    SummaryView(session: session)
+                    SummaryView(session: session, summaryText: appState.reviewSummary, people: appState.livePeople)
                 case 1:
                     TranscriptTabView(transcript: session.transcript)
                 case 2:
                     HighlightsTabView(highlights: session.highlights)
                 case 3:
-                    PeopleTabView(people: MockData.samplePeople)
+                    PeopleTabView(people: appState.livePeople)
                 default:
                     EmptyView()
                 }
@@ -280,6 +305,8 @@ struct SessionDetailView: View {
 
 struct SummaryView: View {
     let session: Session
+    let summaryText: String
+    let people: [Person]
     
     var body: some View {
         ScrollView {
@@ -289,7 +316,7 @@ struct SummaryView: View {
                     Label("AI Summary", systemImage: "brain")
                         .font(.headline)
                     
-                    Text(MockData.sampleSummary)
+                    Text(summaryText)
                         .font(.body)
                         .lineSpacing(4)
                 }
@@ -313,7 +340,7 @@ struct SummaryView: View {
                     
                     StatCard(
                         icon: "person.3",
-                        value: "\(MockData.samplePeople.count)",
+                        value: "\(people.count)",
                         label: "Participants"
                     )
                     

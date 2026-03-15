@@ -120,7 +120,7 @@ class RateLimiter:
             
             return True
     
-    def get_remaining(self, client_id: str) -> Dict[str, int]:
+    async def get_remaining(self, client_id: str) -> Dict[str, int]:
         """Get remaining requests for a client.
         
         Args:
@@ -129,14 +129,15 @@ class RateLimiter:
         Returns:
             Dict with 'minute' and 'hour' remaining requests
         """
-        state = self._clients.get(client_id)
-        if not state:
-            return {"minute": self.config.requests_per_minute, "hour": self.config.requests_per_hour}
-        
-        return {
-            "minute": int(state.minute_tokens),
-            "hour": int(state.hour_tokens)
-        }
+        async with self._lock:
+            state = self._clients.get(client_id)
+            if not state:
+                return {"minute": self.config.requests_per_minute, "hour": self.config.requests_per_hour}
+            
+            return {
+                "minute": int(state.minute_tokens),
+                "hour": int(state.hour_tokens)
+            }
     
     async def _cleanup_loop(self) -> None:
         """Periodically cleanup old client entries."""

@@ -1,6 +1,67 @@
 import SwiftUI
 import Combine
 
+enum MockFlowTrack: String, CaseIterable, Identifiable {
+    case teamStandup
+    case customerEscalation
+    case hiringLoop
+    case launchWarRoom
+
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .teamStandup:
+            return "Team Standup"
+        case .customerEscalation:
+            return "Customer Escalation"
+        case .hiringLoop:
+            return "Hiring Debrief"
+        case .launchWarRoom:
+            return "Launch War Room"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .teamStandup:
+            return "Balanced cross-functional sync"
+        case .customerEscalation:
+            return "High-stress triage and ownership"
+        case .hiringLoop:
+            return "Structured people decisions"
+        case .launchWarRoom:
+            return "Fast decisions under release pressure"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .teamStandup:
+            return "person.3.sequence"
+        case .customerEscalation:
+            return "exclamationmark.bubble"
+        case .hiringLoop:
+            return "person.crop.rectangle.stack"
+        case .launchWarRoom:
+            return "bolt.badge.clock"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .teamStandup:
+            return .teal
+        case .customerEscalation:
+            return .orange
+        case .hiringLoop:
+            return .indigo
+        case .launchWarRoom:
+            return .mint
+        }
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var recordingState: RecordingState = .idle
@@ -8,25 +69,57 @@ final class AppState: ObservableObject {
     @Published var alwaysOnTop: Bool = false
     @Published var currentSession: Session?
     @Published var sessions: [Session] = MockData.sampleSessions
-    
+    @Published var activeFlow: MockFlowTrack = .teamStandup
+    @Published var liveTranscript: [TranscriptItem] = MockData.sampleTranscript
+    @Published var liveHighlights: [Highlight] = MockData.sampleHighlights
+    @Published var livePeople: [Person] = MockData.samplePeople
+    @Published var reviewSummary: String = MockData.sampleSummary
+
     private var timer: Timer?
     private var recordingSeconds: Int = 0
-    
+    private var scriptedMoments: [TranscriptItem] = []
+
+    init() {
+        applyFlow(.teamStandup)
+    }
+
+    func applyFlow(_ flow: MockFlowTrack) {
+        let payload = MockData.payload(for: flow)
+        activeFlow = flow
+        sessions = payload.sessions
+        liveTranscript = payload.transcript
+        liveHighlights = payload.highlights
+        livePeople = payload.people
+        reviewSummary = payload.summary
+        scriptedMoments = payload.transcript
+        stopTimer()
+        recordingState = .idle
+        currentSession = nil
+    }
+
     func startRecording() {
         recordingSeconds = 0
+        let payload = MockData.payload(for: activeFlow)
+        scriptedMoments = payload.transcript
+
         currentSession = Session(
             id: UUID(),
-            title: "New Session",
+            title: "\(activeFlow.title) (Live)",
             startTime: Date(),
             duration: 0,
             transcript: [],
             highlights: []
         )
+
         recordingState = .recording(duration: 0)
         startTimer()
         panelVisible = true
+
+        // Seed the stream so users immediately see movement in live UX previews.
+        appendNextScriptedMoment()
+        appendNextScriptedMoment()
     }
-    
+
     func stopRecording() {
         stopTimer()
         if var session = currentSession {
@@ -60,6 +153,10 @@ final class AppState: ObservableObject {
                 default:
                     break
                 }
+
+                if self.recordingSeconds % 8 == 0 {
+                    self.appendNextScriptedMoment()
+                }
             }
         }
     }
@@ -67,6 +164,39 @@ final class AppState: ObservableObject {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    private func appendNextScriptedMoment() {
+        guard var session = currentSession else { return }
+        guard !scriptedMoments.isEmpty else { return }
+
+        let next = scriptedMoments.removeFirst()
+        session.transcript.append(next)
+
+        if let action = next.actionItem {
+            session.highlights.append(
+                Highlight(
+                    id: UUID(),
+                    type: .action,
+                    content: "\(action.assignee): \(action.task)",
+                    timestamp: next.timestamp
+                )
+            )
+        } else if next.isPinned {
+            session.highlights.append(
+                Highlight(
+                    id: UUID(),
+                    type: .keyPoint,
+                    content: next.text,
+                    timestamp: next.timestamp
+                )
+            )
+        }
+
+        currentSession = session
+        liveTranscript = session.transcript
+        liveHighlights = session.highlights
+        livePeople = MockData.people(from: session.transcript, fallback: livePeople)
     }
 }
 

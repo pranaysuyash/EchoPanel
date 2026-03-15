@@ -115,6 +115,7 @@ private let session: URLSession = {
     // P0: Bounded send queue to prevent blocking capture thread on network stall
     private let sendQueue = OperationQueue()
     private let maxQueuedSends = 100
+    private let sendQueueLock = NSLock()  // Lock for atomic queue operations
 
     // Ping/pong liveness: treat the socket as dead if we don't get a ping completion for too long.
     private var lastPongTime: Date?
@@ -578,7 +579,10 @@ private let session: URLSession = {
         }
 
         // P0: Enqueue send instead of blocking capture thread
+        // Use lock to ensure atomic check-and-add operation
+        sendQueueLock.lock()
         guard sendQueue.operationCount < maxQueuedSends else {
+            sendQueueLock.unlock()
             DispatchQueue.main.async {
                 StructuredLogger.shared.warning("WebSocket send queue overflow, dropping frame", metadata: [
                     "payload_type": payloadType,
@@ -588,6 +592,7 @@ private let session: URLSession = {
             }
             return
         }
+        sendQueueLock.unlock()
 
         sendQueue.addOperation { [weak self] in
             guard let self = self else { return }
@@ -643,7 +648,10 @@ private let session: URLSession = {
         guard let text = String(data: data, encoding: .utf8) else { return }
         
         // P0: Enqueue send instead of blocking capture thread
+        // Use lock to ensure atomic check-and-add operation
+        sendQueueLock.lock()
         guard sendQueue.operationCount < maxQueuedSends else {
+            sendQueueLock.unlock()
             // Log on main actor
             DispatchQueue.main.async {
                 StructuredLogger.shared.warning("WebSocket send queue overflow, dropping frame", metadata: [
@@ -653,6 +661,7 @@ private let session: URLSession = {
             }
             return
         }
+        sendQueueLock.unlock()
         
         // Capture payload type for logging before capturing self
         let payloadType = payload["type"] as? String ?? "unknown"

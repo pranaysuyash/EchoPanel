@@ -8,9 +8,14 @@ struct MeetingListenerApp: App {
     @StateObject private var sessionStore = SessionStore.shared
     @State private var sidePanelController = SidePanelController()
     @StateObject private var betaGating = BetaGatingManager.shared
+    @StateObject private var licenseManager = LicenseManager.shared
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingCompleted")
     @State private var showTermsAcceptance = !UserDefaults.standard.bool(forKey: "hasAcceptedTerms")
     @State private var showRecoveryPrompt = false
+    @State private var showLicensePrompt = false
+    
+    // Set to true to require license validation (false for development)
+    private let requireLicenseValidation = false
 
     init() {
         // Start backend server on app launch
@@ -23,6 +28,18 @@ struct MeetingListenerApp: App {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if SessionStore.shared.hasRecoverableSession {
                 // Will be handled in view
+            }
+        }
+        
+        // TCK-20260212-005: Check license on startup (if enabled)
+        if requireLicenseValidation {
+            Task {
+                let hasValidLicense = await licenseManager.checkLicense()
+                if !hasValidLicense {
+                    await MainActor.run {
+                        showLicensePrompt = true
+                    }
+                }
             }
         }
     }
@@ -42,6 +59,11 @@ struct MeetingListenerApp: App {
         .onChange(of: showOnboarding) { newValue in
             if newValue {
                 openWindow(id: "onboarding")
+            }
+        }
+        .onChange(of: showLicensePrompt) { newValue in
+            if newValue {
+                openWindow(id: "license-validation")
             }
         }
         .commands {
@@ -205,6 +227,17 @@ struct MeetingListenerApp: App {
             ASRBackendStatusView()
         }
         .defaultSize(width: 400, height: 300)
+        .windowResizability(.contentSize)
+        
+        // TCK-20260212-005: License validation window
+        Window("License Validation", id: "license-validation") {
+            LicenseView {
+                showLicensePrompt = false
+            }
+            .frame(minWidth: 450, minHeight: 500)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 500, height: 550)
         .windowResizability(.contentSize)
     }
 

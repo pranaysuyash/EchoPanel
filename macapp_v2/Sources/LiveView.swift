@@ -38,7 +38,7 @@ struct LiveView: View {
             HStack {
                 HStack(spacing: 6) {
                     StatusDot(status: .active)
-                    Text("Recording")
+                    Text("Recording · \(appState.activeFlow.title)")
                         .font(.headline)
                     if case .recording(let duration) = appState.recordingState {
                         Text(formatDuration(duration))
@@ -112,16 +112,18 @@ struct LiveView: View {
 }
 
 struct HighlightsView: View {
+    @EnvironmentObject private var appState: AppState
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            if MockData.sampleHighlights.isEmpty {
+            if appState.liveHighlights.isEmpty {
                 EmptyStateView(
                     icon: "sparkles",
                     title: "No Highlights Yet",
                     subtitle: "Key points and action items will appear here as the conversation develops"
                 )
             } else {
-                ForEach(MockData.sampleHighlights) { highlight in
+                ForEach(appState.liveHighlights) { highlight in
                     HighlightCard(highlight: highlight)
                 }
             }
@@ -185,9 +187,11 @@ struct HighlightCard: View {
 }
 
 struct TranscriptView: View {
+    @EnvironmentObject private var appState: AppState
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(MockData.sampleTranscript) { item in
+            ForEach(appState.liveTranscript) { item in
                 TranscriptCard(item: item)
             }
         }
@@ -248,9 +252,11 @@ struct TranscriptCard: View {
 }
 
 struct PeopleView: View {
+    @EnvironmentObject private var appState: AppState
+
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(MockData.samplePeople) { person in
+            ForEach(appState.livePeople) { person in
                 PersonCard(person: person)
             }
         }

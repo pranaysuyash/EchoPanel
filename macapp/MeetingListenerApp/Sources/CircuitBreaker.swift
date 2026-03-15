@@ -189,16 +189,10 @@ final class CircuitBreaker: ObservableObject {
         let oldState = state
         state = newState
         
-        // Schedule half-open timer if transitioning to open
-        if newState == .open {
-            halfOpenTimer?.invalidate()
-            halfOpenTimer = Timer.scheduledTimer(withTimeInterval: resetTimeout, repeats: false) { _ in
-                Task { @MainActor in
-                    // Timer just marks that we can try half-open next time
-                    // Actual transition happens in canExecute()
-                }
-            }
-        } else if newState == .closed || newState == .halfOpen {
+        // TCK-20260303-007: Removed useless half-open timer
+        // The timer was scheduling an empty Task - actual half-open transition
+        // happens lazily in canExecute() based on resetTimeout check
+        if newState == .closed || newState == .halfOpen {
             halfOpenTimer?.invalidate()
             halfOpenTimer = nil
         }

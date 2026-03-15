@@ -316,7 +316,7 @@ async def rate_limit_middleware(request: Request, call_next):
     
     limiter = get_rate_limiter()
     if not await limiter.acquire(client_id):
-        remaining = limiter.get_remaining(client_id)
+        remaining = await limiter.get_remaining(client_id)
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=429,
