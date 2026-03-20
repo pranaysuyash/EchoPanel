@@ -5,15 +5,77 @@ import AppKit
 struct EchoPanelV2App: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("asrProvider") private var asrProvider = "Auto-Select"
+    @AppStorage("llmProvider") private var llmProvider = "Auto-Select"
+    @AppStorage("audioSource") private var audioSource = "System + Microphone"
     
     var body: some Scene {
         WindowGroup("EchoPanel", id: "main") {
-            MainView()
-                .environmentObject(appState)
-                .frame(minWidth: 900, minHeight: 600)
+            Group {
+                if !hasCompletedOnboarding {
+                    OnboardingContainerView(isPresented: .constant(true), hasCompletedOnboarding: $hasCompletedOnboarding)
+                        .environmentObject(appState)
+                } else {
+                    MainView()
+                        .environmentObject(appState)
+                }
+            }
+            .frame(minWidth: 480, minHeight: 360)
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if hasCompletedOnboarding {
+                        Picker("Workspace", selection: $appState.workspaceMode) {
+                            ForEach(AppState.WorkspaceMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        RecordButton()
+                        Spacer()
+                        ExportButton()
+                        SettingsButton()
+                    }
+                }
+            }
         }
         .windowStyle(.titleBar)
         .defaultPosition(.center)
+        .keyboardShortcut("q", modifiers: .command)
+        .commands {
+            // ⌘⇧R - Toggle Recording
+            CommandGroup(replacing: .newItem) {
+                Button("Start/Stop Recording") {
+                    appState.toggleRecording()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+            
+            // ⌘⇧P - Toggle Panel
+            CommandGroup(after: .toolbar) {
+                Button("Show/Hide Panel") {
+                    appState.togglePanel()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            }
+            
+            // ⌘⇧H - Open History
+            CommandGroup(after: .sidebar) {
+                Button("Open History") {
+                    appState.navigateToHistory()
+                }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+            }
+
+            // ⌘, - Open Settings (native Settings scene)
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
         
         Settings {
             SettingsView()
@@ -22,58 +84,50 @@ struct EchoPanelV2App: App {
     }
 }
 
+struct OnboardingContainerView: View {
+    @Binding var isPresented: Bool
+    @Binding var hasCompletedOnboarding: Bool
+    
+    var body: some View {
+        OnboardingView(isPresented: $isPresented)
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
     }
 }
 
 struct MainView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var workspaceMode: WorkspaceMode = .dashboard
-
-    enum WorkspaceMode: String, CaseIterable, Identifiable {
-        case dashboard = "Dashboard"
-        case flowStudio = "Flow Studio"
-            
-        var id: String { rawValue }
-        }
-
+    
     var body: some View {
         NavigationView {
             Sidebar()
                 .frame(minWidth: 250)
-
-            ContentArea(mode: workspaceMode)
-                .environmentObject(appState)
+            
+            ContentArea(mode: appState.workspaceMode)
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Picker("Workspace", selection: $workspaceMode) {
-                    ForEach(WorkspaceMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                RecordButton()
-                Spacer()
-                ExportButton()
-                SettingsButton()
-            }
-        }
+        .navigationViewStyle(.columns)
     }
 }
 
 struct Sidebar: View {
     @EnvironmentObject private var appState: AppState
     @State private var searchText = ""
+    @State private var showDeleteConfirmation = false
+    @State private var sessionToDelete: Session?
     
     var filteredSessions: [Session] {
         if searchText.isEmpty {
             return appState.sessions
         }
-        return appState.sessions.filter { 
+        return appState.sessions.filter {
             $0.title.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -91,12 +145,44 @@ struct Sidebar: View {
                     NavigationLink(destination: SessionDetailView(session: session)) {
                         SessionListRow(session: session)
                     }
+                    .contextMenu {
+                        Button("Export") {
+                            appState.exportSession(session)
+                        }
+                        Button("Delete", role: .destructive) {
+                            sessionToDelete = session
+                            showDeleteConfirmation = true
+                        }
+                    }
                 }
             }
         }
         .listStyle(.sidebar)
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search")
+        .focusable()
+        .keyboardShortcut("f", modifiers: .command)
         .navigationTitle("EchoPanel")
+        .sheet(isPresented: $showDeleteConfirmation) {
+            if let session = sessionToDelete {
+                DeleteConfirmationDialog(
+                    session: session,
+                    isPresented: $showDeleteConfirmation,
+                    onDelete: {
+                        appState.deleteSession(session)
+                        sessionToDelete = nil
+                    }
+                )
+                .frame(width: 400, height: 280)
+            }
+        }
+        .sheet(isPresented: $appState.showExportDialog) {
+            if let session = appState.selectedExportSession {
+                ExportDialog(
+                    session: session,
+                    isPresented: $appState.showExportDialog
+                )
+            }
+        }
     }
 }
 
@@ -117,17 +203,37 @@ struct RecordingRow: View {
                     Text(formatDuration(duration))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else if case .paused(let duration) = appState.recordingState {
+                    Text("Paused: \(formatDuration(duration))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             
             Spacer()
             
-            Button(action: { appState.stopRecording() }) {
-                Image(systemName: "stop.fill")
+            HStack(spacing: 8) {
+                if case .recording = appState.recordingState {
+                    Button(action: { appState.pauseRecording() }) {
+                        Image(systemName: "pause.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else if case .paused = appState.recordingState {
+                    Button(action: { appState.resumeRecording() }) {
+                        Image(systemName: "play.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                
+                Button(action: { appState.stopRecording() }) {
+                    Image(systemName: "stop.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .controlSize(.small)
         }
         .padding(.vertical, 4)
     }
@@ -167,36 +273,115 @@ struct SessionListRow: View {
 }
 
 struct ContentArea: View {
-    let mode: MainView.WorkspaceMode
-
+    @EnvironmentObject private var appState: AppState
+    let mode: AppState.WorkspaceMode
+    
     var body: some View {
         Group {
-            if mode == .flowStudio {
+            switch mode {
+            case .dashboard:
+                DashboardView()
+            case .flowStudio:
                 FlowStudioView()
-            } else {
-                VStack(spacing: 20) {
-                    Spacer()
-
-                    Image(systemName: "waveform")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.secondary)
-
-                    Text("Welcome to EchoPanel")
-                        .font(.title)
-                        .fontWeight(.semibold)
-            
-                    Text("Select a session from the sidebar, or open Flow Studio to explore experimental UX journeys")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 460)
-
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(NSColor.windowBackgroundColor))
+            case .history:
+                HistoryView()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct DashboardView: View {
+    @EnvironmentObject private var appState: AppState
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Welcome header
+                VStack(spacing: 12) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    
+                    Text("Welcome to EchoPanel")
+                        .font(.title2.weight(.semibold))
+                    
+                    if appState.sessions.isEmpty {
+                        Text("Start your first recording to see it here")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Select a session from the sidebar, or explore Flow Studio")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 40)
+                
+                // Quick actions
+                if !appState.sessions.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Recent Sessions")
+                            .font(.headline)
+                        
+                        ForEach(appState.sessions.prefix(3)) { session in
+                            NavigationLink(destination: SessionDetailView(session: session)) {
+                                QuickSessionRow(session: session)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .frame(maxWidth: 600, alignment: .leading)
+                }
+                
+                // Flow Studio teaser
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Try Flow Studio")
+                        .font(.headline)
+                    
+                    Text("Explore polished meeting UX with mock scenarios")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    NavigationLink(destination: FlowStudioView()) {
+                        Label("Open Flow Studio", systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal)
+                .frame(maxWidth: 600, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct QuickSessionRow: View {
+    let session: Session
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.title)
+                    .font(.subheadline.weight(.semibold))
+                
+                HStack(spacing: 12) {
+                    Label(session.formattedDuration, systemImage: "clock")
+                    Label(session.formattedDate, systemImage: "calendar")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(10)
     }
 }
 
@@ -204,29 +389,68 @@ struct RecordButton: View {
     @EnvironmentObject private var appState: AppState
     
     var body: some View {
-        Button(action: {
-            if appState.recordingState == .idle {
-                appState.startRecording()
-            } else {
-                appState.stopRecording()
-            }
-        }) {
+        Button(action: { appState.toggleRecording() }) {
             HStack(spacing: 6) {
-                Image(systemName: appState.recordingState == .idle ? "record.circle" : "stop.fill")
-                Text(appState.recordingState == .idle ? "Record" : "Stop")
+                Image(systemName: recordIcon)
+                Text(recordLabel)
             }
         }
         .buttonStyle(.borderedProminent)
-        .tint(appState.recordingState == .idle ? .accentColor : .red)
+        .tint(tintColor)
+    }
+    
+    private var recordIcon: String {
+        switch appState.recordingState {
+        case .idle:
+            return "record.circle"
+        case .recording:
+            return "stop.fill"
+        case .paused:
+            return "play.fill"
+        case .error:
+            return "exclamationmark.circle"
+        }
+    }
+    
+    private var recordLabel: String {
+        switch appState.recordingState {
+        case .idle:
+            return "Record"
+        case .recording:
+            return "Stop"
+        case .paused:
+            return "Resume"
+        case .error:
+            return "Retry"
+        }
+    }
+    
+    private var tintColor: Color {
+        switch appState.recordingState {
+        case .idle:
+            return .accentColor
+        case .recording, .error:
+            return .red
+        case .paused:
+            return .orange
+        }
     }
 }
 
 struct ExportButton: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var showExportSheet = false
+    
     var body: some View {
-        Button(action: {}) {
+        Button(action: { showExportSheet = true }) {
             Image(systemName: "square.and.arrow.up")
         }
         .buttonStyle(.bordered)
+        .sheet(isPresented: $showExportSheet) {
+            if let session = appState.sessions.first {
+                ExportDialog(session: session, isPresented: $showExportSheet)
+            }
+        }
     }
 }
 
@@ -245,6 +469,7 @@ struct SessionDetailView: View {
     @EnvironmentObject private var appState: AppState
     let session: Session
     @State private var selectedTab = 0
+    @State private var showExportSheet = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -267,6 +492,11 @@ struct SessionDetailView: View {
                 }
                 
                 Spacer()
+                
+                Button(action: { showExportSheet = true }) {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
             }
             .padding()
             
@@ -288,18 +518,25 @@ struct SessionDetailView: View {
             Group {
                 switch selectedTab {
                 case 0:
-                    SummaryView(session: session, summaryText: appState.reviewSummary, people: appState.livePeople)
+                    SummaryView(session: session, summaryText: sessionTitleSummary, people: MockData.people(from: session.transcript))
                 case 1:
                     TranscriptTabView(transcript: session.transcript)
                 case 2:
                     HighlightsTabView(highlights: session.highlights)
                 case 3:
-                    PeopleTabView(people: appState.livePeople)
+                    PeopleTabView(people: MockData.people(from: session.transcript))
                 default:
                     EmptyView()
                 }
             }
         }
+        .sheet(isPresented: $showExportSheet) {
+            ExportDialog(session: session, isPresented: $showExportSheet)
+        }
+    }
+    
+    private var sessionTitleSummary: String {
+        "Session captured with EchoPanel. Review transcript, highlights, and action items below."
     }
 }
 
@@ -313,7 +550,7 @@ struct SummaryView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // AI Summary
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("AI Summary", systemImage: "brain")
+                    Label("Summary", systemImage: "text.alignleft")
                         .font(.headline)
                     
                     Text(summaryText)
@@ -351,17 +588,13 @@ struct SummaryView: View {
                     )
                 }
                 
-                // Quick actions
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Action Items", systemImage: "bolt")
-                        .font(.headline)
-                    
-                    let actions = session.transcript.compactMap { $0.actionItem }
-                    if actions.isEmpty {
-                        Text("No action items found")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    } else {
+                // Action items
+                let actions = session.transcript.compactMap { $0.actionItem }
+                if !actions.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Action Items", systemImage: "bolt")
+                            .font(.headline)
+                        
                         ForEach(actions) { action in
                             HStack {
                                 Image(systemName: action.isCompleted ? "checkmark.circle.fill" : "checkmark.circle")
@@ -375,10 +608,10 @@ struct SummaryView: View {
                             .padding(.vertical, 4)
                         }
                     }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(10)
                 }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(10)
             }
             .padding()
             .frame(maxWidth: 800, alignment: .leading)
@@ -386,17 +619,50 @@ struct SummaryView: View {
     }
 }
 
+struct StatBox: View {
+    let icon: String
+    let value: String
+    let label: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            
+            Text(value)
+                .font(.title2.weight(.semibold))
+            
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(10)
+    }
+}
+
 struct TranscriptTabView: View {
     let transcript: [TranscriptItem]
     
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(transcript) { item in
-                    TranscriptCard(item: item)
+        if transcript.isEmpty {
+            EmptyStateView(
+                icon: "text.bubble",
+                title: "No Transcript",
+                subtitle: "Start recording to see live transcript"
+            )
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(transcript) { item in
+                        TranscriptCard(item: item)
+                    }
                 }
+                .padding()
             }
-            .padding()
         }
     }
 }
@@ -405,13 +671,21 @@ struct HighlightsTabView: View {
     let highlights: [Highlight]
     
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(highlights) { highlight in
-                    HighlightCard(highlight: highlight)
+        if highlights.isEmpty {
+            EmptyStateView(
+                icon: "sparkles",
+                title: "No Highlights",
+                subtitle: "Highlights will appear as the conversation progresses"
+            )
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(highlights) { highlight in
+                        HighlightCard(highlight: highlight)
+                    }
                 }
+                .padding()
             }
-            .padding()
         }
     }
 }
@@ -420,13 +694,23 @@ struct PeopleTabView: View {
     let people: [Person]
     
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(people) { person in
-                    PersonCard(person: person)
+        if people.isEmpty {
+            EmptyStateView(
+                icon: "person.3",
+                title: "No Participants",
+                subtitle: "Participants will appear as they're detected"
+            )
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(people) { person in
+                        PersonCard(person: person)
+                    }
                 }
+                .padding()
             }
-            .padding()
         }
     }
 }
+
+// MARK: - WorkspaceMode moved to AppState.swift

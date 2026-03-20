@@ -58,9 +58,13 @@ def extract_ws_token(websocket: WebSocket) -> str:
     if header_token:
         return header_token.strip()
 
-    # Check query param (least secure, legacy)
+    # Check query param (deprecated — only for dev convenience, log if used)
     query_token = websocket.query_params.get("token")
     if query_token:
+        _logger.warning(
+            "WebSocket auth: query param token used (deprecated). "
+            "Use Authorization header instead. Client should be updated."
+        )
         return query_token.strip()
 
     return ""

@@ -126,7 +126,7 @@ struct SearchField: View {
             }
         }
         .padding(6)
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(6)
     }
 }

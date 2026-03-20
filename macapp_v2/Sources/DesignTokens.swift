@@ -49,10 +49,19 @@ extension Font {
 
 // MARK: - Materials
 enum AppMaterial {
+    // ✅ Correct: sidebar and toolbar — frosted glass is appropriate here
     static let sidebar = Material.ultraThinMaterial
     static let toolbar = Material.thinMaterial
-    static let card = Material.regularMaterial
+    // ✅ Correct: popovers need material for depth
     static let popover = Material.thinMaterial
+
+    // ⚠️ DEPRECATED for content areas — violates HIG:
+    // Content text on Material.regularMaterial has insufficient contrast in dense areas.
+    // Use cardBackgroundColor instead for content cards.
+    static let card = Material.regularMaterial
+
+    // ✅ RECOMMENDED: Use for all content card backgrounds (HIG-compliant)
+    static let cardBackground = Color(NSColor.controlBackgroundColor)
 }
 
 // MARK: - View Modifiers
@@ -60,7 +69,9 @@ struct CardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(Spacing.md)
-            .background(AppMaterial.card)
+            // ✅ HIG-compliant: use controlBackgroundColor instead of
+            // Material.regularMaterial in dense content areas
+            .background(AppMaterial.cardBackground)
             .cornerRadius(CornerRadius.md)
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.md)
@@ -107,6 +118,8 @@ struct EmptyStateView: View {
     let icon: String
     let title: String
     let subtitle: String
+    var ctaLabel: String? = nil
+    var ctaAction: (() -> Void)? = nil
     
     var body: some View {
         VStack(spacing: Spacing.lg) {
@@ -122,6 +135,14 @@ struct EmptyStateView: View {
                     .font(.appCaption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+            }
+            
+            if let label = ctaLabel, let action = ctaAction {
+                Button(action: action) {
+                    Text(label)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
         }
         .padding(Spacing.xl)

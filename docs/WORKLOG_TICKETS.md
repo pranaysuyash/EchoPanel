@@ -1,6 +1,6 @@
 # EchoPanel Worklog Tickets — Current Status
 
-**Last Updated:** 2026-03-03 (v2 UI Components Backlog Added)  
+**Last Updated:** 2026-03-19 (P0/P1 fixes applied, v2 UI audit spawned)  
 **Document Purpose:** Single source of truth for all active, completed, and blocked work items.
 
 ---
@@ -61,6 +61,12 @@
 42. **TCK-20260303-005** — FIX: CPU Usage Calculation Bug ✅
 43. **TCK-20260303-006** — FIX: DegradeLadder Recovery Logic Bug ✅
 44. **TCK-20260303-007** — FIX: CircuitBreaker Timer No-Op ✅
+45. **TCK-20260319-001** — FIX: WhisperCpp `_infer_times` unbounded memory leak ✅ (2026-03-19)
+46. **TCK-20260319-002** — FIX: WebSocket query param auth deprecated, warning added ✅ (2026-03-19)
+47. **TCK-20260319-003** — v2 UI comprehensive build (all 4 scenarios, states, shortcuts) ✅ (2026-03-19)
+48. **TCK-20260319-003** — v2 UI comprehensive build (all 4 scenarios, states, shortcuts) ✅ (2026-03-19)
+49. **TCK-20260319-004** — HIG Audit: 16 issues found (9 medium, 7 low) 📋 (2026-03-19)
+50. **TCK-20260319-005** — FIX: Production app Swift 6 escaping closure + deprecated MainActor.run ✅ (2026-03-19)
 
 ---
 
@@ -495,6 +501,33 @@ Comprehensive deep dive research into EchoPanel's messaging, pricing, copy, and 
 ---
 
 ### TCK-20260218-001 :: Audit - NativeMLXBackend.swift Multi-AI Code Review ✅
+### TCK-20260218-002 :: GTM Week 1 Kickoff: Beta Recruitment & Pricing Research
+ 
+**Type:** IMPROVEMENT
+**Owner:** Pranay
+**Created:** 2026-02-18
+**Status:** **IN_PROGRESS** 🟡
+**Priority:** P0
+ 
+**Description:** Kickoff tasks for Week 1: recruit beta testers, set up competitor accounts, and initialize pricing research; align with Part 11 answers and Week 1 execution plan.
+ 
+**Scope Contract:**
+- In-scope: Beta outreach, survey design, competitor accounts setup, early tester onboarding, pricing framework
+- Out-of-scope: Full beta population and pricing roll-out (phased in later weeks)
+ 
+**Targets:**
+- Surfaces: docs/gtm, docs/WORKLOG_TICKETS.md
+- Files: beta_program_launch_plan.md, pricing_strategy_market_research.md, competitive_analysis_hands_on_testing.md
+ 
+**Acceptance Criteria:**
+- [x] Outreach templates drafted (beta recruitment)
+- [x] Willingness-to-pay survey questions drafted
+- [x] Competitor accounts plan drafted
+- [ ] Beta testers recruited (in progress)
+- [ ] First week tests initiated (in progress)
+ 
+**Evidence Log:**
+- Draft plan created and linked to Week 1 kickoff tasks
 
 **Type:** AUDIT
 **Owner:** Pranay

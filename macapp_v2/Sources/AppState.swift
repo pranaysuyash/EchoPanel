@@ -64,6 +64,7 @@ enum MockFlowTrack: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppState: ObservableObject {
+    // MARK: - Published Properties
     @Published var recordingState: RecordingState = .idle
     @Published var panelVisible: Bool = false
     @Published var alwaysOnTop: Bool = false
@@ -74,10 +75,32 @@ final class AppState: ObservableObject {
     @Published var liveHighlights: [Highlight] = MockData.sampleHighlights
     @Published var livePeople: [Person] = MockData.samplePeople
     @Published var reviewSummary: String = MockData.sampleSummary
-
+    
+    // MARK: - UI State
+    @Published var isLoading: Bool = false
+    @Published var errorState: AppError?
+    @Published var showOnboarding: Bool = false
+    @Published var showExportDialog: Bool = false
+    @Published var showDeleteConfirmation: Bool = false
+    @Published var sessionToDelete: Session?
+    @Published var selectedExportSession: Session?
+    @Published var workspaceMode: WorkspaceMode = .dashboard
+    
+    // MARK: - AppStorage Properties (via UserDefaults in EchoPanelV2App)
+    var hasCompletedOnboarding: Bool = false
+    
+    // MARK: - Private
     private var timer: Timer?
     private var recordingSeconds: Int = 0
     private var scriptedMoments: [TranscriptItem] = []
+    
+    enum WorkspaceMode: String, CaseIterable, Identifiable {
+        case dashboard = "Dashboard"
+        case flowStudio = "Flow Studio"
+        case history = "History"
+        
+        var id: String { rawValue }
+    }
 
     init() {
         applyFlow(.teamStandup)
@@ -138,6 +161,81 @@ final class AppState: ObservableObject {
     func resumeRecording() {
         recordingState = .recording(duration: recordingSeconds)
         startTimer()
+    }
+    
+    func skipForward(seconds: Int) {
+        // Add the skip interval to the recording duration
+        recordingSeconds += seconds
+        switch recordingState {
+        case .recording(let duration):
+            recordingState = .recording(duration: recordingSeconds)
+        case .paused(let duration):
+            recordingState = .paused(duration: recordingSeconds)
+        default:
+            break
+        }
+    }
+    
+    func toggleRecording() {
+        switch recordingState {
+        case .idle:
+            startRecording()
+        case .recording:
+            stopRecording()
+        case .paused:
+            resumeRecording()
+        case .error:
+            startRecording()
+        }
+    }
+    
+    func togglePanel() {
+        panelVisible.toggle()
+    }
+    
+    func navigateToHistory() {
+        workspaceMode = .history
+    }
+    
+    func deleteSession(_ session: Session) {
+        sessions.removeAll { $0.id == session.id }
+        if currentSession?.id == session.id {
+            currentSession = nil
+        }
+    }
+    
+    func showDeleteConfirmation(for session: Session) {
+        sessionToDelete = session
+        showDeleteConfirmation = true
+    }
+    
+    func confirmDelete() {
+        if let session = sessionToDelete {
+            deleteSession(session)
+        }
+        sessionToDelete = nil
+        showDeleteConfirmation = false
+    }
+    
+    func exportSession(_ session: Session) {
+        selectedExportSession = session
+        showExportDialog = true
+    }
+    
+    func dismissError() {
+        errorState = nil
+    }
+    
+    func retryError() {
+        let lastError = errorState
+        errorState = nil
+        // Attempt to recover from the error
+        switch lastError {
+        case .asrError, .llmError:
+            startRecording()
+        default:
+            break
+        }
     }
     
     private func startTimer() {
@@ -255,6 +353,15 @@ enum HighlightType: Hashable {
     case decision
     case keyPoint
     case question
+    
+    var displayName: String {
+        switch self {
+        case .action: return "Action"
+        case .decision: return "Decision"
+        case .keyPoint: return "Key Point"
+        case .question: return "Question"
+        }
+    }
 }
 
 struct ActionItem: Identifiable, Hashable {

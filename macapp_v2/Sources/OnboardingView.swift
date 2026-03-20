@@ -8,65 +8,99 @@ struct OnboardingView: View {
     let totalSteps = 3
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Progress dots
-            HStack(spacing: 8) {
-                ForEach(0..<totalSteps, id: \.self) { index in
-                    Circle()
-                        .fill(index == currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
-                        .frame(width: 8, height: 8)
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                // Progress dots — keyboard navigable
+                HStack(spacing: 8) {
+                    ForEach(0..<totalSteps, id: \.self) { index in
+                        Circle()
+                            .fill(index == currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                            .onTapGesture {
+                                withAnimation {
+                                    currentStep = index
+                                }
+                            }
+                    }
                 }
-            }
-            .padding(.top, 24)
-            
-            // Content - switch based on current step
-            Group {
-                switch currentStep {
-                case 0:
-                    WelcomeStep()
-                        .transition(.opacity)
-                case 1:
-                    TipsStep()
-                        .transition(.opacity)
-                case 2:
-                    ReadyStep(isPresented: $isPresented)
-                        .transition(.opacity)
-                default:
-                    EmptyView()
-                }
-            }
-            .frame(height: 320)
-            
-            // Navigation buttons
-            HStack {
-                if currentStep > 0 {
-                    Button("Back") {
+                .padding(.top, 24)
+                .focusable()
+                .onKeyPress(keys: [.leftArrow]) { _ in
+                    if currentStep > 0 {
                         withAnimation {
                             currentStep -= 1
                         }
                     }
-                    .buttonStyle(.plain)
+                    return .handled
                 }
-                
-                Spacer()
-                
-                if currentStep < totalSteps - 1 {
-                    Button("Next") {
+                .onKeyPress(keys: [.rightArrow]) { _ in
+                    if currentStep < totalSteps - 1 {
                         withAnimation {
                             currentStep += 1
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Button("Get Started") {
-                        hasCompletedOnboarding = true
-                        isPresented = false
-                    }
-                    .buttonStyle(.borderedProminent)
+                    return .handled
                 }
+                
+                // Content - switch based on current step
+                Group {
+                    switch currentStep {
+                    case 0:
+                        WelcomeStep()
+                            .transition(.opacity)
+                    case 1:
+                        TipsStep()
+                            .transition(.opacity)
+                    case 2:
+                        ReadyStep(isPresented: $isPresented)
+                            .transition(.opacity)
+                    default:
+                        EmptyView()
+                    }
+                }
+                .frame(height: 320)
+                
+                // Navigation buttons
+                HStack {
+                    if currentStep > 0 {
+                        Button("Back") {
+                            withAnimation {
+                                currentStep -= 1
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Spacer()
+                    
+                    if currentStep < totalSteps - 1 {
+                        Button("Next") {
+                            withAnimation {
+                                currentStep += 1
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Get Started") {
+                            hasCompletedOnboarding = true
+                            isPresented = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(.horizontal, 32)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 24)
+            
+            if currentStep < totalSteps - 1 {
+                Button("Skip") {
+                    hasCompletedOnboarding = true
+                    isPresented = false
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(16)
+            }
         }
         .frame(width: 480, height: 420)
     }

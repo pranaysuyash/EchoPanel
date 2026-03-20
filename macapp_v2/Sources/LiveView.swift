@@ -64,15 +64,34 @@ struct LiveView: View {
             .padding()
             .background(Material.thinMaterial)
             
-            // Tab bar
-            Picker("View", selection: $selectedTab) {
-                Text("Highlights").tag(PanelContainerView.Tab.highlights)
-                Text("Transcript").tag(PanelContainerView.Tab.transcript)
-                Text("People").tag(PanelContainerView.Tab.people)
+            // Tab bar — arrow-key navigable
+            HStack {
+                Picker("View", selection: $selectedTab) {
+                    Text("Highlights").tag(PanelContainerView.Tab.highlights)
+                    Text("Transcript").tag(PanelContainerView.Tab.transcript)
+                    Text("People").tag(PanelContainerView.Tab.people)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .focusable()
+                .onKeyPress(keys: [.leftArrow]) { _ in
+                    switch selectedTab {
+                    case .highlights: selectedTab = .people
+                    case .transcript: selectedTab = .highlights
+                    case .people: selectedTab = .transcript
+                    }
+                    return .handled
+                }
+                .onKeyPress(keys: [.rightArrow]) { _ in
+                    switch selectedTab {
+                    case .highlights: selectedTab = .transcript
+                    case .transcript: selectedTab = .people
+                    case .people: selectedTab = .highlights
+                    }
+                    return .handled
+                }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
             
             // Content
             ScrollView {
@@ -116,7 +135,11 @@ struct HighlightsView: View {
 
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            if appState.liveHighlights.isEmpty {
+            if appState.isLoading {
+                ForEach(0..<3, id: \.self) { _ in
+                    SkeletonHighlightCard()
+                }
+            } else if appState.liveHighlights.isEmpty {
                 EmptyStateView(
                     icon: "sparkles",
                     title: "No Highlights Yet",
@@ -171,7 +194,7 @@ struct HighlightCard: View {
             Spacer()
         }
         .padding()
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(CornerRadius.md)
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.md)
@@ -191,8 +214,14 @@ struct TranscriptView: View {
 
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(appState.liveTranscript) { item in
-                TranscriptCard(item: item)
+            if appState.isLoading {
+                ForEach(0..<5, id: \.self) { _ in
+                    SkeletonTranscriptCard()
+                }
+            } else {
+                ForEach(appState.liveTranscript) { item in
+                    TranscriptCard(item: item)
+                }
             }
         }
         .padding()
@@ -242,7 +271,7 @@ struct TranscriptCard: View {
             }
         }
         .padding()
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(CornerRadius.md)
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.md)
@@ -256,8 +285,14 @@ struct PeopleView: View {
 
     var body: some View {
         LazyVStack(spacing: Spacing.md) {
-            ForEach(appState.livePeople) { person in
-                PersonCard(person: person)
+            if appState.isLoading {
+                ForEach(0..<3, id: \.self) { _ in
+                    SkeletonPersonCard()
+                }
+            } else {
+                ForEach(appState.livePeople) { person in
+                    PersonCard(person: person)
+                }
             }
         }
         .padding()
@@ -299,7 +334,7 @@ struct PersonCard: View {
             }
         }
         .padding()
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(CornerRadius.md)
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.md)

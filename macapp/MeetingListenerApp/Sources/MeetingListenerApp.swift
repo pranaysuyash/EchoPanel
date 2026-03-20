@@ -20,26 +20,14 @@ struct MeetingListenerApp: App {
     init() {
         // Start backend server on app launch
         BackendManager.shared.startServer()
-        
+
         // Start data retention manager for automatic cleanup
         DataRetentionManager.shared.start()
-        
+
         // Gap 5 fix: Check for recoverable session
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if SessionStore.shared.hasRecoverableSession {
                 // Will be handled in view
-            }
-        }
-        
-        // TCK-20260212-005: Check license on startup (if enabled)
-        if requireLicenseValidation {
-            Task {
-                let hasValidLicense = await licenseManager.checkLicense()
-                if !hasValidLicense {
-                    await MainActor.run {
-                        showLicensePrompt = true
-                    }
-                }
             }
         }
     }
@@ -51,17 +39,17 @@ struct MeetingListenerApp: App {
             labelContent
         }
         .menuBarExtraStyle(.menu)
-        .onChange(of: showTermsAcceptance) { newValue in
+        .onChange(of: showTermsAcceptance) { _, newValue in
             if newValue {
                 openWindow(id: "terms-acceptance")
             }
         }
-        .onChange(of: showOnboarding) { newValue in
+        .onChange(of: showOnboarding) { _, newValue in
             if newValue {
                 openWindow(id: "onboarding")
             }
         }
-        .onChange(of: showLicensePrompt) { newValue in
+        .onChange(of: showLicensePrompt) { _, newValue in
             if newValue {
                 openWindow(id: "license-validation")
             }
@@ -286,6 +274,10 @@ struct MeetingListenerApp: App {
     
     private var menuContent: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // TCK-20260212-005: License check on startup (Swift 6 safe)
+            // requireLicenseValidation is false in dev; set true for production.
+            LicenseCheckView(showLicensePrompt: $showLicensePrompt, validate: requireLicenseValidation)
+
             // App Header
             HStack(spacing: 10) {
                 Image(systemName: "waveform.circle.fill")
@@ -834,5 +826,27 @@ struct DiagnosticsView: View {
     
     private func refreshCrashLogs() {
         crashLogs = CrashReporter.shared.getCrashLogs()
+    }
+}
+
+// MARK: - License Check View (Swift 6 Safe)
+// TCK-20260212-005: Isolated license check view.
+// Moved out of App init to avoid Swift 6 escaping closure / mutating self issues.
+// Using a separate view with .task avoids Sendable/actor isolation problems.
+private struct LicenseCheckView: View {
+    @Binding var showLicensePrompt: Bool
+    let validate: Bool
+
+    var body: some View {
+        // Invisible — performs check on appear
+        Color.clear
+            .task { @MainActor in
+                if validate {
+                    let hasValidLicense = await LicenseManager.shared.checkLicense()
+                    if !hasValidLicense {
+                        showLicensePrompt = true
+                    }
+                }
+            }
     }
 }

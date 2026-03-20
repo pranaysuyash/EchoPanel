@@ -102,7 +102,7 @@ struct FlowStudioView: View {
                         }
                         .padding(Spacing.lg)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Material.regularMaterial)
+                        .background(AppMaterial.cardBackground)
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
@@ -149,7 +149,7 @@ struct FlowStudioView: View {
                 }
             }
             .padding(Spacing.lg)
-            .background(Material.regularMaterial)
+            .background(AppMaterial.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)

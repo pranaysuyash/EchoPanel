@@ -105,13 +105,14 @@ struct SummaryContent: View {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Label("AI Summary", systemImage: "brain")
                     .font(.headline)
-                
+
                 Text(summaryText)
                     .font(.body)
                     .lineSpacing(4)
             }
             .padding()
-            .background(Material.regularMaterial)
+            // ✅ HIG-compliant: cardBackground instead of Material.regularMaterial
+            .background(AppMaterial.cardBackground)
             .cornerRadius(CornerRadius.md)
             
             // Key stats
@@ -159,7 +160,7 @@ struct SummaryContent: View {
                 }
             }
             .padding()
-            .background(Material.regularMaterial)
+            .background(AppMaterial.cardBackground)
             .cornerRadius(CornerRadius.md)
         }
         .padding()
@@ -187,7 +188,7 @@ struct StatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(CornerRadius.md)
     }
 }

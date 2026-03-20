@@ -34,7 +34,7 @@ struct SettingsView: View {
                 }
                 .tag(Tabs.privacy)
         }
-        .frame(width: 500, height: 380)
+        .frame(width: 500, height: 450)
         .padding()
     }
 }
@@ -59,6 +59,7 @@ struct GeneralSettings: View {
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
                 
                 HStack {
                     Text("Show/Hide Panel")
@@ -67,6 +68,7 @@ struct GeneralSettings: View {
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
                 
                 HStack {
                     Text("Open History")
@@ -75,6 +77,7 @@ struct GeneralSettings: View {
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
             }
             
             Section("Appearance") {

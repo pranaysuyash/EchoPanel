@@ -187,7 +187,7 @@ struct SearchableTranscriptCard: View {
             }
         }
         .padding()
-        .background(Material.regularMaterial)
+        .background(AppMaterial.cardBackground)
         .cornerRadius(10)
         .overlay(
             RoundedRectangle(cornerRadius: 10)

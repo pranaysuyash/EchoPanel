@@ -303,6 +303,8 @@ class WhisperCppProvider(ASRProvider):
                     infer_time = time.perf_counter() - infer_start
                     
                     self._infer_times.append(infer_time)
+                    if len(self._infer_times) > 1000:
+                        self._infer_times.pop(0)
                     self._chunks_processed += 1
                     
                     # Parse output
