@@ -9,8 +9,10 @@ from fastapi import FastAPI, HTTPException, Request
 from server.api.documents import router as documents_router
 from server.api.ws_live_listener import router as ws_router
 from server.api.brain_dump_query import router as brain_dump_router
-from server.api.config import router as config_router
-from server.security import require_http_auth, extract_http_token
+from server.security import (
+    extract_http_token as _extract_token,
+    require_http_auth as _require_http_auth,
+)
 from server.services.asr_providers import ASRProviderRegistry
 from server.services.asr_stream import _get_default_config
 
@@ -290,7 +292,6 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(ws_router)
 app.include_router(documents_router)
 app.include_router(brain_dump_router)
-app.include_router(config_router, prefix="/config", tags=["config"])
 
 
 @app.middleware("http")
@@ -310,13 +311,13 @@ async def rate_limit_middleware(request: Request, call_next):
     client_id = request.client.host if request.client else "unknown"
     
     # Use auth token as client ID if available (per-user rate limiting)
-    auth_token = extract_http_token(request)
+    auth_token = _extract_token(request)
     if auth_token:
         client_id = f"token:{auth_token[:16]}"
     
     limiter = get_rate_limiter()
     if not await limiter.acquire(client_id):
-        remaining = await limiter.get_remaining(client_id)
+        remaining = limiter.get_remaining(client_id)
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=429,
@@ -345,14 +346,14 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/")
 async def root(request: Request) -> dict:
-    require_http_auth(request)
+    _require_http_auth(request)
     logger.info("Root endpoint accessed.")
     return {"status": "ok", "service": "echopanel"}
 
 
 @app.get("/health")
 async def health_check(request: Request) -> dict:
-    require_http_auth(request)
+    _require_http_auth(request)
     """
     Health check that reflects ASR readiness.
 
@@ -373,9 +374,6 @@ async def health_check(request: Request) -> dict:
         
         # Deep health: provider must be available AND model warmed up
         if provider and provider.is_available and model_health.ready:
-            from server.services.rag_store import get_rag_store
-            rag_store = get_rag_store()
-            rag_status = "degraded" if rag_store._degraded else "ok"
             return {
                 "status": "ok",
                 "service": "echopanel",
@@ -386,7 +384,6 @@ async def health_check(request: Request) -> dict:
                 "load_time_ms": model_health.load_time_ms,
                 "warmup_time_ms": model_health.warmup_time_ms,
                 "process_rss_mb": model_health.process_rss_mb,
-                "rag_store": rag_status,
             }
         
         # Not ready - determine why
@@ -416,7 +413,7 @@ async def health_check(request: Request) -> dict:
 
 @app.get("/capabilities")
 async def get_capabilities(request: Request) -> dict:
-    require_http_auth(request)
+    _require_http_auth(request)
     """
     Get machine capabilities and ASR recommendations.
     
@@ -435,7 +432,7 @@ async def get_capabilities(request: Request) -> dict:
 
 @app.get("/model-status")
 async def get_model_status(request: Request) -> dict:
-    require_http_auth(request)
+    _require_http_auth(request)
     """
     Get model preloader status and statistics.
     
@@ -446,12 +443,10 @@ async def get_model_status(request: Request) -> dict:
         manager = get_model_manager()
         
         return {
-                "status": "ok",
-                "health": manager.health().to_dict(),
-                "stats": manager.get_stats(),
-                "asr_provider_cache_entries": ASRProviderRegistry.cache_size(),
-                "asr_provider_cache_max": ASRProviderRegistry._MAX_INSTANCES,
-            }
+            "status": "ok",
+            "health": manager.health().to_dict(),
+            "stats": manager.get_stats(),
+        }
     except Exception as e:
         logger.error(f"Failed to get model status: {e}")
         raise HTTPException(

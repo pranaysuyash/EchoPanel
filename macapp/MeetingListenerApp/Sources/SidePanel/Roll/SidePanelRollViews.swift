@@ -35,34 +35,44 @@ extension SidePanelView {
 
     // HIG Fix: Renamed from rollFooterState to rollFooter for consistency
     var rollFooter: some View {
-        HStack(spacing: Spacing.sm) {
-            smallStateBadge(title: transcriptUI.followLive ? "Follow ON" : "Follow OFF", tint: transcriptUI.followLive ? .green : .orange)
-            smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
-            smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
-
-            Spacer()
-
-            Button("Surfaces") {
-                if showSurfaceOverlay {
-                    showSurfaceOverlay = false
-                } else {
-                    showSurfaceOverlay = true
-                    activeSurface = .summary
-                }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                smallStateBadge(title: transcriptUI.followLive ? "Following live" : "Reviewing backlog", tint: transcriptUI.followLive ? .green : .orange)
+                smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
+                smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
+                Spacer()
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .accessibilityLabel("Toggle surfaces overlay")
-            .accessibilityHint("Shows summary, actions, pins, and entities")
 
-            if !transcriptUI.followLive {
-                Button("Jump Live") {
-                    jumpToLive()
+            HStack(spacing: Spacing.sm) {
+                Text("Use this mode to stay on the live transcript and open insights only when something needs attention.")
+                    .font(Typography.captionSmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+
+                Spacer(minLength: Spacing.sm)
+
+                Button("Insights") {
+                    if showSurfaceOverlay {
+                        showSurfaceOverlay = false
+                    } else {
+                        showSurfaceOverlay = true
+                        activeSurface = .summary
+                    }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .controlSize(.small)
-                .accessibilityLabel("Jump to live transcript")
-                .accessibilityHint("Press J to jump to latest transcript")
+                .accessibilityLabel("Toggle surfaces overlay")
+                .accessibilityHint("Shows summary, actions, pins, and entities")
+
+                if !transcriptUI.followLive {
+                    Button("Jump Live") {
+                        jumpToLive()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityLabel("Jump to live transcript")
+                    .accessibilityHint("Press J to jump to latest transcript")
+                }
             }
         }
     }

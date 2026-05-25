@@ -28,15 +28,15 @@ extension SidePanelView {
             return appState.statusMessage
         case .idle:
             if !appState.isServerReady {
-                return "Preparing local backend..."
+                return "Preparing local runtime..."
             }
             if viewMode == .roll {
-                return "Live instrument · transcript-first"
+                return "Start a session to capture transcript, decisions, and follow-ups"
             }
             if viewMode == .compact {
-                return "Minimal live companion"
+                return "A quiet live companion for the current meeting"
             }
-            return "Full review and management"
+            return "Review transcripts, decisions, notes, and context in one workspace"
         }
     }
 
@@ -85,6 +85,22 @@ extension SidePanelView {
 
     var exportDisabled: Bool {
         appState.transcriptSegments.isEmpty && appState.actions.isEmpty && appState.decisions.isEmpty && appState.risks.isEmpty
+    }
+
+    var transcriptLineCountText: String {
+        "\(appState.transcriptSegments.filter { $0.isFinal }.count)"
+    }
+
+    var actionCountText: String {
+        "\(appState.actions.count)"
+    }
+
+    var decisionCountText: String {
+        "\(appState.decisions.count)"
+    }
+
+    var entityCountText: String {
+        "\(appState.entities.count)"
     }
 
     var filteredSegments: [TranscriptSegment] {

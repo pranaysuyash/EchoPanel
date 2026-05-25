@@ -350,7 +350,7 @@ struct HotKeySettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             // Enable toggle
             Toggle("Enable Global Hot-Keys", isOn: $hotKeyManager.isEnabled)
-                .onChange(of: hotKeyManager.isEnabled) { enabled in
+                .onChange(of: hotKeyManager.isEnabled) { _, enabled in
                     if enabled {
                         hotKeyManager.startMonitoring()
                     } else {

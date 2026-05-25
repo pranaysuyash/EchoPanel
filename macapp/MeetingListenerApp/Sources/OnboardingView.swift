@@ -277,15 +277,22 @@ struct OnboardingView: View {
                 .cornerRadius(8)
             } else if !appState.isServerReady {
                 VStack(spacing: 6) {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(backendStatusText)
+                    if backendManager.isAwaitingOnDemandStart {
+                        Text("Local runtime will start when you begin your first session.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(backendStatusText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
-                    if !backendManager.healthDetail.isEmpty {
-                        Text(backendManager.healthDetail)
+                    if !backendManager.startupStatusText.isEmpty {
+                        Text(backendManager.startupStatusText)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

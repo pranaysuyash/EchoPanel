@@ -28,36 +28,42 @@ extension SidePanelView {
             .accessibilitySortPriority(Accessibility.SortPriority.content)
 
             // HIG Fix: Added Surfaces button for feature parity (C1)
-            HStack(spacing: Spacing.sm) {
-                smallStateBadge(title: transcriptUI.followLive ? "Follow ON" : "Follow OFF", tint: transcriptUI.followLive ? .green : .orange)
-                smallStateBadge(title: "Focus \(focusedLineLabel)", tint: .blue)
-                smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
-
-                Spacer()
-
-                // HIG Fix: Added Surfaces button (was missing in Compact)
-                Button("Surfaces") {
-                    if showSurfaceOverlay {
-                        showSurfaceOverlay = false
-                    } else {
-                        showSurfaceOverlay = true
-                        activeSurface = .summary
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(spacing: Spacing.sm) {
+                    smallStateBadge(title: transcriptUI.followLive ? "Following live" : "Reviewing backlog", tint: transcriptUI.followLive ? .green : .orange)
+                    smallStateBadge(title: "Pins \(transcriptUI.pinnedSegmentIDs.count)", tint: .indigo)
+                    Spacer()
+                    Button("Insights") {
+                        if showSurfaceOverlay {
+                            showSurfaceOverlay = false
+                        } else {
+                            showSurfaceOverlay = true
+                            activeSurface = .summary
+                        }
                     }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityLabel("Toggle surfaces overlay")
-                .accessibilityHint("Shows summary, actions, pins, and entities")
-
-                // HIG Fix: Standardized button label to "Jump Live"
-                if !transcriptUI.followLive {
-                    Button("Jump Live") {
-                        jumpToLive()
-                    }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .accessibilityLabel("Jump to live transcript")
-                    .accessibilityHint("Press J to jump to latest transcript")
+                    .accessibilityLabel("Toggle surfaces overlay")
+                    .accessibilityHint("Shows summary, actions, pins, and entities")
+                }
+
+                HStack(spacing: Spacing.sm) {
+                    Text("Compact mode keeps the transcript visible while surfacing only the essentials.")
+                        .font(Typography.captionSmall)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+
+                    Spacer(minLength: 0)
+
+                    if !transcriptUI.followLive {
+                        Button("Jump Live") {
+                            jumpToLive()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityLabel("Jump to live transcript")
+                        .accessibilityHint("Press J to jump to latest transcript")
+                    }
                 }
             }
             .accessibilitySortPriority(Accessibility.SortPriority.footer)

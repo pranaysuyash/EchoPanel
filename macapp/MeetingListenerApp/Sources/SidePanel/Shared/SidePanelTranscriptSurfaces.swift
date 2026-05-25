@@ -401,16 +401,21 @@ extension SidePanelView {
 
     func toolbarPickerAndInfo(pickerWidth: CGFloat, fillsWidth: Bool) -> some View {
         HStack(spacing: Spacing.md) {
-            Picker("", selection: $highlightMode) {
-                ForEach(EntityHighlighter.HighlightMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Transcript lens")
+                    .font(Typography.captionSmall)
+                    .foregroundColor(.secondary)
+                Picker("", selection: $highlightMode) {
+                    ForEach(EntityHighlighter.HighlightMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: fillsWidth ? .infinity : pickerWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Highlights")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: fillsWidth ? .infinity : pickerWidth)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel("Highlights")
 
             Button {
                 showHighlightHelp.toggle()
@@ -455,9 +460,9 @@ extension SidePanelView {
                     jumpToLive()
                 } label: {
                     if transcriptUI.pendingNewSegments > 0 {
-                        Text("Jump Live (\(transcriptUI.pendingNewSegments))")
+                        Text("Resume Live (\(transcriptUI.pendingNewSegments))")
                     } else {
-                        Text("Jump Live")
+                        Text("Resume Live")
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -465,7 +470,7 @@ extension SidePanelView {
             }
 
             if showSurfaceButtons {
-                Menu("Surface") {
+                Menu("Insights") {
                     ForEach(Surface.allCases) { surface in
                         Button(surface.rawValue) {
                             activeSurface = surface
@@ -491,7 +496,7 @@ extension SidePanelView {
                     .font(Typography.title)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Text("←/→ cycle · Esc close")
+                Text("Insights overlay · ←/→ cycle · Esc close")
                     .font(Typography.captionSmall)
                     .foregroundColor(.secondary)
                 Button {

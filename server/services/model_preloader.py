@@ -24,6 +24,7 @@ import sys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
 from typing import Optional, Dict, Any
 import numpy as np
 
@@ -73,6 +74,12 @@ class ModelHealth:
     last_error: Optional[str] = None
     process_rss_mb: Optional[float] = None
     
+    # Background download state
+    download_in_progress: bool = False
+    download_target_model: Optional[str] = None
+    download_progress_pct: Optional[float] = None  # 0-100
+    download_error: Optional[str] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         return {
             "state": self.state.name,
@@ -83,6 +90,10 @@ class ModelHealth:
             "warmup_time_ms": round(self.warmup_time_ms, 1),
             "last_error": self.last_error,
             "process_rss_mb": round(self.process_rss_mb, 1) if self.process_rss_mb is not None else None,
+            "download_in_progress": self.download_in_progress,
+            "download_target_model": self.download_target_model,
+            "download_progress_pct": round(self.download_progress_pct, 1) if self.download_progress_pct is not None else None,
+            "download_error": self.download_error,
         }
 
 
@@ -116,6 +127,7 @@ class ModelManager:
     - Deep health verification
     - Thread-safe access
     - Automatic retry on failure
+    - Background model download with hot-swap
     """
     
     def __init__(
@@ -134,6 +146,13 @@ class ModelManager:
         self._load_time_ms: float = 0.0
         self._warmup_time_ms: float = 0.0
         self._last_error: Optional[str] = None
+        
+        # Background download state
+        self._download_in_progress = False
+        self._download_target_model: Optional[str] = None
+        self._download_progress_pct: Optional[float] = None
+        self._download_error: Optional[str] = None
+        self._download_task: Optional[asyncio.Task] = None
         
         # Lock for thread safety
         self._lock = asyncio.Lock()
@@ -234,10 +253,12 @@ class ModelManager:
             return False
     
     async def _load_model(self) -> bool:
-        """Load the model."""
+        """Load the model, trying fallback if primary fails."""
         try:
-            # Get provider
-            if self.provider_name:
+            # Get provider - pass config if available so the right model is used
+            if self.provider_name and self.config:
+                self._provider = ASRProviderRegistry.get_provider(name=self.provider_name, config=self.config)
+            elif self.provider_name:
                 self._provider = ASRProviderRegistry.get_provider(name=self.provider_name)
             else:
                 self._provider = ASRProviderRegistry.get_provider(config=self.config)
@@ -254,7 +275,78 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             self._last_error = str(e)
+            
+            # Try fallback: attempt to find an available provider/model combo
+            try:
+                logger.info("Trying fallback provider/model...")
+                fallback = self._try_fallback_provider()
+                if fallback:
+                    self._provider = fallback
+                    logger.info(f"Fallback loaded: {fallback.name}")
+                    return True
+                logger.warning("No fallback provider available")
+            except Exception as fallback_err:
+                logger.error(f"Fallback also failed: {fallback_err}")
+            
             return False
+    
+    def _try_fallback_provider(self) -> Optional[ASRProvider]:
+        """Try to find an available provider/model combination as fallback."""
+        import os
+        
+        # Read desired model from env
+        desired_model = os.getenv("ECHOPANEL_WHISPER_MODEL", "base.en")
+        
+        # For whisper_cpp: try smaller models if the configured one doesn't exist
+        if os.getenv("ECHOPANEL_ASR_PROVIDER") == "whisper_cpp":
+            fallback_models = ["base.en", "small.en", "tiny.en", "base", "small", "tiny"]
+            
+            for model in fallback_models:
+                if model == desired_model:
+                    continue  # Skip the one that already failed
+                
+                # Check if model file exists
+                model_dir = Path(os.getenv("WHISPER_CPP_MODEL_DIR", "~/.cache/whisper")).expanduser()
+                ggml_file = f"ggml-{model}.bin"
+                if not (model_dir / ggml_file).exists():
+                    logger.info(f"Fallback: model {model} not found, skipping")
+                    continue
+                
+                # Try creating provider with this model
+                try:
+                    fallback_config = ASRConfig(
+                        model_name=model,
+                        device="gpu",
+                        compute_type="q5_0",
+                        chunk_seconds=2,
+                    )
+                    provider = ASRProviderRegistry.get_provider(name="whisper_cpp", config=fallback_config)
+                    if provider and provider.is_available:
+                        logger.info(f"Fallback: using whisper_cpp/{model}")
+                        os.environ["ECHOPANEL_WHISPER_MODEL"] = model
+                        return provider
+                except Exception as e:
+                    logger.info(f"Fallback whisper_cpp/{model} failed: {e}")
+                    continue
+        
+        # Last resort: try faster_whisper provider
+        try:
+            fallback_config = ASRConfig(
+                model_name="base.en",
+                device="cpu",
+                compute_type="int8",
+                chunk_seconds=2,
+            )
+            provider = ASRProviderRegistry.get_provider(name="faster_whisper", config=fallback_config)
+            if provider and provider.is_available:
+                logger.info("Fallback: using faster_whisper/base.en")
+                os.environ["ECHOPANEL_ASR_PROVIDER"] = "faster_whisper"
+                os.environ["ECHOPANEL_WHISPER_MODEL"] = "base.en"
+                return provider
+        except Exception as e:
+            logger.info(f"Fallback faster_whisper failed: {e}")
+        
+        return None
     
     async def _warmup(self):
         """Run warmup sequence."""
@@ -407,6 +499,10 @@ class ModelManager:
             warmup_time_ms=self._warmup_time_ms,
             last_error=self._last_error,
             process_rss_mb=_get_process_rss_mb(),
+            download_in_progress=self._download_in_progress,
+            download_target_model=self._download_target_model,
+            download_progress_pct=self._download_progress_pct,
+            download_error=self._download_error,
         )
     
     def get_stats(self) -> Dict[str, Any]:
@@ -499,4 +595,254 @@ async def initialize_model_at_startup(
     else:
         logger.error(f"Model initialization failed: {manager.health().last_error}")
     
+    # Kick off background model download for the capability-optimal model
+    # so we can hot-swap when it's ready without blocking startup.
+    asyncio.ensure_future(_background_model_download(manager))
+    
     return success
+
+
+async def _background_model_download(manager: ModelManager) -> None:
+    """
+    Download the capability-optimal model in the background and hot-swap when ready.
+
+    Flow:
+    1. Detect machine capabilities (RAM, GPU)
+    2. Determine optimal model for this machine
+    3. If optimal model is already loaded, nothing to do
+    4. If optimal model exists on disk but isn't loaded, hot-swap to it
+    5. If optimal model doesn't exist, download it, then hot-swap
+    6. If download fails, keep the current model running — no disruption
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    try:
+        current_model = os.getenv("ECHOPANEL_WHISPER_MODEL", "")
+        current_provider = os.getenv("ECHOPANEL_ASR_PROVIDER", "")
+
+        # Only relevant for whisper_cpp (the primary Apple Silicon provider)
+        if current_provider != "whisper_cpp":
+            logger.info("Background download: skipping (provider=%s, not whisper_cpp)", current_provider)
+            return
+
+        # Detect RAM for capability-based model selection
+        ram_gb = _detect_ram_gb()
+        has_mps = _detect_mps()
+
+        # Determine optimal model based on capabilities
+        optimal_model = _pick_optimal_model(ram_gb, has_mps)
+
+        # If we're already running the optimal model, nothing to do
+        if current_model == optimal_model:
+            logger.info("Background download: already running optimal model %s", optimal_model)
+            return
+
+        # Set download state
+        async with manager._lock:
+            manager._download_in_progress = True
+            manager._download_target_model = optimal_model
+            manager._download_progress_pct = 0.0
+            manager._download_error = None
+
+        model_dir = Path(os.getenv("WHISPER_CPP_MODEL_DIR", "~/.cache/whisper")).expanduser()
+        ggml_file = f"ggml-{optimal_model}.bin"
+        model_path = model_dir / ggml_file
+
+        # If optimal model already exists on disk, just hot-swap (no download)
+        if model_path.exists():
+            logger.info(
+                "Background download: optimal model %s already on disk (%.0f MB), hot-swapping...",
+                optimal_model, model_path.stat().st_size / (1024 * 1024)
+            )
+            await _hot_swap_model(manager, optimal_model)
+            return
+
+        # Download the model
+        logger.info("Background download: fetching %s (%s) — current: %s", optimal_model, ggml_file, current_model)
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{ggml_file}"
+
+        # Use curl with progress tracking
+        process = await asyncio.create_subprocess_exec(
+            "curl", "-L", "--progress-bar", "-o", str(model_path), url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Monitor download progress via file size
+        expected_size_mb = _expected_model_size_mb(optimal_model)
+        last_reported_pct = 0
+
+        while process.returncode is None:
+            await asyncio.sleep(1)
+            if model_path.exists():
+                downloaded_mb = model_path.stat().st_size / (1024 * 1024)
+                if expected_size_mb > 0:
+                    pct = min(100.0, (downloaded_mb / expected_size_mb) * 100)
+                else:
+                    pct = 0.0
+
+                async with manager._lock:
+                    manager._download_progress_pct = pct
+
+                # Log every 10%
+                if pct - last_reported_pct >= 10:
+                    logger.info(
+                        "Background download: %s — %.0f%% (%.0f / %.0f MB)",
+                        optimal_model, pct, downloaded_mb, expected_size_mb
+                    )
+                    last_reported_pct = pct
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            err_msg = stderr.decode().strip() if stderr else "unknown error"
+            logger.error("Background download failed: %s", err_msg)
+            async with manager._lock:
+                manager._download_error = f"Download failed: {err_msg}"
+                manager._download_progress_pct = None
+            if model_path.exists():
+                model_path.unlink()
+            return
+
+        logger.info("Background download: %s downloaded successfully", optimal_model)
+
+        # Hot-swap to the new model
+        await _hot_swap_model(manager, optimal_model)
+
+    except asyncio.CancelledError:
+        logger.info("Background download: cancelled")
+    except Exception as e:
+        logger.error("Background download error: %s", e)
+        async with manager._lock:
+            manager._download_error = str(e)
+            manager._download_in_progress = False
+            manager._download_progress_pct = None
+
+
+async def _hot_swap_model(manager: ModelManager, model_name: str) -> None:
+    """Unload current model and reload with the given model, preserving provider."""
+    import os
+
+    try:
+        logger.info("Hot-swap: unloading current model...")
+        await manager.unload()
+
+        # Update env vars
+        os.environ["ECHOPANEL_WHISPER_MODEL"] = model_name
+
+        # Create new config for the target model
+        new_config = ASRConfig(
+            model_name=model_name,
+            device="gpu",
+            compute_type="q5_0",
+            chunk_seconds=2,
+        )
+        manager.provider_name = "whisper_cpp"
+        manager.config = new_config
+
+        # Reload
+        logger.info("Hot-swap: loading %s...", model_name)
+        success = await manager.initialize()
+
+        async with manager._lock:
+            manager._download_in_progress = False
+            manager._download_progress_pct = None
+
+        if success:
+            logger.info("Hot-swap complete: now using %s", model_name)
+        else:
+            logger.error("Hot-swap failed for %s, reverting...", model_name)
+            manager._download_error = f"Hot-swap to {model_name} failed"
+            # Revert env var and reload previous
+            os.environ["ECHOPANEL_WHISPER_MODEL"] = os.getenv("ECHOPANEL_WHISPER_MODEL", model_name)
+            await manager.initialize()
+
+    except Exception as e:
+        logger.error("Hot-swap error: %s", e)
+        async with manager._lock:
+            manager._download_error = str(e)
+            manager._download_in_progress = False
+            manager._download_progress_pct = None
+
+
+def _detect_ram_gb() -> float:
+    """Detect total RAM in GB."""
+    try:
+        import psutil
+        return psutil.virtual_memory().total / (1024 ** 3)
+    except ImportError:
+        pass
+    try:
+        import subprocess
+        result = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
+        return int(result.stdout.strip()) / (1024 ** 3)
+    except Exception:
+        return 0.0
+
+
+def _detect_mps() -> bool:
+    """Detect Metal Performance Shaders (Apple Silicon GPU)."""
+    try:
+        import torch
+        return torch.backends.mps.is_available()
+    except Exception:
+        return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+
+def _pick_optimal_model(ram_gb: float, has_mps: bool) -> str:
+    """
+    Pick the optimal whisper.cpp model based on machine capabilities.
+
+    Returns the model name (e.g. 'medium.en', 'small.en').
+    """
+    if not has_mps:
+        # No GPU — stick with smaller models even on high RAM
+        if ram_gb >= 32:
+            return "small.en"
+        elif ram_gb >= 16:
+            return "small.en"
+        elif ram_gb >= 8:
+            return "base.en"
+        return "base.en"
+
+    # Apple Silicon with GPU — can use larger models
+    if ram_gb >= 64:
+        return "large-v3-turbo"
+    elif ram_gb >= 32:
+        return "medium.en"
+    elif ram_gb >= 16:
+        return "small.en"
+    elif ram_gb >= 8:
+        return "base.en"
+    return "base.en"
+
+
+def _expected_model_size_mb(model_name: str) -> float:
+    """Return approximate GGML model size in MB for progress tracking."""
+    sizes = {
+        "tiny": 75, "tiny.en": 75,
+        "base": 142, "base.en": 142,
+        "small": 466, "small.en": 466,
+        "medium": 1500, "medium.en": 1500,
+        "large-v1": 3000, "large-v2": 3000,
+        "large-v3": 3100, "large-v3-turbo": 1600,
+    }
+    return sizes.get(model_name, 0)
+
+
+class ProcessInfo:
+    """Minimal wrapper for process info cross-platform."""
+    @property
+    def physicalMemory(self) -> int:
+        import os
+        try:
+            # macOS
+            import subprocess
+            result = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
+            return int(result.stdout.strip())
+        except Exception:
+            return 0

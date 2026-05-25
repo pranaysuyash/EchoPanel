@@ -23,45 +23,43 @@ final class SidePanelController: NSObject, NSWindowDelegate {
 
     func show(appState: AppState, onEndSession: @escaping () -> Void) {
         self.onEndSession = onEndSession
-        
-        DispatchQueue.main.async {
-            if self.panel == nil {
-                let view = self.makeRootView(appState: appState, onEndSession: onEndSession)
-                let host = NSHostingController(rootView: view)
-                self.hostingController = host
 
-                let panel = DraggablePanel(
-                    contentRect: NSRect(x: 0, y: 0, width: 460, height: 760),
-                    styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
-                    backing: .buffered,
-                    defer: false
-                )
-                panel.title = "EchoPanel"
-                panel.isFloatingPanel = true
-                panel.level = .floating
-                panel.hidesOnDeactivate = false
-                panel.isReleasedWhenClosed = false
-                // Critical: Stay visible over fullscreen apps (Zoom, Teams, etc.)
-                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                // Don't steal keyboard focus from meeting apps
-                panel.becomesKeyOnlyIfNeeded = true
-                // Allow dragging from window background for easy repositioning
-                panel.isMovableByWindowBackground = true
-                panel.contentViewController = host
-                panel.delegate = self // Set delegate to capture close event
-                panel.minSize = NSSize(width: 390, height: 620)
-                self.panel = panel
+        if self.panel == nil {
+            let view = self.makeRootView(appState: appState, onEndSession: onEndSession)
+            let host = NSHostingController(rootView: view)
+            self.hostingController = host
 
-                self.applyWindowLayout(for: self.currentMode, animated: false, forceTarget: true)
-            } else if let hostingController = self.hostingController {
-                hostingController.rootView = self.makeRootView(appState: appState, onEndSession: onEndSession)
-            }
+            let panel = DraggablePanel(
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 760),
+                styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.title = "EchoPanel"
+            panel.isFloatingPanel = true
+            panel.level = .floating
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            // Critical: Stay visible over fullscreen apps (Zoom, Teams, etc.)
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            // Don't steal keyboard focus from meeting apps
+            panel.becomesKeyOnlyIfNeeded = true
+            // Allow dragging from window background for easy repositioning
+            panel.isMovableByWindowBackground = true
+            panel.contentViewController = host
+            panel.delegate = self // Set delegate to capture close event
+            panel.minSize = NSSize(width: 390, height: 620)
+            self.panel = panel
 
-            // Bring panel forward without stealing focus from meeting apps
-            self.panel?.center()
-            self.panel?.makeKeyAndOrderFront(nil)
-            self.panel?.orderFrontRegardless()
+            self.applyWindowLayout(for: self.currentMode, animated: false, forceTarget: true)
+        } else if let hostingController = self.hostingController {
+            hostingController.rootView = self.makeRootView(appState: appState, onEndSession: onEndSession)
         }
+
+        // Bring panel forward without stealing focus from meeting apps
+        self.panel?.center()
+        self.panel?.makeKeyAndOrderFront(nil)
+        self.panel?.orderFrontRegardless()
     }
 
     func hide() {

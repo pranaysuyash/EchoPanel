@@ -1,0 +1,12 @@
+# Generated: 2026-05-25T10:13:27.200027
+# Env path: /Users/pranay/Projects/EchoPanel/server/.venv
+# Project path: /Users/pranay/Projects/EchoPanel/server
+# Detected manager: pip
+# Project last modified: 2026-05-07T20:15:18.643279
+# Freeze status: ERROR: Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/pranay/Projects/EchoPanel/server/.venv/lib/python3.11/site-packages/pip/__main__.py", line 24, in <module>
+    sys.exit(_main())
+             ^^^
+

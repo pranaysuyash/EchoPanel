@@ -4,26 +4,37 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$ROOT_DIR/macapp/MeetingListenerApp"
 BUILD_DIR="$APP_DIR/.build/release"
-APP_NAME="MeetingListenerApp"
-APP_PATH="$BUILD_DIR/$APP_NAME"
+SWIFT_BINARY="MeetingListenerApp"
+SWIFT_BINARY_PATH="$BUILD_DIR/$SWIFT_BINARY"
 INSTALL_DIR="$HOME/Applications"
-APP_BUNDLE="$INSTALL_DIR/$APP_NAME-Dev.app"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+INSTALL_TARGET="$INSTALL_DIR"
+APP_BUNDLE="$INSTALL_TARGET/MeetingListenerApp-Dev.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_EXECUTABLE="EchoPanel"
 PLIST_PATH="$APP_CONTENTS/Info.plist"
-APP_ID="com.echopanel.meetinglistener.dev"
+APP_ID="com.echopanel.app.dev"
 VERSION="0.2.0-dev"
 BUILD_ID="$(date +%Y%m%d%H%M)"
 GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
-echo "Building $APP_NAME (release)..."
+echo "================================================"
+echo "  EchoPanel Dev Build — $TIMESTAMP"
+echo "  Git: $GIT_SHA"
+echo "================================================"
+echo ""
+
+echo "Step 1: Building Swift binary (release)..."
 cd "$APP_DIR"
 swift build -c release
 
-echo "Installing to $APP_BUNDLE"
+echo ""
+echo "Step 2: Installing to $APP_BUNDLE"
+rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
-cp "$APP_PATH" "$APP_MACOS/$APP_NAME"
-chmod +x "$APP_MACOS/$APP_NAME"
+cp "$SWIFT_BINARY_PATH" "$APP_MACOS/$APP_EXECUTABLE"
+chmod +x "$APP_MACOS/$APP_EXECUTABLE"
 
 cat > "$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,11 +42,11 @@ cat > "$PLIST_PATH" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>$APP_NAME</string>
+    <string>EchoPanel</string>
     <key>CFBundleDisplayName</key>
-    <string>$APP_NAME Dev</string>
+    <string>EchoPanel Dev</string>
     <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
+    <string>$APP_EXECUTABLE</string>
     <key>CFBundleIdentifier</key>
     <string>$APP_ID</string>
     <key>CFBundlePackageType</key>
@@ -48,14 +59,33 @@ cat > "$PLIST_PATH" <<EOF
     <string>$GIT_SHA</string>
     <key>EchoPanelBuildID</key>
     <string>$BUILD_ID</string>
+    <key>EchoPanelBuildTimestamp</key>
+    <string>$TIMESTAMP</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Capture meeting audio from apps like Zoom, Meet, and Teams for local transcription.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Capture microphone audio for real-time meeting transcripts and highlights.</string>
 </dict>
 </plist>
 EOF
 
-echo "Signing app bundle..."
+echo ""
+echo "Step 3: Signing app bundle..."
 codesign --force --sign - --deep "$APP_BUNDLE"
 
-echo "Done. Run:"
-echo "  open \"$APP_BUNDLE\""
+echo ""
+echo "================================================"
+echo "  Build Complete"
+echo "================================================"
+echo ""
+echo "  App location:  $APP_BUNDLE"
+echo "  Timestamp:     $TIMESTAMP"
+echo "  Git SHA:       $GIT_SHA"
+echo ""
+echo "  Launch with:"
+echo "    open \"$APP_BUNDLE\""
+echo ""
+echo "  Permissions note:"
+echo "    macOS ties Screen Recording permission to the app path and code identity."
+echo "    This script preserves a stable dev path so permissions stay attached."
+echo "================================================"

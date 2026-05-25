@@ -159,11 +159,11 @@ struct SettingsView: View {
                         .foregroundColor(backendManager.isServerReady ? .green : .secondary)
                 }
                 
-                if !backendManager.healthDetail.isEmpty {
+                if !backendManager.startupStatusText.isEmpty {
                     HStack {
                         Text("Health:")
                         Spacer()
-                        Text(backendManager.healthDetail)
+                        Text(backendManager.startupStatusText)
                             .font(.caption)
                             .multilineTextAlignment(.trailing)
                     }
@@ -177,7 +177,7 @@ struct SettingsView: View {
         Form {
             Section(header: Text("Voice Activity Detection (VAD)"), footer: Text("VAD filters out silence before sending audio to transcription. This reduces CPU usage by ~40% in typical meetings.")) {
                 Toggle("Enable VAD", isOn: $vadEnabled)
-                        .onChange(of: vadEnabled) { newValue in
+                        .onChange(of: vadEnabled) { _, newValue in
                         // Update backend via environment
                         setBackendVADEnabled(newValue)
                     }
@@ -187,7 +187,7 @@ struct SettingsView: View {
                         Text("Sensitivity: \(Int(vadThreshold * 100))%")
                             .font(.caption)
                         Slider(value: $vadThreshold, in: 0.1...0.9, step: 0.1)
-                                .onChange(of: vadThreshold) { newValue in
+                                .onChange(of: vadThreshold) { _, newValue in
                                 setBackendVADThreshold(newValue)
                             }
                         Text("Higher = more strict (less false positives, may miss quiet speech)")
@@ -199,7 +199,7 @@ struct SettingsView: View {
             
             Section(header: Text("Screen Content Recognition (OCR)"), footer: Text("Extract text from shared slides and screens during meetings. Hybrid mode uses fast OCR + AI understanding for best results.")) {
                 Toggle("Enable Screen Capture", isOn: $ocrEnabled)
-                    .onChange(of: ocrEnabled) { newValue in
+                    .onChange(of: ocrEnabled) { _, newValue in
                         setBackendOCREnabled(newValue)
                     }
                 
@@ -210,7 +210,7 @@ struct SettingsView: View {
                         Text("Smart Only — AI understanding").tag("vlm_only")
                     }
                     .pickerStyle(.menu)
-                    .onChange(of: ocrMode) { newValue in
+                    .onChange(of: ocrMode) { _, newValue in
                         setBackendOCRMode(newValue)
                     }
                     
@@ -220,7 +220,7 @@ struct SettingsView: View {
                         Text("Confidence — Low confidence only").tag("confidence")
                     }
                     .pickerStyle(.menu)
-                    .onChange(of: ocrVLMTrigger) { newValue in
+                    .onChange(of: ocrVLMTrigger) { _, newValue in
                         setBackendOCRVLMTrigger(newValue)
                     }
                     
@@ -237,7 +237,7 @@ struct SettingsView: View {
                     Text("Ollama — Local & private").tag("ollama")
                 }
                 .pickerStyle(.menu)
-                .onChange(of: llmProvider) { newValue in
+                .onChange(of: llmProvider) { _, newValue in
                     setBackendLLMProvider(newValue)
                 }
                 
@@ -265,7 +265,7 @@ struct SettingsView: View {
                         Text("GPT-4o — Best quality").tag("gpt-4o")
                     }
                     .pickerStyle(.menu)
-                    .onChange(of: llmModel) { newValue in
+                    .onChange(of: llmModel) { _, newValue in
                         setBackendLLMModel(newValue)
                     }
                 }
@@ -413,7 +413,7 @@ struct SettingsView: View {
                     Text("365 days").tag(365)
                 }
                 .pickerStyle(.menu)
-                .onChange(of: retentionPeriodDays) { newValue in
+                .onChange(of: retentionPeriodDays) { _, newValue in
                     if newValue > 0 {
                         _ = DataRetentionManager.shared.cleanupOldSessions(retentionDays: newValue)
                     }

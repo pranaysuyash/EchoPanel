@@ -72,6 +72,21 @@ extension SidePanelView {
                 .disabled(appState.sessionState == .listening)
                 .accessibilityLabel("Audio source")
 
+                if appState.audioSource == .microphone || appState.audioSource == .both {
+                    if !appState.availableMicDevices.isEmpty {
+                        Picker("Microphone", selection: $appState.selectedMicDeviceID) {
+                            ForEach(appState.availableMicDevices) { device in
+                                Text(device.name).tag(device.id as String?)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .disabled(appState.sessionState == .listening)
+                        .accessibilityLabel("Microphone device")
+                    }
+                }
+
                 HStack(spacing: Spacing.md) {
                     Toggle("Follow Live", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
@@ -81,6 +96,14 @@ extension SidePanelView {
                     Spacer()
 
                     qualityChip
+
+                    Button(appState.isAudioMuted ? "Unmute" : "Mute") {
+                        appState.toggleAudioMuted()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel(appState.isAudioMuted ? "Unmute audio capture" : "Mute audio capture")
+                    .help(appState.isAudioMuted ? "Resume sending captured audio to transcription" : "Temporarily stop sending captured audio to transcription")
 
                     Button("?") {
                         showShortcutOverlay.toggle()
@@ -104,6 +127,25 @@ extension SidePanelView {
                     .accessibilityLabel("Audio source")
                     .layoutPriority(1)
 
+                    if appState.audioSource == .microphone || appState.audioSource == .both {
+                        if !appState.availableMicDevices.isEmpty {
+                            Picker("Microphone", selection: $appState.selectedMicDeviceID) {
+                                ForEach(appState.availableMicDevices) { device in
+                                    Text(device.name).tag(device.id as String?)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .disabled(appState.sessionState == .listening)
+                            .accessibilityLabel("Microphone device")
+                        } else {
+                            Text("No mic devices")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     Toggle("Follow Live", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.small)
@@ -112,6 +154,14 @@ extension SidePanelView {
                     Spacer()
 
                     qualityChip
+
+                    Button(appState.isAudioMuted ? "Unmute" : "Mute") {
+                        appState.toggleAudioMuted()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel(appState.isAudioMuted ? "Unmute audio capture" : "Mute audio capture")
+                    .help(appState.isAudioMuted ? "Resume sending captured audio to transcription" : "Temporarily stop sending captured audio to transcription")
 
                     Button("?") {
                         showShortcutOverlay.toggle()
@@ -149,7 +199,13 @@ extension SidePanelView {
                 }
             }
 
-            if let hint = appState.sourceTroubleshootingHint {
+            if appState.isAudioMuted {
+                Text("Capture is muted. Audio is being captured locally but not sent for transcription.")
+                    .font(Typography.captionSmall)
+                    .foregroundColor(.orange)
+                    .lineLimit(2)
+                    .accessibilityLabel("Capture muted")
+            } else if let hint = appState.sourceTroubleshootingHint {
                 Text(hint)
                     .font(Typography.captionSmall)
                     .foregroundColor(.orange)
@@ -202,15 +258,18 @@ extension SidePanelView {
         let stacked = panelWidth < 1080
         let pickerWidth = min(max(panelWidth * 0.24, 190), 240)
 
-        return VStack(spacing: Spacing.sm) {
+        return sectionCard(
+            title: "Meeting workspace",
+            subtitle: "Review the live session, search prior conversations, and turn transcript into accountable follow-up."
+        ) {
             HStack(spacing: Spacing.sm + 2) {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "waveform.path.ecg.rectangle.fill")
                         .foregroundColor(.accentColor)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("EchoPanel")
+                        Text("Current workspace")
                             .font(Typography.title)
-                        Text("Live transcript, memory pins, and decision beads")
+                        Text(selectedSessionID == "live" ? "Live meeting context" : "Session review context")
                             .font(Typography.captionSmall)
                             .foregroundColor(.secondary)
                     }
@@ -231,6 +290,15 @@ extension SidePanelView {
                 }
             }
 
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Spacing.sm) {
+                    metricBadge(label: "Transcript", value: transcriptLineCountText, tint: .blue)
+                    metricBadge(label: "Actions", value: actionCountText, tint: .green)
+                    metricBadge(label: "Decisions", value: decisionCountText, tint: .orange)
+                    metricBadge(label: "Entities", value: entityCountText, tint: .purple)
+                }
+            }
+
             if stacked {
                 Picker("Work mode", selection: $fullWorkMode) {
                     ForEach(FullWorkMode.allCases) { mode in
@@ -243,17 +311,13 @@ extension SidePanelView {
                 .accessibilityLabel("Work mode")
             }
         }
-        .padding(Spacing.sm + 2)
-        .background(BackgroundStyle.container.color(for: colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
-        )
     }
 
     var fullSessionRail: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm + 2) {
+        sectionCard(
+            title: "Session rail",
+            subtitle: "Search the active transcript and recent local sessions without leaving the workspace."
+        ) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
@@ -335,27 +399,31 @@ extension SidePanelView {
             .background(BackgroundStyle.control.color(for: colorScheme))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm + 2, style: .continuous))
         }
-        .padding(Spacing.sm + 2)
-        .background(BackgroundStyle.container.color(for: colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
-        )
     }
 
     var fullMainHeader: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
+        sectionCard(
+            title: selectedSessionTitle,
+            subtitle: fullSessionMeta
+        ) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedSessionTitle)
-                        .font(Typography.title)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(fullSessionMeta)
-                        .font(Typography.caption)
-                        .foregroundColor(.secondary)
-                }
                 Spacer()
+                Text(selectedSessionID == "live" ? "LIVE" : "ARCHIVE")
+                    .font(Typography.captionSmall)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((selectedSessionID == "live" ? Color.green : Color.secondary).opacity(0.14))
+                    .clipShape(Capsule())
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Spacing.sm) {
+                    metricBadge(label: "Transcript", value: transcriptLineCountText, tint: .blue)
+                    metricBadge(label: "Actions", value: actionCountText, tint: .green)
+                    metricBadge(label: "Decisions", value: decisionCountText, tint: .orange)
+                    metricBadge(label: "Entities", value: entityCountText, tint: .purple)
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -386,21 +454,16 @@ extension SidePanelView {
                 }
             }
         }
-        .padding(Spacing.sm + 2)
-        .background(BackgroundStyle.container.color(for: colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
-        )
     }
 
     var fullInsightPanel: some View {
-        VStack(spacing: Spacing.sm) {
+        sectionCard(
+            title: "Insights",
+            subtitle: "Switch between summary, actions, notes, context, and raw evidence without losing transcript position."
+        ) {
             HStack {
-                Text("Insight Surface")
+                Text(fullInsightTab.rawValue)
                     .font(Typography.title)
-                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text(fullWorkMode.rawValue)
                     .font(Typography.captionSmall)
@@ -436,143 +499,11 @@ extension SidePanelView {
                     .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
             )
         }
-        .padding(Spacing.sm + 2)
-        .background(BackgroundStyle.container.color(for: colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
-        )
     }
 
     var fullContextPanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.sm + 2) {
-                surfaceItemCard(
-                    tag: "Context",
-                    title: "Local context library",
-                    subtitle: "Index documents, query snippets, and keep retrieval local."
-                )
-
-                HStack(spacing: Spacing.sm) {
-                    TextField("Query local context", text: $appState.contextQuery)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            appState.queryContextDocuments()
-                        }
-
-                    Button("Search") {
-                        appState.queryContextDocuments()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(appState.contextBusy)
-                }
-
-                HStack(spacing: Spacing.sm) {
-                    Button("Upload Document...") {
-                        pickContextFileForIndexing()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(appState.contextBusy)
-
-                    Button("Refresh") {
-                        appState.refreshContextDocuments(force: true)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(appState.contextBusy)
-
-                    if appState.contextBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-
-                if !appState.contextStatusMessage.isEmpty {
-                    Text(appState.contextStatusMessage)
-                        .font(Typography.captionSmall)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if appState.contextDocuments.isEmpty {
-                    surfaceEmptyState(text: "No indexed documents yet. Upload a local text/markdown/json/csv file.")
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Indexed Documents")
-                            .font(Typography.caption)
-                            .foregroundColor(.secondary)
-                            .accessibilityAddTraits(.isHeader)
-
-                        ForEach(appState.contextDocuments) { doc in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(alignment: .top, spacing: Spacing.sm) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(doc.title)
-                                            .font(.footnote)
-                                        Text("\(doc.chunkCount) chunks · \(doc.source)")
-                                            .font(Typography.captionSmall)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    Button(role: .destructive) {
-                                        appState.deleteContextDocument(documentID: doc.id)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .help("Delete document")
-                                }
-                                if !doc.preview.isEmpty {
-                                    Text(doc.preview)
-                                        .font(Typography.captionSmall)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(3)
-                                }
-                            }
-                            .id(doc.id)
-                            .padding(Spacing.sm + 2)
-                            .background(BackgroundStyle.control.color(for: colorScheme))
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md + 1, style: .continuous))
-                        }
-                    }
-                }
-
-                if !appState.contextQueryResults.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Matches")
-                            .font(Typography.caption)
-                            .foregroundColor(.secondary)
-                            .accessibilityAddTraits(.isHeader)
-
-                        ForEach(appState.contextQueryResults) { result in
-                            surfaceItemCard(
-                                tag: String(format: "Score %.2f", result.score),
-                                title: "\(result.title) · chunk \(result.chunkIndex + 1)",
-                                subtitle: result.snippet
-                            )
-                            .id(result.id)
-                        }
-                    }
-                }
-
-                if !appState.ragSearchResults.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Session Matches (local)")
-                            .font(Typography.caption)
-                            .foregroundColor(.secondary)
-                            .accessibilityAddTraits(.isHeader)
-
-                        ForEach(appState.ragSearchResults) { result in
-                            surfaceItemCard(
-                                tag: String(format: "Score %.2f", result.score),
-                                title: result.title,
-                                subtitle: result.snippet
-                            )
-                            .id(result.id)
-                        }
-                    }
-                }
-            }
+            contextPanelContent
         }
         .accessibilityElement(children: .contain)
         // Non-transcript rotor channels for navigating context surfaces quickly.
@@ -592,6 +523,145 @@ extension SidePanelView {
         .onAppear {
             appState.refreshContextDocuments()
         }
+    }
+
+    @ViewBuilder
+    private var contextPanelContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm + 2) {
+            surfaceItemCard(
+                tag: "Context",
+                title: "Local context library",
+                subtitle: "Index documents, query snippets, and keep retrieval local."
+            )
+            contextSearchRow
+            contextActionsRow
+            contextStatusLine
+            contextDocumentsSection
+            contextMatchesSection
+        }
+    }
+
+    private var contextSearchRow: some View {
+        HStack(spacing: Spacing.sm) {
+            TextField("Query local context", text: $appState.contextQuery)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    appState.queryContextDocuments()
+                }
+
+            Button("Search") {
+                appState.queryContextDocuments()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(appState.contextBusy)
+        }
+    }
+
+    private var contextActionsRow: some View {
+        HStack(spacing: Spacing.sm) {
+            Button("Upload Document...") {
+                pickContextFileForIndexing()
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.contextBusy)
+
+            Button("Refresh") {
+                appState.refreshContextDocuments(force: true)
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.contextBusy)
+
+            if appState.contextBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contextStatusLine: some View {
+        if !appState.contextStatusMessage.isEmpty {
+            Text(appState.contextStatusMessage)
+                .font(Typography.captionSmall)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var contextDocumentsSection: some View {
+        if appState.contextDocuments.isEmpty {
+            surfaceEmptyState(text: "No indexed documents yet. Upload a local text/markdown/json/csv file.")
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Indexed Documents")
+                    .font(Typography.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+
+                ForEach(appState.contextDocuments) { doc in
+                    contextDocumentCard(doc)
+                        .id(doc.id)
+                }
+            }
+        }
+    }
+
+    private func contextDocumentCard(_ doc: ContextDocument) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(doc.title)
+                        .font(.footnote)
+                    Text("\(doc.chunkCount) chunks · \(doc.source)")
+                        .font(Typography.captionSmall)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    appState.deleteContextDocument(documentID: doc.id)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Delete document")
+            }
+            if !doc.preview.isEmpty {
+                Text(doc.preview)
+                    .font(Typography.captionSmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(Spacing.sm + 2)
+        .background(BackgroundStyle.control.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md + 1, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var contextMatchesSection: some View {
+        if !appState.contextQueryResults.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Matches")
+                    .font(Typography.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+
+                ForEach(appState.contextQueryResults) { result in
+                    surfaceItemCard(
+                        tag: String(format: "Score %.2f", result.score),
+                        title: "\(result.title) · chunk \(result.chunkIndex + 1)",
+                        subtitle: result.snippet
+                    )
+                    .id(result.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sessionMatchesSection: some View {
+        EmptyView()
     }
 
     private func pickContextFileForIndexing() {

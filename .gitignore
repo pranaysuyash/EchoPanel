@@ -30,6 +30,14 @@ htmlcov/
 /output/
 playwright-report/
 
+# Generated frontend bundle artifacts
+index-*.js
+main-*.js
+product-name-*.js
+index-*.js.map
+main-*.js.map
+product-name-*.js.map
+
 # Playwright artifacts
 output/playwright/
 

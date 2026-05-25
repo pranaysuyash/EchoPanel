@@ -63,6 +63,20 @@ extension SidePanelView {
     var panelBackground: some View {
         RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
             .fill(.ultraThinMaterial)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.14),
+                                Color.blue.opacity(colorScheme == .dark ? 0.10 : 0.08),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
@@ -310,6 +324,55 @@ extension SidePanelView {
             .background(tint.opacity(0.14))
             .foregroundColor(tint)
             .clipShape(Capsule())
+    }
+
+    func metricBadge(label: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(Typography.captionSmall)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(Typography.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 72, alignment: .leading)
+        .background(tint.opacity(colorScheme == .dark ? 0.18 : 0.10))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.30 : 0.16), lineWidth: 1)
+        )
+    }
+
+    func sectionCard<Content: View>(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Typography.caption)
+                    .fontWeight(.semibold)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(Typography.captionSmall)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            content()
+        }
+        .padding(Spacing.sm + 2)
+        .background(BackgroundStyle.container.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
+        )
     }
 
     func surfaceEmptyState(text: String) -> some View {

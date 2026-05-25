@@ -953,25 +953,36 @@ def _has_new_transcript_segments(state: SessionState, last_t1: float) -> bool:
     return max_t1 > last_t1
 
 
-async def _entity_analysis_loop(websocket: WebSocket, state: SessionState) -> None:
-    """Entity analysis loop - runs independently with its own interval."""
+async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
+    """
+    Analysis loop with activity-gated processing.
+    
+    QW-001: Only runs analysis when new transcript segments exist,
+    reducing CPU usage during silence.
+    """
+    # Configuration
     ENTITY_INTERVAL = 12.0  # Min seconds between entity analysis
+    CARD_INTERVAL = 28.0    # Min seconds between card analysis
+    _IDLE_POLL_INTERVAL = 1.0  # Short poll when idle
     
     try:
         while True:
+            # QW-001: Activity-gated entity extraction
             await asyncio.sleep(ENTITY_INTERVAL)
             
             if not _has_new_transcript_segments(state, state.last_entity_analysis_t1):
+                # No new content, skip this cycle
                 logger.debug("Skipping entity analysis: no new transcript segments")
                 continue
             
             async with state.transcript_lock:
                 snapshot = list(state.transcript)
-            
+            # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
+                # Use incremental entity extraction
                 entities, state.last_entity_analysis_t1 = await asyncio.wait_for(
                     asyncio.to_thread(extract_entities_incremental, snapshot, state.last_entity_analysis_t1, state.current_entities),
-                    timeout=10.0
+                    timeout=10.0  # 10 second timeout for entity extraction
                 )
                 state.current_entities = entities
                 await ws_send(state, websocket, {"type": "entities_update", **entities})
@@ -979,30 +990,23 @@ async def _entity_analysis_loop(websocket: WebSocket, state: SessionState) -> No
             except asyncio.TimeoutError:
                 logger.warning("Entity extraction timed out after 10s, skipping this cycle")
                 await ws_send(state, websocket, {"type": "status", "state": "warning", "message": "Analysis delayed"})
-    except asyncio.CancelledError:
-        logger.debug("Entity analysis loop cancelled")
-        return
 
-
-async def _card_analysis_loop(websocket: WebSocket, state: SessionState) -> None:
-    """Card analysis loop - runs independently with its own interval."""
-    CARD_INTERVAL = 28.0  # Min seconds between card analysis
-    
-    try:
-        while True:
+            # QW-001: Activity-gated card extraction
             await asyncio.sleep(CARD_INTERVAL)
             
             if not _has_new_transcript_segments(state, state.last_card_analysis_t1):
+                # No new content, skip this cycle
                 logger.debug("Skipping card analysis: no new transcript segments")
                 continue
             
             async with state.transcript_lock:
                 snapshot = list(state.transcript)
-            
+            # P1: Add timeout to prevent indefinite hang on NLP processing
             try:
+                # Use incremental card extraction
                 cards, state.last_card_analysis_t1 = await asyncio.wait_for(
                     asyncio.to_thread(extract_cards_incremental, snapshot, state.last_card_analysis_t1, state.current_cards),
-                    timeout=15.0
+                    timeout=15.0  # 15 second timeout for card extraction (more complex)
                 )
                 state.current_cards = cards
                 total_cards = len(cards.get("actions", [])) + len(cards.get("decisions", [])) + len(cards.get("risks", []))
@@ -1019,36 +1023,8 @@ async def _card_analysis_loop(websocket: WebSocket, state: SessionState) -> None
                 "window": {"t0": 0.0, "t1": 600.0},
             })
     except asyncio.CancelledError:
-        logger.debug("Card analysis loop cancelled")
-        return
-
-
-async def _analysis_loop(websocket: WebSocket, state: SessionState) -> None:
-    """
-    Analysis loop with activity-gated processing.
-    
-    QW-001: Only runs analysis when new transcript segments exist,
-    reducing CPU usage during silence.
-    
-    Note: Entity and card analysis run concurrently with independent intervals.
-    """
-    # Start both analysis loops concurrently
-    entity_task = asyncio.create_task(_entity_analysis_loop(websocket, state))
-    card_task = asyncio.create_task(_card_analysis_loop(websocket, state))
-    
-    try:
-        # Wait for both tasks (they run indefinitely until cancelled)
-        await asyncio.gather(entity_task, card_task)
-    except asyncio.CancelledError:
-        # Cancel both tasks when parent is cancelled
-        entity_task.cancel()
-        card_task.cancel()
-        try:
-            await asyncio.gather(entity_task, card_task, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
         logger.debug("Analysis loop cancelled")
-        raise
+        return
 
 
 async def _transcribe_voice_note(websocket: WebSocket, state: SessionState, audio_data: bytes) -> None:
@@ -1071,17 +1047,17 @@ async def _transcribe_voice_note(websocket: WebSocket, state: SessionState, audi
             logger.debug(f"Transcribing voice note: {len(audio_data)} bytes ({duration_seconds:.2f}s)")
         
         # Import ASR streaming function
-        from server.services.asr_stream import stream_asr
+        from server.services.asr_stream import _get_default_config, stream_asr
+        
+        # Get ASR config
+        config = _get_default_config()
         
         # Create a queue for the voice note audio
         queue = asyncio.Queue()
         
         # Put all audio data into queue in one chunk
         await queue.put(audio_data)
-        try:
-            queue.put_nowait(None)  # Signal EOF; queue is local so this never blocks
-        except asyncio.QueueFull:
-            logger.warning("ws_live_listener: voice-note EOF sentinel dropped (queue full)")
+        await queue.put(None)  # Signal EOF
         
         # Create a simple async iterator for the queue
         async def audio_stream():
@@ -1094,7 +1070,7 @@ async def _transcribe_voice_note(websocket: WebSocket, state: SessionState, audi
         # Stream ASR for voice note
         transcript_parts = []
         
-        async for result in stream_asr(audio_stream(), sample_rate=SAMPLE_RATE):
+        async for result in stream_asr(audio_stream(), config, sample_rate=SAMPLE_RATE):
             if result.text and not result.text.startswith("  "):
                 transcript_parts.append(result.text.strip())
         
@@ -1711,12 +1687,9 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                             await websocket.close()
                             return
                         
-                        # Signal EOF to all queues (non-blocking; shutdown must not hang on a full queue)
+                        # Signal EOF to all queues
                         for q in state.queues.values():
-                            try:
-                                q.put_nowait(None)
-                            except asyncio.QueueFull:
-                                logger.warning("ws_live_listener: stop EOF sentinel dropped (queue full)")
+                            await q.put(None)
 
                         if DEBUG:
                             logger.debug("ws_live_listener: stop")
@@ -1889,10 +1862,7 @@ async def ws_live_listener(websocket: WebSocket) -> None:
                 pass
         
         for q in state.queues.values():
-            try:
-                q.put_nowait(None)
-            except asyncio.QueueFull:
-                logger.warning("ws_live_listener: disconnect EOF sentinel dropped (queue full)")
+            await q.put(None)
         all_tasks = state.tasks + state.asr_tasks + state.analysis_tasks
         for task in all_tasks:
             task.cancel()

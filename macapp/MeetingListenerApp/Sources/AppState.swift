@@ -62,6 +62,11 @@ final class AppState: ObservableObject {
         case both = "Both"
     }
 
+    struct MicInputDevice: Identifiable, Equatable {
+        let id: String
+        let name: String
+    }
+
     enum AppRuntimeErrorState: Equatable {
         case backendNotReady(detail: String)
         case screenRecordingPermissionRequired
@@ -157,9 +162,46 @@ final class AppState: ObservableObject {
     @Published var microphonePermission: PermissionState = .unknown
     
     // Audio Source Selection (v0.2)
-    @Published var audioSource: AudioSource = .both
+    @Published var audioSource: AudioSource = .both {
+        didSet {
+            guard oldValue != audioSource else { return }
+            if sessionState == .listening {
+                Task { [weak self] in
+                    await self?.reconfigureCaptureForSourceChange(from: oldValue, to: self?.audioSource ?? oldValue)
+                }
+            }
+        }
+    }
+    @Published var availableMicDevices: [MicInputDevice] = []
+    @Published var selectedMicDeviceID: String? {
+        didSet {
+            let normalized = selectedMicDeviceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if selectedMicDeviceID != normalized {
+                selectedMicDeviceID = normalized
+                return
+            }
+
+            if let normalized, !normalized.isEmpty {
+                UserDefaults.standard.set(normalized, forKey: Constants.selectedMicDeviceIDDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Constants.selectedMicDeviceIDDefaultsKey)
+            }
+
+            micCapture.setPreferredDevice(id: normalized)
+
+            let needsMic = audioSource == .microphone || audioSource == .both
+            if sessionState == .listening && needsMic {
+                Task { [weak self] in
+                    await self?.reconfigureCaptureForMicrophoneSelectionChange()
+                }
+            }
+        }
+    }
+    @Published var activeMicDeviceID: String?
+    @Published var activeMicDeviceName: String?
     @Published var systemAudioLevel: Float = 0
     @Published var microphoneAudioLevel: Float = 0
+    @Published var isAudioMuted: Bool = false
     
     // Voice Notes (VNI)
     @Published var isRecordingVoiceNote: Bool = false
@@ -192,6 +234,8 @@ final class AppState: ObservableObject {
         static let silenceDurationThreshold: TimeInterval = 10.0
         static let startTimeoutSeconds: TimeInterval = 5.0
         static let userNoticeAutoClearSeconds: TimeInterval = 6.0
+        static let audioMutedDefaultsKey = "capture.audioMuted"
+        static let selectedMicDeviceIDDefaultsKey = "capture.selectedMicDeviceID"
     }
 
     @Published var transcriptSegments: [TranscriptSegment] = [] {
@@ -223,7 +267,7 @@ final class AppState: ObservableObject {
         case overloaded
     }
 
-    // H9 Fix: Expose backend status
+    // H9 Fix: Expose backend status and startup mode
     var isServerReady: Bool { BackendManager.shared.isServerReady }
     var serverStatus: BackendManager.ServerStatus { BackendManager.shared.serverStatus }
     var backendUXState: BackendUXState {
@@ -271,41 +315,35 @@ final class AppState: ObservableObject {
 
     private lazy var audioCapture: AudioCaptureManager = {
         let manager = AudioCaptureManager()
-        manager.onSampleCount = { @Sendable [weak self] sampleCount in
-            Task { @MainActor in
-                self?.debugSamples = sampleCount
-                self?.updateDebugLine()
+        manager.onSampleCount = { [weak self] sampleCount in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateDebugSamples(sampleCount)
             }
         }
-        manager.onScreenFrameCount = { @Sendable [weak self] frameCount in
-            Task { @MainActor in
-                self?.debugScreenFrames = frameCount
-                self?.updateDebugLine()
+        manager.onScreenFrameCount = { [weak self] frameCount in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateDebugScreenFrames(frameCount)
             }
         }
-        manager.onAudioQualityUpdate = { @Sendable [weak self] quality in
-            Task { @MainActor in self?.audioQuality = quality }
+        manager.onAudioQualityUpdate = { [weak self] quality in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateAudioQuality(quality)
+            }
         }
-        manager.onAudioLevelUpdate = { @Sendable [weak self] level in
-            Task { @MainActor in self?.systemAudioLevel = level }
+        manager.onAudioLevelUpdate = { [weak self] level in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateSystemAudioLevel(level)
+            }
         }
         manager.onPCMFrame = { [weak self] frame, source in
-            guard let self else { return }
-            Task { @MainActor in
-                self.debugBytes += frame.count
-                if self.debugEnabled {
-                    self.updateDebugLine()
-                }
-                self.markInputFrame(source: source)
-                self.lastAudioTimestamp = Date()
-                if self.noAudioDetected {
-                    self.noAudioDetected = false
-                    self.silenceMessage = ""
-                }
-                // Accumulate 16kHz Float32 mono audio for post-session diarization
-                self.accumulateAudioFrame(frame)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleCapturedPCMFrame(frame, source: source)
             }
-            self.streamer.sendPCMFrame(frame, source: source)
         }
         return manager
     }()
@@ -313,23 +351,22 @@ final class AppState: ObservableObject {
     private lazy var micCapture: MicrophoneCaptureManager = {
         let manager = MicrophoneCaptureManager()
         manager.onPCMFrame = { [weak self] frame, source in
-            guard let self else { return }
-            Task { @MainActor in
-                self.debugBytes += frame.count
-                if self.debugEnabled {
-                    self.updateDebugLine()
-                }
-                self.markInputFrame(source: source)
-                self.lastAudioTimestamp = Date()
-                if self.noAudioDetected {
-                    self.noAudioDetected = false
-                    self.silenceMessage = ""
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleCapturedPCMFrame(frame, source: source)
             }
-            self.streamer.sendPCMFrame(frame, source: source)
         }
-        manager.onAudioLevelUpdate = { @Sendable [weak self] level in
-            Task { @MainActor in self?.microphoneAudioLevel = level }
+        manager.onAudioLevelUpdate = { [weak self] level in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateMicrophoneAudioLevel(level)
+            }
+        }
+        manager.onActiveDeviceChanged = { [weak self] id, name in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.updateActiveMicDevice(id: id, name: name)
+            }
         }
         return manager
     }()
@@ -341,16 +378,16 @@ final class AppState: ObservableObject {
             // Send voice note audio to backend for transcription
             self.streamer.sendVoiceNoteAudio(data: data)
         }
-        manager.onRecordingStarted = { @Sendable [weak self] in
-            Task { @MainActor in
-                self?.isRecordingVoiceNote = true
-                self?.voiceNoteError = nil
+        manager.onRecordingStarted = { [weak self] in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.setVoiceNoteRecordingStarted()
             }
         }
-        manager.onRecordingStopped = { @Sendable [weak self] duration in
-            Task { @MainActor in
-                self?.isRecordingVoiceNote = false
-                self?.voiceNoteAudioLevel = 0
+        manager.onRecordingStopped = { [weak self] duration in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.setVoiceNoteRecordingStopped()
                 // Voice note object will be created when transcript arrives
             }
         }
@@ -368,35 +405,14 @@ final class AppState: ObservableObject {
     private var lastContextRefreshAt: Date?
     private var userNoticeClearTask: Task<Void, Never>?
     private var userNoticeClearTimer: Timer?
-
-    // MARK: - Native Pipeline
-    /// Sequential phase enforcer (DEC-030: recording → analysis → brainDump, never simultaneous).
-    let phaseScheduler = PhaseScheduler()
-    /// MLX analysis engine — loaded lazily before each analysis phase.
-    let analysisEngine = MLXAnalysisEngine()
-    /// MLX embeddings engine — loaded lazily before each brain-dump phase.
-    let embeddingsEngine = MLXEmbeddingsEngine()
-    /// FluidAudio diarization — shared instance, models downloaded on first use.
-    @available(macOS 14.0, *)
-    lazy var diarization: FluidAudioDiarization = FluidAudioDiarization()
-    /// Local session transcript RAG store (GRDB + vDSP cosine).
-    let ragStore = SessionRAGStore()
-
-    /// Rolling audio buffer (16kHz Float32 mono) accumulated during recording for post-session diarization.
-    /// Capped at 3 hours (~172M samples) to avoid unbounded growth.
-    private var recordingAudioBuffer: [Float] = []
-    private static let maxRecordingBufferSamples = 16000 * 60 * 180  // 3 hours @ 16kHz
-
-    /// Published local RAG search results (session transcript semantic search).
-    @Published var ragSearchResults: [ContextQueryResult] = []
+    private var captureReconfigurationTask: Task<Void, Never>?
 
     init() {
         streamer = WebSocketStreamer()
-        Task {
-            await phaseScheduler.setup()
-            try? await ragStore.setup()
-        }
+        isAudioMuted = UserDefaults.standard.bool(forKey: Constants.audioMutedDefaultsKey)
+        selectedMicDeviceID = UserDefaults.standard.string(forKey: Constants.selectedMicDeviceIDDefaultsKey)
         refreshPermissionStatuses()
+        micCapture.setPreferredDevice(id: selectedMicDeviceID)
         permissionCancellable = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
                 self?.refreshPermissionStatuses()
@@ -405,129 +421,55 @@ final class AppState: ObservableObject {
         // Note: audioCapture and micCapture callbacks are now set up in their lazy initializers
         
         streamer.onStatus = { [weak self] status, message in
-            Task { @MainActor in
-                self?.streamStatus = status
-                self?.statusMessage = message
-                
-                // PR1: Handle streaming ACK from backend
-                if status == .streaming && self?.sessionState == .starting {
-                    self?.startTimeoutTask?.cancel()
-                    self?.startTimeoutTask = nil
-                    self?.sessionState = .listening
-                }
-                
-                if status == .error {
-                    // If we fail while starting, abort into a stable error state (don't auto-reset to idle).
-                    if self?.sessionState == .starting {
-                        self?.abortStartingSession(reason: message.isEmpty ? "Streaming error" : message)
-                        return
-                    }
-                    self?.runtimeErrorState = .streaming(detail: message)
-                    self?.startTimeoutTask?.cancel()
-                    self?.startTimeoutTask = nil
-                } else if self?.runtimeErrorState?.isStreamingError == true {
-                    self?.runtimeErrorState = nil
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerStatus(status, message: message)
             }
         }
         
         // PR2: Handle metrics from backend
         streamer.onMetrics = { [weak self] metrics in
-            Task { @MainActor in
-                self?.lastMetrics[metrics.source] = metrics
-                
-                // Update backpressure level based on metrics
-                if metrics.queueFillRatio > 0.95 || metrics.droppedRecent > 0 {
-                    self?.backpressureLevel = .overloaded
-                } else if metrics.queueFillRatio > 0.85 || metrics.realtimeFactor > 1.0 {
-                    self?.backpressureLevel = .buffering
-                } else {
-                    self?.backpressureLevel = .normal
-                }
-                
-                // V1: Record metrics in session bundle
-                if let sessionId = self?.sessionID {
-                    SessionBundleManager.shared.bundle(for: sessionId)?.recordMetrics(metrics)
-                }
-                
-                // V1: Log high-latency warnings
-                if metrics.realtimeFactor > 1.5 {
-                    StructuredLogger.shared.warning("High processing latency detected", metadata: [
-                        "source": metrics.source,
-                        "realtime_factor": metrics.realtimeFactor,
-                        "avg_infer_ms": metrics.avgInferMs
-                    ])
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerMetrics(metrics)
             }
         }
         streamer.onASRPartial = { [weak self] text, t0, t1, confidence, source in
-            Task { @MainActor in 
-                self?.lastMessageDate = Date()
-                self?.markASREvent(source: source)
-                self?.handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source) 
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerASRPartial(text, t0: t0, t1: t1, confidence: confidence, source: source)
             }
         }
         streamer.onASRFinal = { [weak self] text, t0, t1, confidence, source in
-            Task { @MainActor in 
-                self?.lastMessageDate = Date()
-                self?.markASREvent(source: source)
-                self?.handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source)
-                
-                // V1: Record in session bundle
-                if let sessionId = self?.sessionID,
-                   let segment = self?.transcriptSegments.last {
-                    SessionBundleManager.shared.bundle(for: sessionId)?.recordTranscriptSegment(segment)
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerASRFinal(text, t0: t0, t1: t1, confidence: confidence, source: source)
             }
         }
         streamer.onCardsUpdate = { [weak self] actions, decisions, risks in
-            Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    self?.actions = actions
-                    self?.decisions = decisions
-                    self?.risks = risks
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerCardsUpdate(actions: actions, decisions: decisions, risks: risks)
             }
         }
         streamer.onEntitiesUpdate = { [weak self] entities in
-            Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    self?.entities = entities
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerEntitiesUpdate(entities)
             }
         }
         streamer.onFinalSummary = { [weak self] markdown, jsonObject in
-            Task { @MainActor in
-                self?.finalSummaryMarkdown = markdown
-                self?.finalSummaryJSON = jsonObject
-                self?.finalizationOutcome = .complete
-                
-                // H8 Fix: Update transcript with diarized speakers
-                if let transcriptData = jsonObject["transcript"] as? [[String: Any]] {
-                    var newSegments: [TranscriptSegment] = []
-                    for item in transcriptData {
-                        guard let text = item["text"] as? String,
-                              let t0 = item["t0"] as? TimeInterval,
-                              let t1 = item["t1"] as? TimeInterval else { continue }
-                        let confidence = (item["confidence"] as? Double) ?? 0.0
-                        let isFinal = item["is_final"] as? Bool ?? true
-                        let source = item["source"] as? String
-                        var segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: isFinal, confidence: confidence, source: source)
-                        segment.speaker = item["speaker"] as? String
-                        newSegments.append(segment)
-                    }
-                    self?.transcriptSegments = newSegments
-                    self?.bumpTranscriptRevision()
-                }
-
-                NotificationCenter.default.post(name: .finalSummaryReady, object: nil)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleStreamerFinalSummary(markdown: markdown, jsonObject: jsonObject)
             }
         }
         
         // VNI: Voice note transcript callback
         streamer.onVoiceNoteTranscript = { [weak self] text, duration in
-            Task { @MainActor in
-                self?.handleVoiceNoteTranscript(text: text, duration: duration)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleVoiceNoteTranscript(text: text, duration: duration)
             }
         }
         
@@ -572,7 +514,22 @@ final class AppState: ObservableObject {
         }
 
         return sourceIDs.map { sourceID in
-            let label = sourceID == "system" ? "System" : "Mic"
+            let label: String
+            if sourceID == "system" {
+                label = "System"
+            } else {
+                let selectedName = availableMicDevices.first(where: { $0.id == selectedMicDeviceID })?.name
+                let activeName = activeMicDeviceName
+                if let selectedName, let activeName, selectedName != activeName {
+                    label = "Mic \(selectedName) → \(activeName)"
+                } else if let selectedName {
+                    label = "Mic \(selectedName)"
+                } else if let activeName {
+                    label = "Mic \(activeName)"
+                } else {
+                    label = "Mic"
+                }
+            }
             let inputAge = inputLastSeenBySource[sourceID].map { max(0, Int(now.timeIntervalSince($0))) }
             let asrAge = asrLastSeenBySource[sourceID].map { max(0, Int(now.timeIntervalSince($0))) }
             return SourceProbe(id: sourceID, label: label, inputAgeSeconds: inputAge, asrAgeSeconds: asrAge)
@@ -674,13 +631,49 @@ final class AppState: ObservableObject {
             }
         }
 
-        // If the backend isn't ready, starting capture is misleading and often results
-        // in "start then auto-stop" when we fail to get a streaming ACK.
-        guard BackendManager.shared.isServerReady else {
-            reportBackendNotReady(detail: BackendManager.shared.healthDetail.isEmpty ? "Backend not ready" : BackendManager.shared.healthDetail)
+        let backendManager = BackendManager.shared
+
+        if BackendConfig.isLocalHost && backendManager.suppressesLiveRuntimeInTests {
+            reportBackendNotReady(detail: backendManager.healthDetail.isEmpty ? "Backend not ready" : backendManager.healthDetail)
             return
         }
-        
+
+        if BackendConfig.isLocalHost && !backendManager.isServerReady && backendManager.startupMode == .onDemand {
+            sessionState = .starting
+            streamStatus = .reconnecting
+            runtimeErrorState = nil
+            statusMessage = "Preparing local runtime..."
+
+            Task { [weak self] in
+                guard let self else { return }
+
+                let ready = await backendManager.ensureServerReadyForSession()
+                guard ready else {
+                    await MainActor.run {
+                        self.sessionState = .idle
+                        self.reportBackendNotReady(detail: backendManager.healthDetail.isEmpty ? "Local runtime failed to become ready." : backendManager.healthDetail)
+                    }
+                    return
+                }
+
+                await MainActor.run {
+                    self.beginSessionStartFlow()
+                }
+            }
+            return
+        }
+
+        // If the backend isn't ready, starting capture is misleading and often results
+        // in "start then auto-stop" when we fail to get a streaming ACK.
+        guard backendManager.isServerReady else {
+            reportBackendNotReady(detail: backendManager.healthDetail.isEmpty ? "Backend not ready" : backendManager.healthDetail)
+            return
+        }
+
+        beginSessionStartFlow()
+    }
+
+    private func beginSessionStartFlow() {
         // Beta gating: Check if user can start a session
         guard BetaGatingManager.shared.canStartSession() else {
             setSessionError(.backendNotReady(detail: "Session limit reached. You have used all \(BetaGatingManager.shared.sessionLimit) sessions this month. Upgrade to Pro for unlimited sessions."))
@@ -692,9 +685,6 @@ final class AppState: ObservableObject {
         statusMessage = "Requesting permission"
         runtimeErrorState = nil
         finalizationOutcome = .none
-        
-        // Transition phase scheduler to recording
-        Task { await phaseScheduler.transition(to: .recording) }
         
         // PR1: Generate new attempt ID for this start
         startAttemptId = UUID()
@@ -722,9 +712,7 @@ final class AppState: ObservableObject {
             "session_id": id
         ])
 
-        Task { @MainActor in
-            let capture = audioCapture
-            let micCap = micCapture
+        Task {
             refreshPermissionStatuses()
 
             // Screen Recording is required only if capturing system audio.
@@ -734,7 +722,7 @@ final class AppState: ObservableObject {
                 if preflightGranted {
                     granted = true
                 } else {
-                    granted = await capture.requestPermission()
+                    granted = await audioCapture.requestPermission()
                 }
                 // On macOS, Screen Recording permission often requires an app restart to take effect.
                 let effective = granted && CGPreflightScreenCaptureAccess()
@@ -751,7 +739,7 @@ final class AppState: ObservableObject {
 
             // Microphone permission is required only if capturing microphone audio.
             if audioSource == .microphone || audioSource == .both {
-                let micGranted = await micCap.requestPermission()
+                let micGranted = await requestMicrophonePermission()
                 microphonePermission = micGranted ? .authorized : .denied
                 guard micGranted else {
                     setSessionError(.microphonePermissionRequired)
@@ -788,7 +776,7 @@ final class AppState: ObservableObject {
                 // Start System Audio capture if needed
                 if audioSource == .system || audioSource == .both {
                     do {
-                        try await capture.startCapture()
+                        try await audioCapture.startCapture()
                     } catch {
                         setSessionError(.systemCaptureFailed(detail: error.localizedDescription))
                         return
@@ -798,12 +786,12 @@ final class AppState: ObservableObject {
                 // Start Mic capture if needed
                 if audioSource == .microphone || audioSource == .both {
                     do {
-                        try micCap.startCapture()
+                        try micCapture.startCapture()
                     } catch {
                         setSessionError(.microphoneCaptureFailed(detail: error.localizedDescription))
                         // Stop system capture if it was started
                         if audioSource == .both {
-                            await capture.stopCapture()
+                            await audioCapture.stopCapture()
                         }
                         return
                     }
@@ -879,13 +867,12 @@ final class AppState: ObservableObject {
         }
 
         // Stop capture + disconnect on a background task.
-        Task { @MainActor in
-            let capture = audioCapture
+        Task {
             if BroadcastFeatureManager.shared.useRedundantAudio {
                 await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
             } else {
                 if audioSource == .system || audioSource == .both {
-                    await capture.stopCapture()
+                    await audioCapture.stopCapture()
                 }
                 if audioSource == .microphone || audioSource == .both {
                     micCapture.stopCapture()
@@ -907,14 +894,13 @@ final class AppState: ObservableObject {
             "duration_seconds": effectiveElapsedSeconds
         ])
 
-        Task { @MainActor in
-            let capture = audioCapture
+        Task {
             // Stop audio capture (redundant or legacy)
             if BroadcastFeatureManager.shared.useRedundantAudio {
                 await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
             } else {
                 if audioSource == .system || audioSource == .both {
-                    await capture.stopCapture()
+                    await audioCapture.stopCapture()
                 }
                 if audioSource == .microphone || audioSource == .both {
                     micCapture.stopCapture()
@@ -951,14 +937,6 @@ final class AppState: ObservableObject {
             self.runtimeErrorState = nil
             self.noAudioDetected = false
             
-            // Transition phase: recording → analysis → brainDump → idle
-            await self.phaseScheduler.transition(to: .analysis)
-            await self.runNativeDiarization()
-            await self.runNativeAnalysis()
-            await self.phaseScheduler.transition(to: .brainDump)
-            await self.runBrainDumpIndexing()
-            await self.phaseScheduler.transition(to: .idle)
-            
             // V1: Clear logging context
             StructuredLogger.shared.clearContext()
 
@@ -989,138 +967,8 @@ final class AppState: ObservableObject {
         asrEventCount = 0
         runtimeErrorState = nil
         archivedSegments = []
-        recordingAudioBuffer.removeAll(keepingCapacity: false)
-        ragSearchResults = []
-        Task { await phaseScheduler.reset() }
-    }
-
-    // MARK: - Native Analysis (called from stopSession after recording → analysis phase)
-
-    /// Run MLX-local meeting analysis. Falls back silently if model unavailable.
-    @MainActor
-    private func runNativeAnalysis() async {
-        let transcript = transcriptSegments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcript.isEmpty else { return }
-
-        // Only run if no Python-provided summary is present
-        guard finalSummaryMarkdown.isEmpty else { return }
-
-        do {
-            try await analysisEngine.load()
-            let summary = try await analysisEngine.analyze(.summarize(transcript: transcript))
-            finalSummaryMarkdown = summary
-            logger.info("AppState: native analysis complete (\(summary.count) chars)")
-        } catch {
-            logger.warning("AppState: native analysis failed — \(error.localizedDescription)")
-        }
-        await analysisEngine.unload()
-    }
-
-    // MARK: - Audio Accumulation + Diarization
-
-    /// Decode PCM Data (Float32 LE) → Float samples and append to recording buffer.
-    @MainActor
-    private func accumulateAudioFrame(_ data: Data) {
-        guard recordingAudioBuffer.count < AppState.maxRecordingBufferSamples else { return }
-        let floatCount = data.count / MemoryLayout<Float>.size
-        var samples = [Float](repeating: 0, count: floatCount)
-        _ = samples.withUnsafeMutableBytes { data.copyBytes(to: $0) }
-        recordingAudioBuffer.append(contentsOf: samples)
-    }
-
-    /// Run batch diarization over the accumulated recording buffer and apply speaker labels.
-    @MainActor
-    private func runNativeDiarization() async {
-        guard !recordingAudioBuffer.isEmpty else { return }
-
-        if #available(macOS 14.0, *) {
-            do {
-                if !diarization.isReady {
-                    try await diarization.prepareModels()
-                }
-                let segments = try await diarization.diarize(audio: recordingAudioBuffer)
-                applySpeakerLabels(from: segments)
-                logger.info("AppState: diarization complete — \(segments.count) segments, \(Set(segments.map(\.speakerId)).count) speaker(s)")
-            } catch {
-                logger.warning("AppState: diarization failed — \(error.localizedDescription)")
-            }
-        }
-        recordingAudioBuffer.removeAll(keepingCapacity: false)
-    }
-
-    /// Map diarization segments onto transcriptSegments by timestamp overlap.
-    @MainActor
-    private func applySpeakerLabels(from diarSegments: [SpeakerSegment]) {
-        guard !diarSegments.isEmpty else { return }
-        transcriptSegments = transcriptSegments.map { seg in
-            let midpoint = (seg.t0 + seg.t1) / 2
-            if let match = diarSegments.first(where: { $0.startTimeSeconds <= midpoint && midpoint < $0.endTimeSeconds }) {
-                var updated = seg
-                // TranscriptSegment.speaker is var; return mutated copy
-                return TranscriptSegment(
-                    text: updated.text,
-                    t0: updated.t0,
-                    t1: updated.t1,
-                    isFinal: updated.isFinal,
-                    confidence: updated.confidence,
-                    source: updated.source,
-                    speaker: match.speakerId
-                )
-            }
-            return seg
-        }
     }
     
-    // MARK: - Brain Dump Indexing
-
-    /// Index current session transcript into local RAG store using MLX embeddings.
-    @MainActor
-    private func runBrainDumpIndexing() async {
-        guard let sessionId = sessionID else { return }
-        let transcript = transcriptSegments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        guard !transcript.isEmpty else { return }
-
-        do {
-            try await embeddingsEngine.load()
-            try await ragStore.indexTranscript(
-                sessionId: sessionId,
-                transcript: transcript,
-                engine: embeddingsEngine
-            )
-            logger.info("AppState: brain dump indexed for session \(sessionId)")
-        } catch {
-            logger.warning("AppState: brain dump indexing failed — \(error.localizedDescription)")
-        }
-        await embeddingsEngine.unload()
-    }
-
-    /// Search local session RAG store and populate ragSearchResults.
-    @MainActor
-    func searchLocalRAG(_ query: String) async {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else {
-            ragSearchResults = []
-            return
-        }
-        do {
-            try await embeddingsEngine.load()
-            let hits = try await ragStore.search(query: q, engine: embeddingsEngine, topK: 8)
-            ragSearchResults = hits.map { hit in
-                ContextQueryResult(
-                    documentID: hit.sessionId,
-                    title: "Session \(hit.sessionId.prefix(8))…",
-                    source: "local",
-                    chunkIndex: hit.chunkIndex,
-                    snippet: hit.text,
-                    score: Double(hit.score)
-                )
-            }
-        } catch {
-            logger.warning("AppState: local RAG search failed — \(error.localizedDescription)")
-            ragSearchResults = []
-        }
-    }
-
     /// Save current session snapshot for auto-save (v0.2)
     func saveSnapshot() {
         sessionStore.saveSnapshot(data: exportPayload())
@@ -1174,6 +1022,116 @@ final class AppState: ObservableObject {
             "text_length": text.count,
             "duration": duration
         ])
+    }
+
+    private func handleStreamerStatus(_ status: StreamStatus, message: String) {
+        streamStatus = status
+        statusMessage = message
+
+        // PR1: Handle streaming ACK from backend
+        if status == .streaming && sessionState == .starting {
+            startTimeoutTask?.cancel()
+            startTimeoutTask = nil
+            sessionState = .listening
+        }
+
+        if status == .error {
+            // If we fail while starting, abort into a stable error state (don't auto-reset to idle).
+            if sessionState == .starting {
+                abortStartingSession(reason: message.isEmpty ? "Streaming error" : message)
+                return
+            }
+            runtimeErrorState = .streaming(detail: message)
+            startTimeoutTask?.cancel()
+            startTimeoutTask = nil
+        } else if runtimeErrorState?.isStreamingError == true {
+            runtimeErrorState = nil
+        }
+    }
+
+    private func handleStreamerMetrics(_ metrics: SourceMetrics) {
+        lastMetrics[metrics.source] = metrics
+
+        // Update backpressure level based on metrics
+        if metrics.queueFillRatio > 0.95 || metrics.droppedRecent > 0 {
+            backpressureLevel = .overloaded
+        } else if metrics.queueFillRatio > 0.85 || metrics.realtimeFactor > 1.0 {
+            backpressureLevel = .buffering
+        } else {
+            backpressureLevel = .normal
+        }
+
+        // V1: Record metrics in session bundle
+        if let sessionId = sessionID {
+            SessionBundleManager.shared.bundle(for: sessionId)?.recordMetrics(metrics)
+        }
+
+        // V1: Log high-latency warnings
+        if metrics.realtimeFactor > 1.5 {
+            StructuredLogger.shared.warning("High processing latency detected", metadata: [
+                "source": metrics.source,
+                "realtime_factor": metrics.realtimeFactor,
+                "avg_infer_ms": metrics.avgInferMs
+            ])
+        }
+    }
+
+    private func handleStreamerASRPartial(_ text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        lastMessageDate = Date()
+        markASREvent(source: source)
+        handlePartial(text: text, t0: t0, t1: t1, confidence: confidence, source: source)
+    }
+
+    private func handleStreamerASRFinal(_ text: String, t0: TimeInterval, t1: TimeInterval, confidence: Double, source: String?) {
+        lastMessageDate = Date()
+        markASREvent(source: source)
+        handleFinal(text: text, t0: t0, t1: t1, confidence: confidence, source: source)
+
+        // V1: Record in session bundle
+        if let sessionId = sessionID,
+           let segment = transcriptSegments.last {
+            SessionBundleManager.shared.bundle(for: sessionId)?.recordTranscriptSegment(segment)
+        }
+    }
+
+    private func handleStreamerCardsUpdate(actions: [ActionItem], decisions: [DecisionItem], risks: [RiskItem]) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            self.actions = actions
+            self.decisions = decisions
+            self.risks = risks
+        }
+    }
+
+    private func handleStreamerEntitiesUpdate(_ entities: [EntityItem]) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            self.entities = entities
+        }
+    }
+
+    private func handleStreamerFinalSummary(markdown: String, jsonObject: [String: Any]) {
+        finalSummaryMarkdown = markdown
+        finalSummaryJSON = jsonObject
+        finalizationOutcome = .complete
+
+        // H8 Fix: Update transcript with diarized speakers
+        if let transcriptData = jsonObject["transcript"] as? [[String: Any]] {
+            var newSegments: [TranscriptSegment] = []
+            for item in transcriptData {
+                guard let text = item["text"] as? String,
+                      let t0 = item["t0"] as? TimeInterval,
+                      let t1 = item["t1"] as? TimeInterval else { continue }
+                let confidence = (item["confidence"] as? Double) ?? 0.0
+                let isFinal = item["is_final"] as? Bool ?? true
+                let source = item["source"] as? String
+                var segment = TranscriptSegment(text: text, t0: t0, t1: t1, isFinal: isFinal, confidence: confidence, source: source)
+                segment.speaker = item["speaker"] as? String
+                newSegments.append(segment)
+            }
+            transcriptSegments = newSegments
+            bumpTranscriptRevision()
+        }
+
+        NotificationCenter.default.post(name: .finalSummaryReady, object: nil)
     }
     
     /// Toggle pin status of a voice note
@@ -1270,8 +1228,9 @@ final class AppState: ObservableObject {
     
     private func startSilenceCheck() {
         silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: Constants.silenceCheckInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkForSilence()
+            Task { [weak self] in
+                guard let self else { return }
+                await self.checkForSilence()
             }
         }
     }
@@ -1295,6 +1254,184 @@ final class AppState: ObservableObject {
             // Update the duration
             silenceMessage = "No audio detected for \(Int(silenceDuration))s. Check: Is the meeting muted? Is the correct audio source selected?"
         }
+    }
+
+    private func requestMicrophonePermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func updateDebugSamples(_ sampleCount: Int) {
+        debugSamples = sampleCount
+        updateDebugLine()
+    }
+
+    private func updateDebugScreenFrames(_ frameCount: Int) {
+        debugScreenFrames = frameCount
+        updateDebugLine()
+    }
+
+    private func updateAudioQuality(_ quality: AudioQuality) {
+        audioQuality = quality
+    }
+
+    private func updateSystemAudioLevel(_ level: Float) {
+        systemAudioLevel = isAudioMuted ? 0 : level
+    }
+
+    private func handleCapturedPCMFrame(_ frame: Data, source: String) {
+        debugBytes += frame.count
+        if debugEnabled {
+            updateDebugLine()
+        }
+        markInputFrame(source: source)
+        lastAudioTimestamp = Date()
+        if noAudioDetected {
+            noAudioDetected = false
+            silenceMessage = ""
+        }
+        guard !isAudioMuted else { return }
+        guard shouldForwardFrame(from: normalizedSource(source)) else { return }
+        streamer.sendPCMFrame(frame, source: source)
+    }
+
+    private func updateMicrophoneAudioLevel(_ level: Float) {
+        microphoneAudioLevel = isAudioMuted ? 0 : level
+    }
+
+    private func updateActiveMicDevice(id: String?, name: String?) {
+        activeMicDeviceID = id
+        activeMicDeviceName = name
+    }
+
+    private func reconfigureCaptureForMicrophoneSelectionChange() async {
+        captureReconfigurationTask?.cancel()
+        captureReconfigurationTask = Task { [weak self] in
+            guard let self else { return }
+            let needsMic = self.audioSource == .microphone || self.audioSource == .both
+            guard self.sessionState == .listening, needsMic else { return }
+
+            if BroadcastFeatureManager.shared.useRedundantAudio {
+                do {
+                    await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
+                    switch self.audioSource {
+                    case .system:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: false)
+                    case .microphone:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: true)
+                    case .both:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startRedundantCapture()
+                    }
+                    self.setUserNotice("Audio capture route updated", level: .success, autoClearAfter: 2.0)
+                } catch {
+                    self.setUserNotice("Failed to switch microphone: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+                }
+                return
+            }
+
+            guard self.micCapture.isCapturing else { return }
+            self.micCapture.stopCapture()
+            do {
+                try self.micCapture.startCapture()
+                self.setUserNotice("Microphone switched", level: .success, autoClearAfter: 2.0)
+            } catch {
+                self.setUserNotice("Failed to switch microphone: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+            }
+        }
+    }
+
+    private func reconfigureCaptureForSourceChange(from oldSource: AudioSource, to newSource: AudioSource) async {
+        captureReconfigurationTask?.cancel()
+        captureReconfigurationTask = Task { [weak self] in
+            guard let self else { return }
+            guard self.sessionState == .listening else { return }
+
+            if BroadcastFeatureManager.shared.useRedundantAudio {
+                do {
+                    await BroadcastFeatureManager.shared.redundantAudioManager.stopCapture()
+                    switch newSource {
+                    case .system:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: false)
+                    case .microphone:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startSingleCapture(useBackup: true)
+                    case .both:
+                        try await BroadcastFeatureManager.shared.redundantAudioManager.startRedundantCapture()
+                    }
+                    self.setUserNotice("Audio source switched to \(newSource.rawValue)", level: .success, autoClearAfter: 2.0)
+                } catch {
+                    self.setUserNotice("Failed to switch source: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+                }
+                return
+            }
+
+            let oldNeedsSystem = oldSource == .system || oldSource == .both
+            let oldNeedsMic = oldSource == .microphone || oldSource == .both
+            let newNeedsSystem = newSource == .system || newSource == .both
+            let newNeedsMic = newSource == .microphone || newSource == .both
+
+            do {
+                if oldNeedsSystem && !newNeedsSystem {
+                    await self.audioCapture.stopCapture()
+                } else if !oldNeedsSystem && newNeedsSystem {
+                    try await self.audioCapture.startCapture()
+                }
+            } catch {
+                self.setUserNotice("System audio switch failed: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+                return
+            }
+
+            do {
+                if oldNeedsMic && !newNeedsMic {
+                    self.micCapture.stopCapture()
+                } else if !oldNeedsMic && newNeedsMic {
+                    self.micCapture.setPreferredDevice(id: self.selectedMicDeviceID)
+                    try self.micCapture.startCapture()
+                }
+            } catch {
+                self.setUserNotice("Microphone switch failed: \(error.localizedDescription)", level: .error, autoClearAfter: 0)
+                return
+            }
+
+            self.setUserNotice("Audio source switched to \(newSource.rawValue)", level: .success, autoClearAfter: 2.0)
+        }
+    }
+
+    private func shouldForwardFrame(from normalizedSource: String) -> Bool {
+        switch normalizedSource {
+        case "system":
+            return audioSource == .system || audioSource == .both
+        case "mic":
+            return audioSource == .microphone || audioSource == .both
+        default:
+            return true
+        }
+    }
+
+    func setAudioMuted(_ muted: Bool) {
+        guard isAudioMuted != muted else { return }
+        isAudioMuted = muted
+        UserDefaults.standard.set(muted, forKey: Constants.audioMutedDefaultsKey)
+        if muted {
+            systemAudioLevel = 0
+            microphoneAudioLevel = 0
+        }
+    }
+
+    func toggleAudioMuted() {
+        setAudioMuted(!isAudioMuted)
+    }
+
+    private func setVoiceNoteRecordingStarted() {
+        isRecordingVoiceNote = true
+        voiceNoteError = nil
+    }
+
+    private func setVoiceNoteRecordingStopped() {
+        isRecordingVoiceNote = false
+        voiceNoteAudioLevel = 0
     }
 
     func copyMarkdownToClipboard() {
@@ -1336,8 +1473,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = "echopanel-session.json"
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
-                Task { @MainActor in
-                    self.recordExportCancelled(format: "JSON")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportCancelled(format: "JSON")
                 }
                 return
             }
@@ -1345,12 +1483,14 @@ final class AppState: ObservableObject {
             do {
                 let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: url)
-                Task { @MainActor in
-                    self.recordExportSuccess(format: "JSON")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportSuccess(format: "JSON")
                 }
             } catch {
-                Task { @MainActor in
-                    self.recordExportFailure(format: "JSON", error: error)
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportFailure(format: "JSON", error: error)
                 }
                 NSLog("Export JSON failed: %@", error.localizedDescription)
             }
@@ -1364,8 +1504,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = "echopanel-notes.md"
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
-                Task { @MainActor in
-                    self.recordExportCancelled(format: "Markdown")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportCancelled(format: "Markdown")
                 }
                 return
             }
@@ -1379,12 +1520,14 @@ final class AppState: ObservableObject {
             
             do {
                 try markdown.write(to: url, atomically: true, encoding: .utf8)
-                Task { @MainActor in
-                    self.recordExportSuccess(format: "Markdown")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportSuccess(format: "Markdown")
                 }
             } catch {
-                Task { @MainActor in
-                    self.recordExportFailure(format: "Markdown", error: error)
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportFailure(format: "Markdown", error: error)
                 }
                 NSLog("Export Markdown failed: %@", error.localizedDescription)
             }
@@ -1398,8 +1541,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = minutesOfMeetingFilename(template: template)
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
-                Task { @MainActor in
-                    self.recordExportCancelled(format: "MOM")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportCancelled(format: "MOM")
                 }
                 return
             }
@@ -1409,12 +1553,14 @@ final class AppState: ObservableObject {
 
             do {
                 try markdown.write(to: url, atomically: true, encoding: .utf8)
-                Task { @MainActor in
-                    self.recordExportSuccess(format: "MOM")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportSuccess(format: "MOM")
                 }
             } catch {
-                Task { @MainActor in
-                    self.recordExportFailure(format: "MOM", error: error)
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportFailure(format: "MOM", error: error)
                 }
                 NSLog("Export MOM failed: %@", error.localizedDescription)
             }
@@ -1472,8 +1618,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = "echopanel-captions.srt"
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
-                Task { @MainActor in
-                    self.recordExportCancelled(format: "SRT")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportCancelled(format: "SRT")
                 }
                 return
             }
@@ -1481,12 +1628,14 @@ final class AppState: ObservableObject {
             let content = self.renderSRTForExport()
             do {
                 try content.write(to: url, atomically: true, encoding: .utf8)
-                Task { @MainActor in
-                    self.recordExportSuccess(format: "SRT")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportSuccess(format: "SRT")
                 }
             } catch {
-                Task { @MainActor in
-                    self.recordExportFailure(format: "SRT", error: error)
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportFailure(format: "SRT", error: error)
                 }
                 NSLog("Export SRT failed: %@", error.localizedDescription)
             }
@@ -1500,8 +1649,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = "echopanel-captions.vtt"
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
-                Task { @MainActor in
-                    self.recordExportCancelled(format: "WebVTT")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportCancelled(format: "WebVTT")
                 }
                 return
             }
@@ -1509,12 +1659,14 @@ final class AppState: ObservableObject {
             let content = self.renderWebVTTForExport()
             do {
                 try content.write(to: url, atomically: true, encoding: .utf8)
-                Task { @MainActor in
-                    self.recordExportSuccess(format: "WebVTT")
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportSuccess(format: "WebVTT")
                 }
             } catch {
-                Task { @MainActor in
-                    self.recordExportFailure(format: "WebVTT", error: error)
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.recordExportFailure(format: "WebVTT", error: error)
                 }
                 NSLog("Export WebVTT failed: %@", error.localizedDescription)
             }
@@ -1522,7 +1674,8 @@ final class AppState: ObservableObject {
     }
 
     func exportDebugBundle() {
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 // V1: Use new SessionBundle system
                 if let sessionId = sessionID,
@@ -1534,12 +1687,12 @@ final class AppState: ObservableObject {
                     
                     let response = await savePanel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow())
                     guard response == .OK, let url = savePanel.url else {
-                        self.recordExportCancelled(format: "Debug bundle")
+                        await self.recordExportCancelled(format: "Debug bundle")
                         return
                     }
                     
                     try await bundle.exportBundle(to: url)
-                    self.recordExportSuccess(format: "Debug bundle")
+                    await self.recordExportSuccess(format: "Debug bundle")
                     
                     StructuredLogger.shared.info("Debug bundle exported", metadata: [
                         "session_id": sessionId,
@@ -1550,9 +1703,7 @@ final class AppState: ObservableObject {
                     try await exportLegacyDebugBundle()
                 }
             } catch {
-                await MainActor.run {
-                    self.recordExportFailure(format: "Debug bundle", error: error)
-                }
+                await self.recordExportFailure(format: "Debug bundle", error: error)
                 StructuredLogger.shared.error("Debug export failed", error: error)
                 NSLog("Debug export failed: \(error)")
             }
@@ -1610,14 +1761,23 @@ final class AppState: ObservableObject {
             panel.nameFieldStringValue = "echopanel-debug.zip"
             panel.begin { response in
                 guard response == .OK, let url = panel.url else {
-                    self.recordExportCancelled(format: "Debug bundle")
+                    Task { [weak self] in
+                        guard let self else { return }
+                        await self.recordExportCancelled(format: "Debug bundle")
+                    }
                     return
                 }
                 do {
                     try FileManager.default.copyItem(at: zipURL, to: url)
-                    self.recordExportSuccess(format: "Debug bundle")
+                    Task { [weak self] in
+                        guard let self else { return }
+                        await self.recordExportSuccess(format: "Debug bundle")
+                    }
                 } catch {
-                    self.recordExportFailure(format: "Debug bundle", error: error)
+                    Task { [weak self] in
+                        guard let self else { return }
+                        await self.recordExportFailure(format: "Debug bundle", error: error)
+                    }
                 }
                 // Cleanup
                 try? FileManager.default.removeItem(at: bundleDir)
@@ -2032,6 +2192,21 @@ final class AppState: ObservableObject {
     func refreshPermissionStatuses() {
         refreshScreenRecordingStatus()
         refreshMicrophoneStatus()
+        refreshAvailableMicDevices()
+    }
+
+    private func refreshAvailableMicDevices() {
+        let devices = AVCaptureDevice.devices(for: .audio).map {
+            MicInputDevice(id: $0.uniqueID, name: $0.localizedName)
+        }
+
+        availableMicDevices = devices
+
+        if let selectedMicDeviceID,
+           devices.contains(where: { $0.id == selectedMicDeviceID }) {
+            return
+        }
+        selectedMicDeviceID = devices.first?.id
     }
 
     private func refreshMicrophoneStatus() {
@@ -2117,7 +2292,6 @@ final class AppState: ObservableObject {
         contextQuery = query
         guard !query.isEmpty else {
             contextQueryResults = []
-            ragSearchResults = []
             contextStatusMessage = contextDocuments.isEmpty
                 ? "No context documents indexed yet."
                 : "Enter a query to search local context."
@@ -2127,34 +2301,21 @@ final class AppState: ObservableObject {
         contextBusy = true
         defer { contextBusy = false }
 
-        // Run Python backend search on MainActor and local RAG search concurrently
-        let payload: [String: Any] = ["query": query, "top_k": 8]
-        let body = (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
-        let request = makeAuthorizedRequest(url: BackendConfig.documentsQueryURL, method: "POST", body: body)
-
-        async let localTask: Void = searchLocalRAG(query)
-
         do {
+            let payload: [String: Any] = ["query": query, "top_k": 8]
+            let body = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let request = makeAuthorizedRequest(url: BackendConfig.documentsQueryURL, method: "POST", body: body)
             let (data, response) = try await URLSession.shared.data(for: request)
             try ensureHTTPStatus(response, data: data)
             let decoded = try JSONDecoder().decode(ContextQueryResponse.self, from: data)
             contextQueryResults = decoded.results.map { $0.asContextQueryResult() }
+            if contextQueryResults.isEmpty {
+                contextStatusMessage = "No matches for \"\(query)\"."
+            } else {
+                contextStatusMessage = "\(contextQueryResults.count) match(es) for \"\(query)\"."
+            }
         } catch {
-            // Python backend unavailable — local RAG results still shown below
-            contextQueryResults = []
-        }
-
-        await localTask
-
-        let totalMatches = contextQueryResults.count + ragSearchResults.count
-        if totalMatches == 0 {
-            contextStatusMessage = "No matches for \"\(query)\"."
-        } else {
-            let parts = [
-                contextQueryResults.isEmpty ? nil : "\(contextQueryResults.count) doc",
-                ragSearchResults.isEmpty ? nil : "\(ragSearchResults.count) session"
-            ].compactMap { $0 }
-            contextStatusMessage = "\(parts.joined(separator: " + ")) match(es) for \"\(query)\"."
+            contextStatusMessage = "Context query failed: \(error.localizedDescription)"
         }
     }
 
@@ -2285,26 +2446,17 @@ final class AppState: ObservableObject {
         
         // Set up redundant audio callbacks
         broadcast.redundantAudioManager.onPCMFrame = { [weak self] frame, source in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.debugBytes += frame.count
-                if self.debugEnabled {
-                    self.updateDebugLine()
-                }
-                self.markInputFrame(source: source)
-                self.lastAudioTimestamp = Date()
-                if self.noAudioDetected {
-                    self.noAudioDetected = false
-                    self.silenceMessage = ""
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleCapturedPCMFrame(frame, source: source)
             }
-            self.streamer.sendPCMFrame(frame, source: source)
         }
         
         // Set up hot-key actions
         broadcast.onHotKeyAction = { [weak self] action in
-            Task { @MainActor in
-                self?.handleBroadcastHotKeyAction(action)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.handleBroadcastHotKeyAction(action)
             }
         }
         
@@ -2334,8 +2486,12 @@ final class AppState: ObservableObject {
             insertTimestampMarker()
             
         case .toggleMute:
-            // Toggle mute (implementation depends on audio routing)
-            NSLog("Broadcast: Toggle mute via hot-key")
+            toggleAudioMuted()
+            let stateText = isAudioMuted ? "Muted" : "Unmuted"
+            setUserNotice("Audio \(stateText.lowercased())", level: .info, autoClearAfter: 2.5)
+            StructuredLogger.shared.info("Broadcast mute toggled", metadata: [
+                "muted": isAudioMuted
+            ])
             
         case .exportTranscript:
             exportJSON()

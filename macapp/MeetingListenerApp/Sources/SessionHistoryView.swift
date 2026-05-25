@@ -96,7 +96,7 @@ struct SessionHistoryView: View {
             }
         }
         .frame(width: 260)
-        .onChange(of: selectedSessionId) { newValue in
+        .onChange(of: selectedSessionId) { _, newValue in
             guard let newValue else {
                 selectedSnapshot = nil
                 return

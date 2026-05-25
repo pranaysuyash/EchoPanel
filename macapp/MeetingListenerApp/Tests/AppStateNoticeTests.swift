@@ -35,4 +35,25 @@ final class AppStateNoticeTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertNil(appState.userNotice)
     }
+
+    func testToggleAudioMutedFlipsState() {
+        let appState = AppState()
+        let initial = appState.isAudioMuted
+
+        appState.toggleAudioMuted()
+        XCTAssertEqual(appState.isAudioMuted, !initial)
+
+        appState.toggleAudioMuted()
+        XCTAssertEqual(appState.isAudioMuted, initial)
+    }
+
+    func testSetAudioMutedIsIdempotent() {
+        let appState = AppState()
+
+        appState.setAudioMuted(true)
+        XCTAssertTrue(appState.isAudioMuted)
+
+        appState.setAudioMuted(true)
+        XCTAssertTrue(appState.isAudioMuted)
+    }
 }

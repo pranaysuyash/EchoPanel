@@ -9,71 +9,68 @@ extension SidePanelView {
     // MARK: - Top Bar
     func topBar(panelWidth: CGFloat) -> some View {
         let isNarrow = panelWidth < 600
-        // HIG: Consistent picker width calculation
         let pickerWidth = min(
             max(panelWidth * (viewMode == .full ? 0.32 : 0.42), 170),
             viewMode == .full ? 300 : 250
         )
 
-        return VStack(spacing: 6) {
-            HStack(alignment: .top, spacing: Spacing.sm + 2) {
-                VStack(alignment: .leading, spacing: 2) {
+        return VStack(spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("EchoPanel")
-                        .font(Typography.titleLarge)
+                        .font(Typography.hero)
                     Text(statusTitle)
-                        .font(Typography.captionSmall)
+                        .font(Typography.caption)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        statusPill
+                        smallStateBadge(title: appState.audioSource.rawValue, tint: .blue)
+                        if appState.isAudioMuted {
+                            smallStateBadge(title: "Muted", tint: .orange)
+                        }
+                    }
                 }
 
                 Spacer(minLength: Spacing.sm)
 
-                if isNarrow {
-                    EmptyView()
-                } else {
-                    Picker("View mode", selection: $viewMode) {
-                        ForEach(ViewMode.allCases) { mode in
-                            Text(mode.rawValue)
-                                .help(modeHelpText(for: mode))
-                                .tag(mode)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(appState.timerText)
+                        .font(Typography.mono)
+                        .monospacedDigit()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(chipBackgroundColor)
+                        .clipShape(Capsule())
+
+                    HStack(spacing: 6) {
+                        if !showCaptureDetails && viewMode != .full {
+                            Button("Audio Setup") {
+                                showCaptureDetails = true
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
+
+                        Button {
+                            showShortcutOverlay.toggle()
+                        } label: {
+                            Image(systemName: "command")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Keyboard shortcuts")
+                        .accessibilityLabel("Open keyboard shortcuts")
+
+                        Toggle(isOn: $alwaysOnTop) {
+                            Image(systemName: alwaysOnTop ? "pin.fill" : "pin")
+                        }
+                        .toggleStyle(.button)
+                        .controlSize(.small)
+                        .help(alwaysOnTop ? "Always on top (On)" : "Always on top (Off)")
+                        .accessibilityLabel(alwaysOnTop ? "Disable always on top" : "Enable always on top")
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: pickerWidth)
-                    .accessibilityLabel("View mode")
                 }
-            }
-
-            HStack(spacing: 6) {
-                statusPill
-
-                Text(appState.timerText)
-                    .font(Typography.caption)
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(chipBackgroundColor)
-                    .clipShape(Capsule())
-
-                if !showCaptureDetails && viewMode != .full {
-                    // HIG: Full mode has capture bar integrated, so no button needed
-                    Button("Audio Setup") {
-                        showCaptureDetails = true
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                Toggle(isOn: $alwaysOnTop) {
-                    Image(systemName: alwaysOnTop ? "pin.fill" : "pin")
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-                .help(alwaysOnTop ? "Always on top (On)" : "Always on top (Off)")
-                .accessibilityLabel(alwaysOnTop ? "Disable always on top" : "Enable always on top")
-
-                Spacer()
             }
 
             if isNarrow {
@@ -88,8 +85,27 @@ extension SidePanelView {
                 .labelsHidden()
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("View mode")
+            } else {
+                Picker("View mode", selection: $viewMode) {
+                    ForEach(ViewMode.allCases) { mode in
+                        Text(mode.rawValue)
+                            .help(modeHelpText(for: mode))
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: pickerWidth)
+                .accessibilityLabel("View mode")
             }
         }
+        .padding(Spacing.sm + 2)
+        .background(BackgroundStyle.hero.color(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(StrokeStyle.standard.color(for: colorScheme), lineWidth: 1)
+        )
     }
     
     private func modeHelpText(for mode: ViewMode) -> String {
@@ -112,12 +128,7 @@ extension SidePanelView {
         return VStack(spacing: Spacing.sm + 2) {
             if collapsed {
                 HStack(spacing: 6) {
-                    Text("Audio")
-                        .font(Typography.caption)
-                        .foregroundColor(.secondary)
-                    Text(appState.audioSource.rawValue)
-                        .font(Typography.caption)
-                        .fontWeight(.semibold)
+                    smallStateBadge(title: appState.audioSource.rawValue, tint: .blue)
                     Toggle("Follow", isOn: $transcriptUI.followLive)
                         .toggleStyle(.switch)
                         .controlSize(.mini)
@@ -148,9 +159,11 @@ extension SidePanelView {
                     .controlSize(.small)
                 }
 
-                Text(appState.sourceTroubleshootingHint ?? appState.captureRouteDescription)
+                Text(appState.isAudioMuted
+                     ? "Capture is muted. Audio is being captured locally but not sent for transcription."
+                     : (appState.sourceTroubleshootingHint ?? appState.captureRouteDescription))
                     .font(Typography.captionSmall)
-                    .foregroundColor(appState.sourceTroubleshootingHint == nil ? .secondary : .orange)
+                    .foregroundColor((appState.isAudioMuted || appState.sourceTroubleshootingHint != nil) ? .orange : .secondary)
                     .lineLimit(2)
             } else if stacked {
                 VStack(spacing: Spacing.sm) {
@@ -175,6 +188,13 @@ extension SidePanelView {
                         
                         // Record voice note button in stacked expanded mode
                         recordVoiceNoteButton
+
+                        Button(appState.isAudioMuted ? "Unmute" : "Mute") {
+                            appState.toggleAudioMuted()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help(appState.isAudioMuted ? "Resume sending captured audio to transcription" : "Temporarily stop sending captured audio to transcription")
 
                         Button("?") {
                             showShortcutOverlay.toggle()
@@ -216,6 +236,13 @@ extension SidePanelView {
                     
                     // Record voice note button in expanded mode
                     recordVoiceNoteButton
+
+                    Button(appState.isAudioMuted ? "Unmute" : "Mute") {
+                        appState.toggleAudioMuted()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help(appState.isAudioMuted ? "Resume sending captured audio to transcription" : "Temporarily stop sending captured audio to transcription")
 
                     Button("?") {
                         showShortcutOverlay.toggle()

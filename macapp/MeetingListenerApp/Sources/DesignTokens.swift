@@ -60,6 +60,8 @@ enum BackgroundStyle {
     case control
     /// Elevated elements: popovers, overlays, modals
     case elevated
+    /// Hero chrome and emphasized status containers
+    case hero
     /// Input fields, text backgrounds
     case input
     /// Row hover/focus states
@@ -90,6 +92,10 @@ enum BackgroundStyle {
         case .elevated:
             return Color(nsColor: .windowBackgroundColor)
                 .opacity(scheme == .dark ? 0.90 : 0.95)
+
+        case .hero:
+            return Color(nsColor: .windowBackgroundColor)
+                .opacity(scheme == .dark ? 0.58 : 0.82)
             
         case .input:
             return Color(nsColor: .textBackgroundColor)
@@ -145,6 +151,7 @@ enum StrokeStyle {
 enum Typography {
     /// Large titles - Panel headers
     static let titleLarge = Font.system(size: 19, weight: .semibold, design: .rounded)
+    static let hero = Font.system(size: 22, weight: .semibold, design: .rounded)
     /// Standard titles - Section headers
     static let title = Font.headline
     /// Subheadings - Card titles

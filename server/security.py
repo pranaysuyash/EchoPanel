@@ -4,6 +4,7 @@ Provides unified token extraction, validation, and auth enforcement
 across HTTP and WebSocket endpoints.
 """
 
+import logging
 import hmac
 import os
 from typing import Optional
@@ -12,6 +13,7 @@ from fastapi import HTTPException, Request, WebSocket
 
 
 AUTH_TOKEN_ENV = "ECHOPANEL_WS_AUTH_TOKEN"
+logger = logging.getLogger(__name__)
 
 
 def extract_http_token(request: Request) -> str:
@@ -61,7 +63,7 @@ def extract_ws_token(websocket: WebSocket) -> str:
     # Check query param (deprecated — only for dev convenience, log if used)
     query_token = websocket.query_params.get("token")
     if query_token:
-        _logger.warning(
+        logger.warning(
             "WebSocket auth: query param token used (deprecated). "
             "Use Authorization header instead. Client should be updated."
         )

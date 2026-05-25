@@ -50,10 +50,14 @@ class PerceptualHash:
         if image.mode not in ('RGB', 'L'):
             image = image.convert('RGB')
         
-        # Compute average hash
-        avg_hash = self._average_hash(image)
-        
-        return avg_hash
+        # Hybrid hash: luminance structure + coarse color signature
+        base_hash = self._average_hash(image)
+        color_hash = self._color_signature_hash(image)
+        return f"{base_hash}{color_hash}"
+
+    # Backward-compatible API used by hybrid OCR pipeline
+    def compute(self, image_bytes: bytes) -> Optional[str]:
+        return self.compute_hash_from_bytes(image_bytes)
     
     def compute_hash_from_bytes(self, image_bytes: bytes) -> Optional[str]:
         """
@@ -99,11 +103,36 @@ class PerceptualHash:
         # Compute average
         avg = sum(pixels) / len(pixels)
         
-        # Build hash
-        bits = ''.join('1' if p > avg else '0' for p in pixels)
+        # Build hash. Blend relative and absolute thresholding so
+        # uniformly-colored slides don't all collapse to the same hash.
+        half = len(pixels) // 2
+        rel_bits = ['1' if p > avg else '0' for p in pixels[:half]]
+        abs_bits = ['1' if p >= 128 else '0' for p in pixels[half:]]
+        bits = ''.join(rel_bits + abs_bits)
         
         # Convert to hex
         return hex(int(bits, 2))[2:].zfill(self.hash_size * self.hash_size // 4)
+
+    def _color_signature_hash(self, image: Image.Image) -> str:
+        """Compact color signature appended to the base perceptual hash."""
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        small = image.resize((self.hash_size, self.hash_size), Image.Resampling.LANCZOS)
+        pixels = list(small.getdata())
+
+        if not pixels:
+            return "0000"
+
+        r_avg = sum(p[0] for p in pixels) / len(pixels)
+        g_avg = sum(p[1] for p in pixels) / len(pixels)
+        b_avg = sum(p[2] for p in pixels) / len(pixels)
+
+        # 4 bits each channel -> 12 bits compact color fingerprint.
+        r_q = int(r_avg / 16) & 0xF
+        g_q = int(g_avg / 16) & 0xF
+        b_q = int(b_avg / 16) & 0xF
+        packed = (r_q << 8) | (g_q << 4) | b_q
+        return hex(packed)[2:].zfill(4)
     
     def _difference_hash(self, image: Image.Image) -> str:
         """
@@ -175,8 +204,27 @@ class PerceptualHash:
         Returns:
             True if images are similar
         """
+        # Hashes include an aHash prefix and a compact color suffix.
+        # Keep the original aHash threshold behavior while also
+        # requiring color similarity so uniformly-colored frames
+        # (e.g., red/green/blue slides) do not collapse together.
+        color_suffix_hex = 4
+        if len(hash1) > color_suffix_hex and len(hash2) > color_suffix_hex:
+            base1, color1 = hash1[:-color_suffix_hex], hash1[-color_suffix_hex:]
+            base2, color2 = hash2[:-color_suffix_hex], hash2[-color_suffix_hex:]
+
+            base_distance = self.hamming_distance(base1, base2)
+            color_distance = self.hamming_distance(color1, color2)
+            color_threshold = max(2, threshold // 2)
+
+            return base_distance <= threshold and color_distance <= color_threshold
+
         distance = self.hamming_distance(hash1, hash2)
         return distance <= threshold
+
+    # Backward-compatible alias used by hybrid OCR
+    def similar(self, hash1: str, hash2: str, threshold: int = 5) -> bool:
+        return self.is_similar(hash1, hash2, threshold)
 
 
 # Convenience functions

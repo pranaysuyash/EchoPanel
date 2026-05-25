@@ -3,7 +3,6 @@ import Foundation
 
 /// Voice note capture manager for recording short voice notes during meetings.
 /// Reuses AVAudioEngine patterns from MicrophoneCaptureManager but optimized for short recordings.
-@MainActor
 final class VoiceNoteCaptureManager: NSObject, ObservableObject {
     
     // MARK: - Published State
@@ -70,11 +69,22 @@ final class VoiceNoteCaptureManager: NSObject, ObservableObject {
         super.init()
     }
     
-    // Note: AVAudioEngine cleans up on deallocation. Callers should call stopRecording() before release.
+    deinit {
+        maxDurationTimer?.invalidate()
+        maxDurationTimer = nil
+
+        stopAudioEngine()
+
+        pcmRemainder = []
+        recordingStartTime = nil
+        isRecording = false
+        currentLevel = 0
+        levelEMA = 0
+    }
     
     // MARK: - Permission
     
-    func requestPermission() async -> Bool {
+    static func requestPermission() async -> Bool {
         await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 continuation.resume(returning: granted)
@@ -96,7 +106,7 @@ final class VoiceNoteCaptureManager: NSObject, ObservableObject {
         // Check permission
         let hasPermission = checkPermission()
         if !hasPermission {
-            let granted = await requestPermission()
+            let granted = await Self.requestPermission()
             if !granted {
                 error = .permissionDenied
                 throw VoiceNoteCaptureError.permissionDenied
@@ -231,9 +241,7 @@ final class VoiceNoteCaptureManager: NSObject, ObservableObject {
         let level = levelEMA
         levelLock.unlock()
         
-        DispatchQueue.main.async { [weak self] in
-            self?.currentLevel = level
-        }
+        currentLevel = level
     }
     
     private func convertAndEmitFrames(samples: UnsafePointer<Float>, count: Int) {

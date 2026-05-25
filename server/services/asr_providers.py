@@ -13,13 +13,10 @@ New in v0.3:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-import threading
 import time
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import AsyncIterator, Optional, List, Dict, Any, cast
@@ -310,18 +307,11 @@ class ASRProvider(ABC):
 
 
 class ASRProviderRegistry:
-    """Registry for managing ASR providers with a bounded LRU instance cache.
-
-    Cache size is controlled by the ECHOPANEL_ASR_CACHE_MAX env var (default 5).
-    When the cache is full, the least-recently-used entry is evicted and its
-    provider.unload() is scheduled on the running event loop (fire-and-forget).
-    """
+    """Registry for managing ASR providers."""
 
     _providers: dict[str, type[ASRProvider]] = {}
-    # OrderedDict preserves insertion/access order for LRU eviction.
-    _instances: OrderedDict[str, ASRProvider] = OrderedDict()
-    _MAX_INSTANCES: int = int(os.getenv("ECHOPANEL_ASR_CACHE_MAX", "5"))
-    _lock: "threading.Lock | None" = None
+    _instances: dict[str, ASRProvider] = {}
+    _lock: "threading.Lock | None" = None  # Lazy init to avoid import at module level
 
     @classmethod
     def _get_lock(cls) -> "threading.Lock":
@@ -357,48 +347,26 @@ class ASRProviderRegistry:
 
         # Thread-safe instance creation (P0 fix: RC-1)
         with cls._get_lock():
-            if key in cls._instances:
-                # Move to end = mark as most-recently-used.
-                cls._instances.move_to_end(key)
-                return cls._instances[key]
-
-            base_provider = cls._providers[name](cfg)
-
-            # Wrap with VAD if enabled
-            if cfg.vad_enabled:
-                try:
-                    from .vad_asr_wrapper import VADASRWrapper
-                    new_instance: ASRProvider = VADASRWrapper(
-                        base_provider,
-                        threshold=cfg.vad_threshold,
-                        min_speech_duration_ms=cfg.vad_min_speech_ms,
-                        min_silence_duration_ms=cfg.vad_min_silence_ms,
-                    )
-                    logger.info(f"Wrapped {name} with VAD (threshold={cfg.vad_threshold})")
-                except Exception as e:
-                    logger.warning(f"Failed to wrap with VAD: {e}, using base provider")
-                    new_instance = base_provider
-            else:
-                new_instance = base_provider
-
-            # Evict LRU entry if cache is at capacity.
-            if len(cls._instances) >= cls._MAX_INSTANCES:
-                lru_key, lru_provider = cls._instances.popitem(last=False)
-                logger.info(
-                    "asr_provider_cache: evicting LRU entry '%s' (cache_max=%d)",
-                    lru_key,
-                    cls._MAX_INSTANCES,
-                )
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.ensure_future(lru_provider.unload())
-                    else:
-                        loop.run_until_complete(lru_provider.unload())
-                except Exception as unload_err:
-                    logger.warning("asr_provider_cache: unload failed for '%s': %s", lru_key, unload_err)
-
-            cls._instances[key] = new_instance
+            if key not in cls._instances:
+                base_provider = cls._providers[name](cfg)
+                
+                # Wrap with VAD if enabled
+                if cfg.vad_enabled:
+                    try:
+                        from .vad_asr_wrapper import VADASRWrapper
+                        cls._instances[key] = VADASRWrapper(
+                            base_provider,
+                            threshold=cfg.vad_threshold,
+                            min_speech_duration_ms=cfg.vad_min_speech_ms,
+                            min_silence_duration_ms=cfg.vad_min_silence_ms,
+                        )
+                        logger.info(f"Wrapped {name} with VAD (threshold={cfg.vad_threshold})")
+                    except Exception as e:
+                        logger.warning(f"Failed to wrap with VAD: {e}, using base provider")
+                        cls._instances[key] = base_provider
+                else:
+                    cls._instances[key] = base_provider
+                    
             return cls._instances[key]
 
     @classmethod
@@ -438,8 +406,8 @@ class ASRProviderRegistry:
 
     @classmethod
     def evict_provider_instance(cls, provider: ASRProvider) -> int:
-        """Evict a specific provider instance from the cache.
-
+        """Evict a provider instance from the cache.
+        
         Returns:
             Number of cache entries removed.
         """
@@ -449,12 +417,4 @@ class ASRProviderRegistry:
             for key in keys_to_remove:
                 cls._instances.pop(key, None)
                 removed += 1
-        if removed:
-            logger.info("asr_provider_cache: manually evicted %d entry/entries", removed)
         return removed
-
-    @classmethod
-    def cache_size(cls) -> int:
-        """Return the current number of cached provider instances."""
-        with cls._get_lock():
-            return len(cls._instances)

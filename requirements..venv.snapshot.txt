@@ -1,0 +1,7 @@
+# Generated: 2026-05-25T10:13:26.641677
+# Env path: /Users/pranay/Projects/EchoPanel/.venv
+# Project path: /Users/pranay/Projects/EchoPanel
+# Detected manager: uv
+# Project last modified: 2026-05-22T02:05:15.941224
+# Freeze status: ERROR: /Users/pranay/Projects/EchoPanel/.venv/bin/python: No module named pip
+

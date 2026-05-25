@@ -18,8 +18,9 @@ struct MeetingListenerApp: App {
     private let requireLicenseValidation = false
 
     init() {
-        // Start backend server on app launch
-        BackendManager.shared.startServer()
+        if BackendManager.shared.shouldAutoStartOnLaunch {
+            BackendManager.shared.startServer()
+        }
 
         // Start data retention manager for automatic cleanup
         DataRetentionManager.shared.start()
@@ -267,6 +268,8 @@ struct MeetingListenerApp: App {
         
         if backendManager.isServerReady {
             return "Backend ready - Click to start/stop listening"
+        } else if backendManager.isAwaitingOnDemandStart {
+            return "Local runtime will start when you begin a session"
         } else {
             return "Backend \(backendManager.serverStatus.rawValue) - Waiting for backend..."
         }
@@ -308,7 +311,11 @@ struct MeetingListenerApp: App {
                 Circle()
                     .fill(backendManager.isServerReady ? Color.green : Color.orange)
                     .frame(width: 10, height: 10)
-                Text(backendManager.isServerReady ? "Backend Ready" : "Backend Starting")
+                Text(
+                    backendManager.isServerReady
+                        ? "Backend Ready"
+                        : (backendManager.isAwaitingOnDemandStart ? "Backend On-Demand" : "Backend Starting")
+                )
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -366,7 +373,6 @@ struct MeetingListenerApp: App {
                         .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!backendManager.isServerReady)
                 }
             }
             

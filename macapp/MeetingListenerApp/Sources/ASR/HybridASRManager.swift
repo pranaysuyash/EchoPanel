@@ -493,8 +493,31 @@ public final class HybridASRManager: ObservableObject, Sendable {
 public final class ASRContainer {
     public static let shared = ASRContainer()
     
+    /// Check if MLX metallib is bundled. Returns false if missing, preventing crash.
+    private static var isMLXAvailable: Bool {
+        // MLX looks for metallib in the app bundle's Resources directory
+        if let resourcePath = Bundle.main.resourcePath {
+            let metallibPath = (resourcePath as NSString).appendingPathComponent("default.metallib")
+            if FileManager.default.fileExists(atPath: metallibPath) {
+                return true
+            }
+        }
+        // Also check the working directory (for dev builds)
+        let cwdMetallib = FileManager.default.currentDirectoryPath + "/default.metallib"
+        if FileManager.default.fileExists(atPath: cwdMetallib) {
+            return true
+        }
+        return false
+    }
+    
     public private(set) lazy var hybridASRManager: HybridASRManager = {
-        let native = NativeMLXBackend()
+        let native: ASRBackend
+        if Self.isMLXAvailable {
+            native = NativeMLXBackend()
+        } else {
+            print("MLX metallib not bundled — using Python backend only")
+            native = UnavailableBackend(reason: "MLX metallib not bundled in app")
+        }
         let python = PythonBackend()
         
         return HybridASRManager(
@@ -507,8 +530,12 @@ public final class ASRContainer {
     private init() {}
     
     public func updateSubscription(_ tier: SubscriptionTier) {
-        // Create new manager with updated tier
-        let native = NativeMLXBackend()
+        let native: ASRBackend
+        if Self.isMLXAvailable {
+            native = NativeMLXBackend()
+        } else {
+            native = UnavailableBackend(reason: "MLX metallib not bundled in app")
+        }
         let python = PythonBackend()
         
         hybridASRManager = HybridASRManager(
@@ -517,4 +544,46 @@ public final class ASRContainer {
             subscriptionTier: tier
         )
     }
+}
+
+/// Stub backend that always reports itself as unavailable.
+/// Used when MLX can't be loaded (e.g., metallib not bundled).
+private actor UnavailableBackend: ASRBackend {
+    nonisolated let name: String = "Unavailable"
+    nonisolated let isAvailable: Bool = false
+    nonisolated let capabilities: BackendCapabilities = BackendCapabilities(
+        supportsStreaming: false,
+        supportsBatch: false,
+        supportsDiarization: false,
+        supportsOffline: false,
+        requiresNetwork: false,
+        supportedLanguages: [],
+        estimatedRTF: 0
+    )
+    
+    private(set) var status: BackendStatus
+    
+    init(reason: String) {
+        self.status = BackendStatus(backendName: "Unavailable", state: .error, message: reason)
+    }
+    
+    func initialize() async throws {
+        throw ASRError.initializationFailed(reason: "Backend not available")
+    }
+    
+    func transcribe(audio: Data, config: TranscriptionConfig) async throws -> TranscriptionResult {
+        throw ASRError.initializationFailed(reason: "Backend not available")
+    }
+    
+    func startStreaming(config: TranscriptionConfig) -> AsyncThrowingStream<TranscriptionEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: ASRError.initializationFailed(reason: "Backend not available"))
+        }
+    }
+    
+    func stopStreaming() async {}
+    
+    func health() async -> BackendStatus { status }
+    
+    func unload() async {}
 }

@@ -18,10 +18,17 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
-import torch
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
+    logger.warning("PyTorch not installed; SmolVLM pipeline disabled")
 
 # Configuration
 SMOLVLM_ENABLED = os.getenv("ECHOPANEL_SMOLVLM_ENABLED", "true").lower() == "true"
@@ -105,7 +112,7 @@ class SmolVLMPipeline:
         self._initialize()
     
     def _initialize(self):
-        if not TRANSFORMERS_AVAILABLE or not SMOLVLM_ENABLED:
+        if not TRANSFORMERS_AVAILABLE or not TORCH_AVAILABLE or not SMOLVLM_ENABLED:
             return
         try:
             if self.device == "auto":
@@ -142,7 +149,7 @@ class SmolVLMPipeline:
             self._initialized = False
     
     def is_available(self) -> bool:
-        return TRANSFORMERS_AVAILABLE and self._initialized
+        return TRANSFORMERS_AVAILABLE and TORCH_AVAILABLE and self._initialized
     
     def _build_prompt(self, paddle_context=None):
         if paddle_context and paddle_context.text:

@@ -1,6 +1,6 @@
 import Foundation
 
-/// BackendManager handles the Python server lifecycle.
+/// BackendManager handles the Python server lifecycle and startup policy.
 /// Starts the server as a subprocess when the app launches and manages health checks.
 @MainActor
 final class BackendManager: ObservableObject {
@@ -13,6 +13,11 @@ final class BackendManager: ObservableObject {
     @Published var lastExitCode: Int?
     @Published var usingExternalBackend: Bool = false
     @Published var recoveryPhase: RecoveryPhase = .idle
+
+    enum StartupMode {
+        case eager
+        case onDemand
+    }
     
     enum ServerStatus: String {
         case stopped = "Stopped"
@@ -41,8 +46,45 @@ final class BackendManager: ObservableObject {
     private var restartDelay: TimeInterval = 1.0
     private let maxRestartDelay: TimeInterval = 10.0
     private var restartTimer: Timer?
+    private static let autoStartDefaultsKey = "backendAutoStartOnLaunch"
+    private static var isRunningTests: Bool {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return true
+        }
+        if NSClassFromString("XCTestCase") != nil {
+            return true
+        }
+        return Bundle.allBundles.contains { $0.bundlePath.hasSuffix(".xctest") }
+    }
     
     private init() {
+    }
+
+    var startupMode: StartupMode {
+        if !BackendConfig.isLocalHost {
+            return .eager
+        }
+        let autoStart = UserDefaults.standard.object(forKey: Self.autoStartDefaultsKey) as? Bool ?? false
+        return autoStart ? .eager : .onDemand
+    }
+
+    var shouldAutoStartOnLaunch: Bool {
+        BackendConfig.isLocalHost && startupMode == .eager && !Self.isRunningTests
+    }
+
+    var suppressesLiveRuntimeInTests: Bool {
+        Self.isRunningTests
+    }
+
+    var isAwaitingOnDemandStart: Bool {
+        BackendConfig.isLocalHost && startupMode == .onDemand && !isServerReady && serverStatus == .stopped
+    }
+
+    var startupStatusText: String {
+        if isAwaitingOnDemandStart {
+            return "Local runtime starts when you begin a session."
+        }
+        return healthDetail
     }
     
     // MARK: - Server Lifecycle
@@ -573,5 +615,25 @@ final class BackendManager: ObservableObject {
         }
         
         return false
+    }
+
+    func ensureServerReadyForSession(timeout: TimeInterval = 15) async -> Bool {
+        if isServerReady {
+            return true
+        }
+
+        guard BackendConfig.isLocalHost else {
+            return false
+        }
+
+        if Self.isRunningTests {
+            return false
+        }
+
+        if serverStatus == .stopped || serverStatus == .error {
+            startServer()
+        }
+
+        return await waitForServer(timeout: timeout)
     }
 }

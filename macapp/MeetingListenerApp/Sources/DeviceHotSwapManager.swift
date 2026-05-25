@@ -139,7 +139,7 @@ final class DeviceHotSwapManager: ObservableObject {
 
         // Monitor for device connection changes
         deviceConnectedObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name.AVCaptureDeviceWasConnected,
+            forName: AVCaptureDevice.wasConnectedNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
@@ -157,7 +157,7 @@ final class DeviceHotSwapManager: ObservableObject {
         
         // Also monitor for disconnections
         deviceDisconnectedObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name.AVCaptureDeviceWasDisconnected,
+            forName: AVCaptureDevice.wasDisconnectedNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in

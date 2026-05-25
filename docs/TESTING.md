@@ -182,8 +182,8 @@ Use the app bundle flow so macOS attributes permission to the app, not the shell
 pkill -f MeetingListenerApp || true
 # Optional (destructive): resets Screen Recording permission prompts for ALL apps
 # tccutil reset ScreenCapture
-scripts/build-app-bundle.sh
-open ~/Applications/MeetingListenerApp.app
+scripts/build-dev-app.sh
+open ~/Applications/MeetingListenerApp-Dev.app
 ```
 
 Then toggle the app in System Settings:

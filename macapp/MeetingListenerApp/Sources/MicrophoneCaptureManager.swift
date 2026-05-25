@@ -1,12 +1,15 @@
 import AVFoundation
 import Combine
+import CoreAudio
 import Foundation
+import AudioToolbox
 
 /// Captures microphone audio using AVAudioEngine and emits PCM16 frames.
-final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sendable {
+final class MicrophoneCaptureManager: NSObject, ObservableObject {
     var onPCMFrame: ((Data, String) -> Void)? // (frame, source="mic")
     var onAudioLevelUpdate: ((Float) -> Void)?
     var onError: ((Error) -> Void)?
+    var onActiveDeviceChanged: ((String?, String?) -> Void)?
     
     private lazy var audioEngine = AVAudioEngine()
     private var isRunning = false
@@ -14,12 +17,15 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
     private let frameSize = 320 // 20ms at 16kHz
     private var levelEMA: Float = 0
     private let levelLock = NSLock()  // Thread safety for level EMA updates
+    private var preferredDeviceID: String?
+    private var activeDeviceID: String?
+    private var activeDeviceName: String?
     
     // MARK: - Metrics (AUD-002 Improvement)
     private var metricsLock = NSLock()
-    private var framesProcessed: UInt64 = 0
-    private var framesDropped: UInt64 = 0
-    private var bufferUnderruns: UInt64 = 0
+    nonisolated private(set) var framesProcessed: UInt64 = 0
+    nonisolated private(set) var framesDropped: UInt64 = 0
+    nonisolated private(set) var bufferUnderruns: UInt64 = 0
     private var lastProcessTime: TimeInterval = 0
     
     // MARK: - Limiter State (P0-2 Fix)
@@ -59,6 +65,13 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
     }
     
     // MARK: - Capture Lifecycle
+
+    var isCapturing: Bool { isRunning }
+
+    func setPreferredDevice(id: String?) {
+        let normalized = id?.trimmingCharacters(in: .whitespacesAndNewlines)
+        preferredDeviceID = (normalized?.isEmpty == true) ? nil : normalized
+    }
     
     func startCapture() throws {
         guard !isRunning else { 
@@ -73,6 +86,8 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
         }
         
         let inputNode = audioEngine.inputNode
+
+        try applyPreferredInputDeviceIfNeeded(inputNode: inputNode)
         let inputFormat = inputNode.outputFormat(forBus: 0)
         
         // Target format: 16kHz mono PCM Float32
@@ -97,6 +112,7 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
         do {
             try audioEngine.start()
             isRunning = true
+            updateActiveDeviceMetadata()
             
             // Reset metrics
             resetMetrics()
@@ -144,9 +160,7 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
     
     private func setupDeviceObservers() {
         // Register current device
-        if let device = AVCaptureDevice.default(for: .audio) {
-            lastDeviceID = device.uniqueID
-        }
+        updateActiveDeviceMetadata()
         
         // Monitor for device connection changes
         deviceConnectedObserver = NotificationCenter.default.addObserver(
@@ -182,15 +196,25 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
         guard let device = notification.object as? AVCaptureDevice,
               device.hasMediaType(.audio) else { return }
         
-        NSLog("MicrophoneCaptureManager: Audio device connected - \(device.localizedName)")
-        
         let deviceName = device.localizedName
         let deviceID = device.uniqueID
+
+        NSLog("MicrophoneCaptureManager: Audio device connected - \(deviceName)")
+        
         Task { @MainActor in
             StructuredLogger.shared.info("Audio device connected", metadata: [
                 "deviceName": deviceName,
                 "deviceID": deviceID
             ])
+        }
+
+        if let preferredDeviceID, preferredDeviceID == deviceID, isRunning {
+            do {
+                try applyPreferredInputDeviceIfNeeded(inputNode: audioEngine.inputNode)
+                updateActiveDeviceMetadata()
+            } catch {
+                onError?(error)
+            }
         }
     }
     
@@ -198,12 +222,13 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
         guard let device = notification.object as? AVCaptureDevice,
               device.hasMediaType(.audio) else { return }
         
+        let deviceName = device.localizedName
+        let deviceID = device.uniqueID
+        
         // Check if this was our active device
-        if device.uniqueID == lastDeviceID {
-            NSLog("MicrophoneCaptureManager: Active device disconnected - \(device.localizedName)")
+        if deviceID == lastDeviceID {
+            NSLog("MicrophoneCaptureManager: Active device disconnected - \(deviceName)")
             
-            let deviceName = device.localizedName
-            let deviceID = device.uniqueID
             Task { @MainActor in
                 StructuredLogger.shared.error("Active microphone disconnected", metadata: [
                     "deviceName": deviceName,
@@ -218,7 +243,119 @@ final class MicrophoneCaptureManager: NSObject, ObservableObject, @unchecked Sen
             }
             
             lastDeviceID = nil
+            activeDeviceID = nil
+            activeDeviceName = nil
+            onActiveDeviceChanged?(nil, nil)
         }
+    }
+
+    private func applyPreferredInputDeviceIfNeeded(inputNode: AVAudioInputNode) throws {
+        guard let preferredDeviceID, !preferredDeviceID.isEmpty else {
+            return
+        }
+
+        guard AVCaptureDevice.devices(for: .audio).contains(where: { $0.uniqueID == preferredDeviceID }) else {
+            throw MicCaptureError.preferredDeviceUnavailable(preferredDeviceID)
+        }
+
+        guard let audioDeviceID = resolveAudioDeviceID(forUID: preferredDeviceID) else {
+            throw MicCaptureError.unableToResolveAudioDeviceID(preferredDeviceID)
+        }
+
+        var targetDeviceID = audioDeviceID
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard let audioUnit = inputNode.audioUnit else {
+            throw MicCaptureError.audioUnitUnavailable
+        }
+
+        var status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &targetDeviceID,
+            size
+        )
+
+        if status != noErr {
+            status = AudioUnitSetProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                1,
+                &targetDeviceID,
+                size
+            )
+        }
+
+        guard status == noErr else {
+            throw MicCaptureError.deviceSelectionFailed(status: status, deviceID: preferredDeviceID)
+        }
+
+        lastDeviceID = preferredDeviceID
+    }
+
+    private func updateActiveDeviceMetadata() {
+        let currentID = preferredDeviceID ?? AVCaptureDevice.default(for: .audio)?.uniqueID
+        lastDeviceID = currentID
+        activeDeviceID = currentID
+        activeDeviceName = currentID.flatMap { id in
+            AVCaptureDevice.devices(for: .audio).first(where: { $0.uniqueID == id })?.localizedName
+        }
+        onActiveDeviceChanged?(activeDeviceID, activeDeviceName)
+    }
+
+    private func resolveAudioDeviceID(forUID uid: String) -> AudioDeviceID? {
+        var devicesAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        var status = AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            &dataSize
+        )
+        guard status == noErr else { return nil }
+
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = Array(repeating: AudioDeviceID(0), count: count)
+        status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceIDs
+        )
+        guard status == noErr else { return nil }
+
+        for deviceID in deviceIDs {
+            var uidAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var uidSize = UInt32(MemoryLayout<CFString?>.size)
+            var cfUID: CFString?
+            status = AudioObjectGetPropertyData(
+                deviceID,
+                &uidAddress,
+                0,
+                nil,
+                &uidSize,
+                &cfUID
+            )
+            if status == noErr, let cfUID, cfUID as String == uid {
+                return deviceID
+            }
+        }
+
+        return nil
     }
     
     // MARK: - Permission Revocation Detection (AUD-002 Improvement)
@@ -427,7 +564,11 @@ enum MicCaptureError: Error {
     case converterCreationFailed
     case engineStartFailed(Error)
     case mediaServicesReset
+    case audioUnitUnavailable
     case deviceDisconnected
+    case preferredDeviceUnavailable(String)
+    case unableToResolveAudioDeviceID(String)
+    case deviceSelectionFailed(status: OSStatus, deviceID: String)
     
     var localizedDescription: String {
         switch self {
@@ -443,8 +584,16 @@ enum MicCaptureError: Error {
             return "Failed to start audio engine: \(error.localizedDescription)"
         case .mediaServicesReset:
             return "Media services were reset"
+        case .audioUnitUnavailable:
+            return "Unable to access microphone audio unit"
         case .deviceDisconnected:
             return "Microphone device was disconnected"
+        case .preferredDeviceUnavailable(let deviceID):
+            return "Selected microphone is unavailable (\(deviceID))"
+        case .unableToResolveAudioDeviceID(let deviceID):
+            return "Unable to resolve CoreAudio device for selected microphone (\(deviceID))"
+        case .deviceSelectionFailed(let status, let deviceID):
+            return "Failed to bind selected microphone (\(deviceID)); OSStatus=\(status)"
         }
     }
 }
